@@ -40,6 +40,7 @@ function approval(over: Partial<ApprovalDto> = {}): ApprovalDto {
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
     decidedAt: null,
+    confirmationRequired: null,
     ...over,
   };
 }
@@ -68,7 +69,7 @@ describe('ApprovalCard: file changes', () => {
     const onDecide = vi.fn().mockResolvedValue(undefined);
     render(<ApprovalCard approval={approval()} onDecide={onDecide} />);
     await userEvent.click(screen.getByRole('button', { name: /Approve once/ }));
-    expect(onDecide).toHaveBeenCalledExactlyOnceWith('approve', undefined);
+    expect(onDecide).toHaveBeenCalledExactlyOnceWith('approve', undefined, undefined);
   });
 
   it('rejects with an optional note, only after confirmation', async () => {
@@ -78,7 +79,7 @@ describe('ApprovalCard: file changes', () => {
     expect(onDecide).not.toHaveBeenCalled();
     await userEvent.type(screen.getByLabelText(/Optional note/), 'Use for...of instead');
     await userEvent.click(screen.getByRole('button', { name: /Confirm reject/ }));
-    expect(onDecide).toHaveBeenCalledExactlyOnceWith('reject', 'Use for...of instead');
+    expect(onDecide).toHaveBeenCalledExactlyOnceWith('reject', 'Use for...of instead', undefined);
   });
 
   it('offers cancelling the whole run', async () => {

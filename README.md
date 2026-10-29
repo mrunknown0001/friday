@@ -2,12 +2,11 @@
 
 A local-first AI coding and DevOps assistant that uses [NoTokenLimit](https://notokenlimit.com) as its model provider.
 
-**Current status: Phase 4 (coding agent).** Friday investigates an authorized project, inspects git, proposes edits
-(including multi-file change sets), runs tests, and commits or branches, each change or command **only after you approve
-it**. After every task it shows a **verification report** built from its own records (which files changed, whether a
-test or build passed _after_ the last change, what was committed), with one-click rollback. Interrupted tasks keep a
-checkpoint and resume without redoing finished steps. Pushing, remote servers, and deployments are not available as
-tools yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Current status: Phase 5 (DevOps agent).** Friday works on authorized projects (read, edit, test, commit; each
+change approved by you) and on servers: it diagnoses this machine, reads logs, inspects Docker, validates CI/CD and
+Compose files, records deployment plans, and runs read-only diagnostics or approved commands on SSH hosts you configure.
+Production commands require a recorded plan and typing the host name on the approval card. Every task ends with a
+verification report built from Friday's own records. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -101,6 +100,41 @@ Reading is automatic. These always need your approval, one action at a time:
   with its checkpoint. **Resume** gives the model a summary of what was already done (files changed, commands and their
   results, plan) so it continues instead of starting over. Approvals that were pending at the time are cancelled.
 
+## DevOps
+
+Read-only, no approval needed:
+
+- `inspect_environment`: OS, CPU, memory, disk space, and versions of Node, PHP, Composer, Python, Git, Docker, Nginx,
+  database clients, PM2, Supervisor and Certbot. Environment variables are never included.
+- `search_logs`: the tail (last 4 MB) of a project log or of a log file you authorized in **Settings → Log sources**,
+  optionally filtered, with secrets redacted.
+- `inspect_docker`: containers, images, compose services, container logs, and a reduced `docker inspect` that never
+  shows environment variable values.
+- `validate_config`: YAML/JSON syntax with line numbers, plus checks for GitHub Actions (missing `runs-on`, unpinned
+  actions, script injection, `pull_request_target` checkouts, missing `permissions`) and Docker Compose (privileged
+  containers, Docker socket mounts, databases published on all interfaces, hard-coded secrets).
+
+Servers (**Settings → SSH hosts**):
+
+1. Add a host: name, address, user, the path to a private key (or none, to use ssh-agent), and environment
+   (development, staging or production). Friday stores only the key's _path_, and never accepts passwords.
+2. **Scan host key**, compare the fingerprint with the server's own (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
+   on the server), then trust it. Connections are refused until a key is trusted and fail if the key changes.
+3. **Test** connects and runs `true`.
+
+Friday's ssh ignores `~/.ssh/config`, disables password and agent forwarding, and checks host keys strictly against
+the keys you trusted for that host. The agent can use:
+
+- `remote_diagnose`: predefined read-only checks (uptime, disk, memory, failed services, service status/journal, log
+  tail under `/var/log`, listening ports, `docker ps`, `nginx -t`, PHP version, certificates). Each needs approval.
+- `prepare_deployment_plan`: records pre-checks, steps (with where they run, risk, downtime, reversibility, rollback),
+  verification, rollback plan, data-loss risk and downtime estimate. Plans that change data must include a backup
+  pre-check; staging and production plans must include verification and rollback. Recording runs nothing.
+- `remote_command`: any command on a host, with an approval card showing the host, environment, exact command,
+  expected impact, downtime, rollback and verification. On **production** hosts a plan must be recorded in the
+  conversation first, the approval expires after 5 minutes, and **Approve** stays disabled until you type the host
+  name (the server checks it too).
+
 ## Git
 
 Read-only inspection (`git_status`, `git_diff`, `git_log`, `git_show`, `git_branches`) runs without approval.
@@ -116,7 +150,13 @@ is absent. Everything Friday does read is sent to your NoTokenLimit model.
 
 ### Choosing a model
 
-Tool calling has been verified live on `claude-haiku-4.5`. In testing through NoTokenLimit, haiku sometimes opens
+NoTokenLimit rewrites paths under `/home/…` in the **model's text** to "your workspace" (verified with a direct API
+call; tool-call arguments are not affected). Treat paths in Friday's prose with care: approval cards, run records and
+verification reports show the real values from Friday's records.
+
+For multi-step DevOps work use `claude-sonnet-4.6` or stronger: in live tests `claude-haiku-4.5` repeatedly stopped
+after its first tool call and replied as if it had been given new instructions, while sonnet-4.6 completed the full
+diagnose → plan → approve → execute flow. Tool calling has been verified live on both. In testing through NoTokenLimit, haiku sometimes opens
 replies with a self-introduction (NoTokenLimit appears to add its own hidden prompt of roughly 1,100 tokens), while
 `claude-sonnet-4.6` and `gemini-3-flash` answered cleanly. Use **Settings → Probe capabilities** before relying on a
 new model for tool use.
@@ -163,6 +203,7 @@ new model for tool use.
 | `FRIDAY_AGENT_MAX_TOOL_CALLS` | `40`                              | Tool calls per request before the run pauses as `blocked`      |
 | `FRIDAY_TOOL_TIMEOUT_MS`      | `30000`                           | Per-tool-call timeout                                          |
 | `FRIDAY_TOOL_OUTPUT_CHARS`    | `20000`                           | Maximum characters of one tool result sent to the model        |
+| SSH known hosts               | `<data dir>/ssh/`                 | Per-host files built from the keys you trusted                 |
 | `FRIDAY_APPROVAL_TTL_MS`      | `900000`                          | How long an approval request stays valid (15 minutes)          |
 
 ## Layout

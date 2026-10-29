@@ -21,6 +21,7 @@ export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
         actionHash: z.string().regex(/^[0-9a-f]{64}$/),
         sessionId: z.uuid(),
         note: z.string().max(2_000).optional(),
+        confirmation: z.string().max(200).optional(),
       }),
       req.body,
     );

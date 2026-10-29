@@ -2,6 +2,9 @@ import type {
   ApiErrorBody,
   ApprovalDto,
   FileChangeDto,
+  HostEnvironment,
+  LogSourceDto,
+  SshHostDto,
   ConnectionTestResult,
   FileViewDto,
   ProjectDto,
@@ -121,11 +124,38 @@ export const api = {
     }),
   decideApproval: (
     id: string,
-    body: { decision: 'approve' | 'reject'; actionHash: string; sessionId: string; note?: string },
+    body: {
+      decision: 'approve' | 'reject';
+      actionHash: string;
+      sessionId: string;
+      note?: string;
+      confirmation?: string;
+    },
   ) => request<ApprovalDto>('POST', `/api/approvals/${id}/decision`, body),
   sessionChanges: (id: string) =>
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
+  sshHosts: () => request<{ hosts: SshHostDto[] }>('GET', '/api/ssh-hosts'),
+  addSshHost: (h: {
+    name: string;
+    hostname: string;
+    port: number;
+    username: string;
+    identityFile: string | null;
+    environment: HostEnvironment;
+  }) => request<SshHostDto>('POST', '/api/ssh-hosts', h),
+  removeSshHost: (id: string) => request<void>('DELETE', `/api/ssh-hosts/${id}`),
+  scanSshHost: (id: string) =>
+    request<{ keys: Array<{ fingerprint: string }> }>('POST', `/api/ssh-hosts/${id}/scan`),
+  trustSshHost: (id: string, fingerprint: string) =>
+    request<SshHostDto>('POST', `/api/ssh-hosts/${id}/trust`, { fingerprint }),
+  untrustSshHost: (id: string) => request<SshHostDto>('POST', `/api/ssh-hosts/${id}/untrust`),
+  testSshHost: (id: string) =>
+    request<{ ok: boolean; message: string; detail?: string }>('POST', `/api/ssh-hosts/${id}/test`),
+  logSources: () => request<{ sources: LogSourceDto[] }>('GET', '/api/log-sources'),
+  addLogSource: (label: string, path: string) =>
+    request<LogSourceDto>('POST', '/api/log-sources', { label, path }),
+  removeLogSource: (id: string) => request<void>('DELETE', `/api/log-sources/${id}`),
   rollbackRun: (runId: string) =>
     request<{ reverted: string[]; run: RunDto }>('POST', `/api/runs/${runId}/rollback`),
   retry: (id: string) => request<{ run: RunDto }>('POST', `/api/sessions/${id}/retry`),

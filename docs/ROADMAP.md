@@ -2,7 +2,7 @@
 
 Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
-**Current phase: 5 (DevOps agent).**
+**Current phase: 6 (memory).**
 
 ## Phase 1: Foundation
 
@@ -91,8 +91,23 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
 ## Phase 5: DevOps agent
 
-- ⬜ Environment diagnostics, logs, Docker inspection, CI/CD generation, deployment plans
-- ⬜ SSH host configuration (keys only), remote diagnostics, production safeguards with fresh approvals
+- ✅ Environment diagnostics (`inspect_environment`): OS, CPU, memory, disk, 16 runtime/service probes, no env vars
+- ✅ Logs (`search_logs`): project logs and user-authorized log sources, tail-only reads, filtering, redaction
+- ✅ Docker (`inspect_docker`): containers, images, compose, logs, sanitized inspect (no env values)
+- ✅ CI/CD and config validation (`validate_config`): YAML/JSON with line numbers, GitHub Actions and Compose security
+  checks; generation uses the approval-gated file tools
+- ✅ Deployment planning (`prepare_deployment_plan`): validated plans (backups for data changes, rollback and
+  verification for staging/production, host/environment consistency), shown live as a plan card
+- ✅ SSH configuration: hosts added only via the UI/API (no passwords or key material accepted), host-key scan with
+  fingerprint verification and explicit trust, per-host strict known_hosts, isolated ssh options, connection test
+- ✅ Remote tools: `remote_diagnose` (templated read-only checks with validated targets) and `remote_command`, both
+  approval-gated
+- ✅ Production safeguards: recorded plan required, typed host-name confirmation enforced by the server, 5-minute
+  approval TTL, `deployment` category with risk floor; staging risk floor; audit trail
+- ✅ Tests: 167 server (22 new in `devops.test.ts`) and 20 frontend
+- ✅ Verified live on 2026-10-29 against a disposable OpenSSH container: scan/trust/test, three remote diagnostics,
+  a production plan, and a typed-confirmation production command (file created on the server), with
+  `claude-sonnet-4.6`. `claude-haiku-4.5` stopped after its first tool call in both attempts.
 
 ## Phase 6: Memory
 

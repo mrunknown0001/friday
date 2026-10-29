@@ -22,6 +22,8 @@ export interface ApprovalRequest extends Omit<NewApproval, 'id' | 'actionHash' |
   projectRoot: string | null;
   args: unknown;
   fingerprint: string;
+  /** Shorter validity for sensitive actions (never longer than the configured TTL). */
+  ttlMs?: number;
 }
 
 export interface DecisionInput {
@@ -30,6 +32,8 @@ export interface DecisionInput {
   actionHash: string;
   sessionId: string;
   note?: string | undefined;
+  /** Typed confirmation, required when the approval sets `confirmationRequired`. */
+  confirmation?: string | undefined;
 }
 
 /**
@@ -47,7 +51,7 @@ export class ApprovalService {
 
   request(req: ApprovalRequest): ApprovalDto {
     const id = randomUUID();
-    const { projectRoot, args, fingerprint, ...rest } = req;
+    const { projectRoot, args, fingerprint, ttlMs, ...rest } = req;
     const actionHash = computeActionHash({
       approvalId: id,
       sessionId: req.sessionId,
@@ -60,7 +64,7 @@ export class ApprovalService {
       ...rest,
       id,
       actionHash,
-      expiresAt: new Date(Date.now() + this.ttlMs).toISOString(),
+      expiresAt: new Date(Date.now() + Math.min(this.ttlMs, ttlMs ?? this.ttlMs)).toISOString(),
     });
     this.audit.record({
       sessionId: req.sessionId,
@@ -156,6 +160,17 @@ export class ApprovalService {
         409,
         'run_not_waiting',
         'The run that asked for this is no longer active.',
+      );
+    }
+    if (
+      input.decision === 'approve' &&
+      approval.confirmationRequired &&
+      input.confirmation?.trim() !== approval.confirmationRequired
+    ) {
+      throw new HttpError(
+        409,
+        'confirmation_required',
+        `Type "${approval.confirmationRequired}" to confirm this action.`,
       );
     }
     if (input.decision === 'approve' && input.actionHash !== approval.actionHash) {

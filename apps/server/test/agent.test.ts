@@ -47,7 +47,7 @@ describe('tool executor', () => {
     const deployer = defineTool({
       name: 'deploy',
       description: 'd',
-      category: 'deployment',
+      category: 'database',
       risk: 'critical',
       requiresProject: true,
       schema: z.object({}),
@@ -202,6 +202,13 @@ describe('tool executor', () => {
         'git_status',
         'file_info',
         'find_files',
+        'inspect_docker',
+        'inspect_environment',
+        'prepare_deployment_plan',
+        'remote_command',
+        'remote_diagnose',
+        'search_logs',
+        'validate_config',
         'inspect_project',
         'list_directory',
         'move_file',
@@ -216,7 +223,22 @@ describe('tool executor', () => {
     expect(read.parameters).toMatchObject({ type: 'object', required: ['path'] });
     expect(JSON.stringify(read.parameters)).not.toContain('$schema');
     expect(JSON.stringify(read.parameters)).not.toContain('9007199254740991');
-    expect(registry.definitions(false).map((d) => d.name)).toEqual(['update_plan']);
+    expect(
+      registry
+        .definitions(false)
+        .map((d) => d.name)
+        .sort(),
+    ).toEqual(
+      [
+        'inspect_docker',
+        'inspect_environment',
+        'prepare_deployment_plan',
+        'remote_command',
+        'remote_diagnose',
+        'search_logs',
+        'update_plan',
+      ].sort(),
+    );
   });
 });
 
@@ -421,7 +443,11 @@ describe('agent loop', () => {
     const plain = s.sessions.create();
     let { run } = s.runManager.startMessage(plain.id, 'hi');
     await s.runManager.waitFor(run.id);
-    expect(provider.requests[0]!.tools?.map((t) => t.name)).toEqual(['update_plan']);
+    // Without a project only machine-level and plan tools are offered; no workspace file tools.
+    const offered = provider.requests[0]!.tools?.map((t) => t.name) ?? [];
+    expect(offered).toContain('update_plan');
+    expect(offered).not.toContain('read_file');
+    expect(offered).not.toContain('run_command');
 
     s.capabilities.saveProbe('test-model', {
       streaming: 'supported',

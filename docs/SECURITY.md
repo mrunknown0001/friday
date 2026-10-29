@@ -62,11 +62,27 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Rollback clobbering newer work                                   | Rollback validates every file first and refuses if any was edited since, or changed again by a later task.                                                                                                                                                          |
 | Lost progress or double execution after a crash                  | Checkpoints after every action; pending approvals are cancelled at startup; resume context tells the model what already ran.                                                                                                                                        |
 
+## Threats addressed in Phase 5 (DevOps and remote access)
+
+| Threat                                    | Mitigation                                                                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Credentials pasted into Friday            | Host configuration accepts only a key _path_ (strict schema rejects extra fields such as `password`); `.pub` files refused; keys are read by ssh, never by Friday.                                     |
+| Man-in-the-middle on SSH                  | No trust on first use: the user scans, compares the fingerprint out-of-band, and trusts it explicitly. Per-host known_hosts and `StrictHostKeyChecking=yes`; a changed key fails with a clear warning. |
+| Surprising ssh behaviour from user config | `-F /dev/null`, `BatchMode`, password/keyboard-interactive disabled, agent/X11/port forwarding disabled, `--` before the host.                                                                         |
+| Injection through diagnostic parameters   | `remote_diagnose` uses fixed command templates; service names and log paths are pattern-validated and shell-quoted.                                                                                    |
+| Accidental production changes             | Production commands need a recorded deployment plan, a server-checked typed host name, and a fresh approval that expires in 5 minutes.                                                                 |
+| Destructive data changes without backup   | Plans whose steps touch data (migrations, database clients, DROP/ALTER/TRUNCATE) are rejected unless a backup pre-check is listed.                                                                     |
+| Secrets in logs and container metadata    | Log tails and container logs are redacted; `docker inspect` output keeps only env variable names; `inspect_environment` never reads env.                                                               |
+| Reading arbitrary system files as "logs"  | Log sources must be added by the user; `/etc`, `/proc`, `/sys`, `/dev`, `/boot`, `/root` and credential files are refused.                                                                             |
+| Provider altering model output            | NoTokenLimit rewrites `/home/...` paths in model text. Approvals, run records and reports use Friday's own records, never model prose.                                                                 |
+
 ## Known limitations
 
 - `run_command` is **not sandboxed**: an approved command runs as the current user with full filesystem and network
   access. The approval card says so. Container isolation for untrusted code is still to come.
 - Commit hooks are the repository's own code and run during an approved `git_commit` (the approval card lists them).
+- `remote_command` runs through the remote user's shell with that user's privileges; Friday cannot sandbox it. Remote
+  processes may keep running if ssh is killed on timeout or cancel (the result says so).
 - Risk notes on commands are heuristics for the reviewer; they never relax the approval requirement.
 
 - Any process running as the same OS user can call the API. A per-launch bearer token (for Electron, passed through the

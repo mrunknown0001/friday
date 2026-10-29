@@ -38,6 +38,8 @@ export interface RunOptions {
   timeoutMs: number;
   signal: AbortSignal;
   onOutput?: (chunk: string) => void;
+  /** Extra variables for this process only (e.g. SSH_AUTH_SOCK for ssh). */
+  extraEnv?: Record<string, string>;
   /** Bytes kept from the start of the output; the last `tailBytes` are always kept too. */
   headBytes?: number;
   tailBytes?: number;
@@ -82,7 +84,7 @@ export function runProcess(opts: RunOptions): Promise<RunResult> {
 
     const child = spawn(file, args, {
       cwd: opts.cwd,
-      env: childEnv(),
+      env: { ...childEnv(), ...opts.extraEnv },
       shell: false,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -1,8 +1,9 @@
-import type { ApprovalDto, ToolCallStatus } from '@friday/shared';
+import type { ApprovalDto, DeploymentPlanDto, ToolCallStatus } from '@friday/shared';
 import { Ban, Check, ChevronRight, CircleSlash, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn';
 import { ApprovalCard } from './ApprovalCard';
+import { DeploymentPlanCard } from './DeploymentPlanCard';
 import { isFailedCommand } from './RunRecord';
 
 export interface ToolItem {
@@ -17,6 +18,8 @@ export interface ToolItem {
   truncated?: boolean | undefined;
   /** The approval this call went through, if it was a protected action. */
   approval?: ApprovalDto | undefined;
+  /** Plan recorded by this call (prepare_deployment_plan). Always shown, never collapsed. */
+  deploymentPlan?: DeploymentPlanDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
 }
@@ -55,6 +58,33 @@ export function toolLabel(name: string, argsJson: string): string {
       return `${str(a.path)}${Array.isArray(a.edits) ? ` (${a.edits.length} edit${a.edits.length === 1 ? '' : 's'})` : ''}`;
     case 'move_file':
       return `${str(a.from)} → ${str(a.to)}`;
+    case 'edit_files':
+      return Array.isArray(a.changes) ? `${a.changes.length} files` : '';
+    case 'git_diff':
+      return [a.staged ? '--staged' : '', str(a.ref), str(a.path)].filter(Boolean).join(' ');
+    case 'git_log':
+    case 'git_show':
+      return [str(a.ref), str(a.path)].filter(Boolean).join(' ');
+    case 'git_commit':
+      return str(a.message).split('\n')[0]!;
+    case 'git_create_branch':
+      return str(a.name);
+    case 'search_logs':
+      return `${str(a.source)}${a.query ? ` "${str(a.query)}"` : ''}`;
+    case 'inspect_docker':
+      return `${str(a.view)}${a.container ? ` ${str(a.container)}` : ''}`;
+    case 'validate_config':
+      return str(a.path);
+    case 'prepare_deployment_plan':
+      return `${str(a.environment)}: ${str(a.title)}`;
+    case 'remote_diagnose':
+      return `${str(a.host)}: ${str(a.check)}${a.target ? ` ${str(a.target)}` : ''}`;
+    case 'remote_command':
+      return `${str(a.host)}: ${str(a.command)}`;
+    case 'git_status':
+    case 'git_branches':
+    case 'inspect_environment':
+      return '';
     case 'run_command':
       return Array.isArray(a.argv)
         ? (a.argv as unknown[]).map(str).join(' ')
@@ -138,13 +168,19 @@ function ToolRow({ item }: { item: ToolItem }) {
 /** A group of consecutive tool calls, shown as a compact timeline. */
 export function ToolActivity({ items }: { items: ToolItem[] }) {
   if (items.length === 0) return null;
+  const plans = items.flatMap((i) => (i.deploymentPlan ? [i.deploymentPlan] : []));
   return (
-    <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
-      <ul aria-label="Tool activity">
-        {items.map((item) => (
-          <ToolRow key={item.key} item={item} />
-        ))}
-      </ul>
-    </div>
+    <>
+      <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
+        <ul aria-label="Tool activity">
+          {items.map((item) => (
+            <ToolRow key={item.key} item={item} />
+          ))}
+        </ul>
+      </div>
+      {plans.map((p) => (
+        <DeploymentPlanCard key={p.id} plan={p} />
+      ))}
+    </>
   );
 }

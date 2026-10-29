@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { api, ApiError } from '../lib/api';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
+import { DevopsSettings } from './DevopsSettings';
 import { Dialog } from './ui/dialog';
 
 const CAP_TONE: Record<string, Tone> = {
@@ -389,6 +390,7 @@ export function SettingsDialog({
         <ErrorText error={capsError} />
       </Section>
 
+      <DevopsSettings />
       <Section
         title="Recent provider calls"
         aside={

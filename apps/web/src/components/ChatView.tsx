@@ -1,4 +1,11 @@
-import type { ApprovalDto, MessageDto, ProjectDto, RunDto, SessionDetailDto } from '@friday/shared';
+import type {
+  ApprovalDto,
+  DeploymentPlanDto,
+  MessageDto,
+  ProjectDto,
+  RunDto,
+  SessionDetailDto,
+} from '@friday/shared';
 import {
   AlertTriangle,
   ArrowUp,
@@ -34,7 +41,14 @@ interface Props {
   onOpenSettings: () => void;
   /** All approvals for the session, with live updates applied. */
   approvals: ApprovalDto[];
-  onDecide: (approval: ApprovalDto, decision: 'approve' | 'reject', note?: string) => Promise<void>;
+  onDecide: (
+    approval: ApprovalDto,
+    decision: 'approve' | 'reject',
+    note?: string,
+    confirmation?: string,
+  ) => Promise<void>;
+  /** Persisted and live deployment plans, matched to tool calls by id. */
+  deploymentPlans: DeploymentPlanDto[];
   onRollback: (runId: string) => Promise<void>;
 }
 
@@ -76,7 +90,11 @@ type Row =
   | { kind: 'record'; runId: string; approvals: ApprovalDto[] };
 
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
-function toRows(messages: MessageDto[], approvals: Map<string, ApprovalDto>): Row[] {
+function toRows(
+  messages: MessageDto[],
+  approvals: Map<string, ApprovalDto>,
+  plans: Map<string, DeploymentPlanDto>,
+): Row[] {
   const rows: Row[] = [];
   for (const m of messages) {
     if (m.role === 'user') rows.push({ kind: 'user', m });
@@ -93,6 +111,7 @@ function toRows(messages: MessageDto[], approvals: Map<string, ApprovalDto>): Ro
         output: m.content,
         truncated: m.tool?.truncated,
         approval: m.tool?.approvalId ? approvals.get(m.tool.approvalId) : undefined,
+        deploymentPlan: m.toolCallId ? plans.get(m.toolCallId) : undefined,
       };
       const last = rows.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -203,7 +222,15 @@ function RunProblem({
   );
 }
 
-function LiveOutput({ live, byCall }: { live: LiveRun; byCall: Map<string, ApprovalDto> }) {
+function LiveOutput({
+  live,
+  byCall,
+  plans,
+}: {
+  live: LiveRun;
+  byCall: Map<string, ApprovalDto>;
+  plans: Map<string, DeploymentPlanDto>;
+}) {
   const groups: Array<{ kind: 'text'; text: string } | { kind: 'tools'; items: ToolItem[] }> = [];
   for (const b of live.blocks) {
     if (b.kind === 'text') groups.push({ kind: 'text', text: b.text });
@@ -217,6 +244,7 @@ function LiveOutput({ live, byCall }: { live: LiveRun; byCall: Map<string, Appro
         durationMs: b.durationMs,
         terminal: b.output || undefined,
         approval: byCall.get(b.callId),
+        deploymentPlan: plans.get(b.callId),
       };
       const last = groups.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -286,7 +314,8 @@ export function ChatView(props: Props) {
   const messages = (detail?.messages ?? []).filter((m) => !(running && m.runId === live?.runId));
   const byId = new Map(approvals.map((a) => [a.id, a]));
   const byCall = new Map(approvals.map((a) => [a.toolCallId, a]));
-  const rows = toRows(messages, byId);
+  const plansByCall = new Map(props.deploymentPlans.map((p) => [p.toolCallId, p]));
+  const rows = toRows(messages, byId, plansByCall);
   const pending = approvals.filter((a) => a.status === 'pending');
   const latest = detail?.latestRun;
   const showProblem =
@@ -355,12 +384,12 @@ export function ChatView(props: Props) {
               <ToolActivity key={r.key} items={r.items} />
             ),
           )}
-          {running && <LiveOutput live={live} byCall={byCall} />}
+          {running && <LiveOutput live={live} byCall={byCall} plans={plansByCall} />}
           {pending.map((a) => (
             <ApprovalCard
               key={a.id}
               approval={a}
-              onDecide={(decision, note) => onDecide(a, decision, note)}
+              onDecide={(decision, note, confirmation) => onDecide(a, decision, note, confirmation)}
               onCancelRun={running ? onStop : undefined}
             />
           ))}

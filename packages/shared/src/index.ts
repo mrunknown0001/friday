@@ -186,7 +186,80 @@ export type ApprovalDetails =
       files: FileChangePreview[];
       /** True if the repository has hooks that git will run (e.g. pre-commit). */
       hooks: string[];
+    }
+  | {
+      kind: 'remote';
+      host: {
+        name: string;
+        hostname: string;
+        port: number;
+        username: string;
+        environment: HostEnvironment;
+      };
+      /** Exact command string executed by the remote user's shell. */
+      command: string;
+      /** For predefined diagnostics, the check name; null for free-form commands. */
+      check: string | null;
+      expectedImpact: string;
+      downtime: string;
+      rollback: string;
+      verification: string;
+      riskReasons: string[];
+      timeoutSeconds: number;
     };
+
+export type HostEnvironment = 'development' | 'staging' | 'production';
+
+export interface SshHostDto {
+  id: string;
+  name: string;
+  hostname: string;
+  port: number;
+  username: string;
+  /** Path to a private key file (its contents are never read by Friday), or null to use ssh-agent. */
+  identityFile: string | null;
+  environment: HostEnvironment;
+  /** SHA256 fingerprints trusted for this host. Empty means untrusted: connections are refused. */
+  trustedFingerprints: string[];
+  createdAt: string;
+}
+
+export interface LogSourceDto {
+  id: string;
+  label: string;
+  path: string;
+  createdAt: string;
+}
+
+export interface DeploymentStep {
+  title: string;
+  /** Exact command, if the step is a command. */
+  command: string | null;
+  /** "local", or the name of a configured SSH host. */
+  where: string;
+  risk: RiskLevel;
+  causesDowntime: boolean;
+  reversible: boolean;
+  rollback: string | null;
+}
+
+export interface DeploymentPlanDto {
+  id: string;
+  sessionId: string;
+  runId: string;
+  toolCallId: string;
+  title: string;
+  environment: HostEnvironment;
+  target: string;
+  summary: string;
+  preChecks: string[];
+  steps: DeploymentStep[];
+  verification: string[];
+  rollbackPlan: string;
+  dataLossRisk: string;
+  downtimeEstimate: string;
+  createdAt: string;
+}
 
 export interface ApprovalDto {
   id: string;
@@ -211,6 +284,11 @@ export interface ApprovalDto {
   createdAt: string;
   expiresAt: string;
   decidedAt: string | null;
+  /**
+   * When set, approving requires typing this exact text (e.g. the production host name).
+   * Enforced by the server, not just the UI.
+   */
+  confirmationRequired: string | null;
 }
 
 export interface FileChangeDto {
@@ -344,6 +422,7 @@ export interface SessionDetailDto extends SessionSummaryDto {
   approvals: ApprovalDto[];
   /** Every run in the session, oldest first (for per-run reports). */
   runs: RunDto[];
+  deploymentPlans: DeploymentPlanDto[];
 }
 
 export type RunPhase =
@@ -374,6 +453,7 @@ export type RunEvent =
   | { seq: number; type: 'approval_requested'; approval: ApprovalDto }
   | { seq: number; type: 'approval_resolved'; approval: ApprovalDto }
   | { seq: number; type: 'command_output'; callId: string; chunk: string }
+  | { seq: number; type: 'deployment_plan'; plan: DeploymentPlanDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }
   | {
       seq: number;

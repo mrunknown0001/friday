@@ -217,6 +217,47 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE runs ADD COLUMN report TEXT;
     `,
   },
+  {
+    version: 5,
+    name: 'devops',
+    up: `
+      -- SSH targets configured by the user. Only paths to key files are stored, never key material
+      -- or passwords. A host is unusable until the user trusts a host-key fingerprint.
+      CREATE TABLE ssh_hosts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        hostname TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        identity_file TEXT,
+        environment TEXT NOT NULL CHECK (environment IN ('development','staging','production')),
+        trusted_fingerprints TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL
+      );
+
+      -- Log files outside projects that the user authorized for read-only access.
+      CREATE TABLE log_sources (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL UNIQUE,
+        path TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE deployment_plans (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        plan TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX deployment_plans_session ON deployment_plans(session_id, created_at);
+
+      -- Text the user must type to approve (production safeguard).
+      ALTER TABLE approvals ADD COLUMN confirmation_required TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: Database.Database, migrations: Migration[] = MIGRATIONS): number[] {

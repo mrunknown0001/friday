@@ -1,5 +1,6 @@
 import type {
   ApprovalDto,
+  DeploymentPlanDto,
   PlanStep,
   RunDto,
   RunEvent,
@@ -31,6 +32,8 @@ export interface LiveRun {
   plan: PlanStep[] | null;
   /** Approvals requested during this run, latest state by id. */
   approvals: Record<string, ApprovalDto>;
+  /** Deployment plans recorded during this run. */
+  deploymentPlans: DeploymentPlanDto[];
   finished: RunDto | null;
   connectionLost: boolean;
 }
@@ -45,6 +48,7 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'approval_requested',
   'approval_resolved',
   'command_output',
+  'deployment_plan',
   'message_saved',
   'run_finished',
 ];
@@ -56,6 +60,7 @@ export const initial = (runId: string): LiveRun => ({
   phaseDetail: null,
   plan: null,
   approvals: {},
+  deploymentPlans: [],
   finished: null,
   connectionLost: false,
 });
@@ -94,6 +99,12 @@ export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
           ? { ...b, output: b.output + event.chunk }
           : b,
       );
+      break;
+    case 'deployment_plan':
+      next.deploymentPlans = [
+        ...prev.deploymentPlans.filter((p) => p.id !== event.plan.id),
+        event.plan,
+      ];
       break;
     case 'approval_requested':
     case 'approval_resolved':

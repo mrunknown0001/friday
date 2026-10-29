@@ -151,11 +151,25 @@ A _task_ is a run plus the unfinished runs (interrupted, failed, blocked, cancel
 and rollback operate on the task. Checkpoints are written after every executed approval, not only at the end of a
 model turn, so a crash between two actions in one turn loses nothing.
 
+## DevOps agent (Phase 5)
+
+| Module                   | Responsibility                                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tools/devopsTools.ts`   | `inspect_environment`, `search_logs`, `inspect_docker`, `validate_config`, `prepare_deployment_plan`, `remote_diagnose`, `remote_command`. |
+| `ssh/ssh.ts`             | ssh option set, host-key scanning and trust, per-host known_hosts, remote execution via `runProcess`.                                      |
+| `repositories/devops.ts` | SSH hosts (with trusted key lines), authorized log sources, deployment plans.                                                              |
+| `http/routes/devops.ts`  | The only way to add hosts, trust keys, test connections, and authorize log sources.                                                        |
+| `workspace/jsonCheck.ts` | JSON syntax errors with line/column (engine messages vary).                                                                                |
+
+Production safeguards live in three places: `remote_command.prepare` (plan required, `deployment` category, risk
+floor, `confirmationRequired`, short TTL), `ApprovalService.decide` (rejects approval without the exact typed text),
+and the approval card (Approve disabled until it matches). Tool schemas are counted against the context budget.
+
 ## Web (`apps/web/src`)
 
 - `lib/api.ts` is a typed fetch client. It adds the `x-friday-client` header on mutating requests.
 - `lib/useRunStream.ts` wraps `EventSource` with automatic reconnect and de-duplication by `seq`.
-- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, RunSummary (verification report and rollback), AddProjectDialog, SettingsDialog, and
+- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, RunSummary (verification report and rollback), DeploymentPlanCard, DevopsSettings (SSH hosts, log sources), AddProjectDialog, SettingsDialog, and
   small shadcn-style primitives (`ui/`) built on native elements such as `<dialog>`.
 - Markdown is rendered with react-markdown, GFM, and highlight.js. Raw HTML in model output is not rendered.
 

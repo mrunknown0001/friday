@@ -41,7 +41,13 @@ import type { Proposal, ToolContext } from '../tools/types.js';
 import { detectProject } from '../workspace/detect.js';
 import type { ToolEnvironment } from '../workspace/environment.js';
 import { assertRootAvailable, WorkspaceError } from '../workspace/paths.js';
-import { ContextOverflowError, fitHistory, repairToolPairs, summarizeHistory } from './context.js';
+import {
+  ContextOverflowError,
+  estimateTokens,
+  fitHistory,
+  repairToolPairs,
+  summarizeHistory,
+} from './context.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import {
   buildCheckpoint,
@@ -60,6 +66,7 @@ export interface RunManagerDeps {
   approvals: ApprovalService;
   approvalRepo: ApprovalRepo;
   fileChanges: FileChangeRepo;
+  devops?: ToolContext['devops'];
   capabilities: CapabilityRepo;
   audit: AuditRepo;
   redactor: Redactor;
@@ -290,11 +297,16 @@ export class RunManager {
     run: ActiveRun,
     model: string,
     systemPrompt: string,
+    tools: ToolDefinition[] = [],
   ): Promise<ChatMessage[]> {
     const { sessions, messages, capabilities } = this.deps;
     const maxOut = this.deps.maxOutputTokens ?? 8_192;
+    // Tool schemas are sent with every request and count against the window too.
+    const toolTokens = tools.length ? estimateTokens(JSON.stringify(tools)) : 0;
     const contextWindow =
-      capabilities.get(model).contextWindow - (this.deps.provider.promptOverheadTokens ?? 0);
+      capabilities.get(model).contextWindow -
+      (this.deps.provider.promptOverheadTokens ?? 0) -
+      toolTokens;
 
     const plan = () => {
       const session = sessions.get(run.sessionId)!;
@@ -536,7 +548,7 @@ export class RunManager {
         }
         iterations++;
         run.iteration = iterations;
-        const context = await this.buildContext(run, model, systemPrompt);
+        const context = await this.buildContext(run, model, systemPrompt, tools);
         this.aborted(run);
         this.phase(run, iterations === 1 ? 'waiting_for_model' : 'reading_results');
 
@@ -682,6 +694,8 @@ export class RunManager {
   private toolContext(run: ActiveRun, project: ProjectRecord | null, callId: string): ToolContext {
     let streamed = 0;
     return {
+      callId,
+      ...(this.deps.devops ? { devops: this.deps.devops } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,
@@ -693,6 +707,7 @@ export class RunManager {
         this.deps.sessions.setPlan(run.sessionId, plan);
         this.emit(run, { type: 'plan_updated', plan });
       },
+      emitDeploymentPlan: (plan) => this.emit(run, { type: 'deployment_plan', plan }),
       emitOutput: (chunk: string) => {
         // Live terminal view only; the persisted result has its own limits.
         if (streamed > MAX_STREAMED_OUTPUT) return;
@@ -771,6 +786,10 @@ export class RunManager {
       projectRoot: project?.rootPath ?? null,
       args,
       fingerprint: proposal.fingerprint,
+      ...(proposal.confirmationRequired
+        ? { confirmationRequired: proposal.confirmationRequired }
+        : {}),
+      ...(proposal.approvalTtlMs ? { ttlMs: proposal.approvalTtlMs } : {}),
     });
     this.deps.runs.setActiveStatus(run.id, 'awaiting_approval');
     // Start waiting before announcing the request, so a decision can never arrive first.

@@ -2,6 +2,15 @@ import type { ToolCallStatus } from '@friday/shared';
 import type { ToolCall, ToolDefinition } from '../providers/types.js';
 import { WorkspaceError } from '../workspace/paths.js';
 import { runCommand } from './commandTool.js';
+import {
+  inspectDocker,
+  inspectEnvironment,
+  prepareDeploymentPlan,
+  remoteCommand,
+  remoteDiagnose,
+  searchLogs,
+  validateConfig,
+} from './devopsTools.js';
 import { deleteFile, editFile, editFiles, moveFile, writeFile } from './fileTools.js';
 import {
   gitBranches,
@@ -74,6 +83,13 @@ export const DEFAULT_TOOLS = [
   gitBranches,
   gitCommit,
   gitCreateBranch,
+  inspectEnvironment,
+  searchLogs,
+  inspectDocker,
+  validateConfig,
+  prepareDeploymentPlan,
+  remoteDiagnose,
+  remoteCommand,
 ] as unknown as Array<ToolSpec<never>>;
 
 export interface ToolExecution {

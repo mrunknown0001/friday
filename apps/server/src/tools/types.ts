@@ -1,7 +1,15 @@
-import type { ApprovalDetails, PermissionCategory, PlanStep, RiskLevel } from '@friday/shared';
+import type {
+  ApprovalDetails,
+  DeploymentPlanDto,
+  PermissionCategory,
+  PlanStep,
+  RiskLevel,
+} from '@friday/shared';
 import { z } from 'zod';
 import type { ToolDefinition } from '../providers/types.js';
+import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
 import type { ProjectRecord } from '../repositories/projects.js';
+import type { SshService } from '../ssh/ssh.js';
 import type { Redactor } from '../security/redact.js';
 import type { ToolEnvironment } from '../workspace/environment.js';
 
@@ -10,6 +18,8 @@ export interface ToolContext {
   project: ProjectRecord | null;
   sessionId: string;
   runId: string;
+  /** Id of the tool call being executed. */
+  callId?: string;
   signal: AbortSignal;
   redactor: Redactor;
   env: ToolEnvironment;
@@ -17,8 +27,19 @@ export interface ToolContext {
   setPlan: (plan: PlanStep[]) => void;
   /** Stream live output (e.g. a running command) to the UI. */
   emitOutput?: (chunk: string) => void;
+  /** Show a recorded deployment plan to the user immediately. */
+  emitDeploymentPlan?: (plan: DeploymentPlanDto) => void;
+  /** DevOps configuration (SSH hosts, authorized log sources, deployment plans). */
+  devops?: DevopsContext;
   /** Record an applied file change for the change list and undo. */
   recordFileChange?: (change: AppliedFileChange) => void;
+}
+
+export interface DevopsContext {
+  hosts: SshHostRepo;
+  ssh: SshService;
+  logSources: LogSourceRepo;
+  plans: DeploymentPlanRepo;
 }
 
 export interface AppliedFileChange {
@@ -44,6 +65,10 @@ export interface Proposal {
   fingerprint: string;
   /** Per-call execution timeout override (commands set their own). */
   timeoutMs?: number;
+  /** Text the user must type to approve (production safeguard). Enforced server-side. */
+  confirmationRequired?: string;
+  /** Shorter approval validity for sensitive actions. */
+  approvalTtlMs?: number;
   apply: (ctx: ToolContext) => Promise<ToolOutput>;
 }
 

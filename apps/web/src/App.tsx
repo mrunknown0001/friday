@@ -151,13 +151,19 @@ export function App() {
     };
   }, [activeId, appliedCount]);
 
-  const decide = async (a: ApprovalDto, decision: 'approve' | 'reject', note?: string) => {
+  const decide = async (
+    a: ApprovalDto,
+    decision: 'approve' | 'reject',
+    note?: string,
+    confirmation?: string,
+  ) => {
     try {
       await api.decideApproval(a.id, {
         decision,
         actionHash: a.actionHash,
         sessionId: a.sessionId,
         ...(note ? { note } : {}),
+        ...(confirmation ? { confirmation } : {}),
       });
     } catch (e) {
       report(e);
@@ -312,6 +318,12 @@ export function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           approvals={approvals}
           onDecide={decide}
+          deploymentPlans={[
+            ...(shownDetail?.deploymentPlans ?? []),
+            ...(live?.deploymentPlans ?? []).filter(
+              (p) => !shownDetail?.deploymentPlans.some((q) => q.id === p.id),
+            ),
+          ]}
           onRollback={rollback}
         />
         {error && (

@@ -28,6 +28,7 @@ interface ApprovalRow {
   created_at: string;
   expires_at: string;
   decided_at: string | null;
+  confirmation_required: string | null;
 }
 
 const toDto = (r: ApprovalRow): ApprovalDto => ({
@@ -50,12 +51,13 @@ const toDto = (r: ApprovalRow): ApprovalDto => ({
   createdAt: r.created_at,
   expiresAt: r.expires_at,
   decidedAt: r.decided_at,
+  confirmationRequired: r.confirmation_required,
 });
 
 export type NewApproval = Omit<
   ApprovalDto,
-  'status' | 'decisionNote' | 'resultSummary' | 'createdAt' | 'decidedAt'
->;
+  'status' | 'decisionNote' | 'resultSummary' | 'createdAt' | 'decidedAt' | 'confirmationRequired'
+> & { confirmationRequired?: string | null };
 
 export class ApprovalRepo {
   constructor(private readonly db: Db) {}
@@ -64,8 +66,8 @@ export class ApprovalRepo {
     this.db
       .prepare(
         `INSERT INTO approvals (id, session_id, run_id, project_id, tool_call_id, tool_name, category, risk,
-           title, summary, reason, details, action_hash, status, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+           title, summary, reason, details, action_hash, status, created_at, expires_at, confirmation_required)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       )
       .run(
         a.id,
@@ -83,6 +85,7 @@ export class ApprovalRepo {
         a.actionHash,
         new Date().toISOString(),
         a.expiresAt,
+        a.confirmationRequired ?? null,
       );
     return this.get(a.id)!;
   }
