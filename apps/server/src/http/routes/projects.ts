@@ -4,6 +4,7 @@ import type {
   FileViewDto,
   ProjectDto,
   ProjectOverviewDto,
+  SandboxStatusDto,
   SystemInfoDto,
   TreeEntryDto,
 } from '@friday/shared';
@@ -11,6 +12,13 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ProjectRecord } from '../../repositories/projects.js';
 import type { Services } from '../../services.js';
+import {
+  dockerVersion,
+  IMAGE_PATTERN,
+  imagePresent,
+  pullImage,
+  suggestImage,
+} from '../../sandbox/docker.js';
 import { detectProject } from '../../workspace/detect.js';
 import { languageFor, loadFile } from '../../workspace/files.js';
 import {
@@ -107,6 +115,62 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     requireProject(id);
     s.projects.rename(id, body.name);
     return toDto(s.projects.get(id)!);
+  });
+
+  // ---- command sandbox (per project) ----
+  const image = z.string().trim().regex(IMAGE_PATTERN, 'not a valid Docker image name');
+
+  const sandboxStatus = async (p: ProjectRecord): Promise<SandboxStatusDto> => {
+    // Re-checked on demand: Docker may have been started after Friday.
+    s.toolEnv.docker = await dockerVersion();
+    const detected = await detectProject(p.rootPath).catch(() => null);
+    const suggestedImage = suggestImage(detected?.stack ?? []);
+    const wanted = p.sandbox?.image ?? suggestedImage;
+    return {
+      docker: s.toolEnv.docker,
+      suggestedImage,
+      imagePresent: s.toolEnv.docker ? await imagePresent(wanted) : null,
+    };
+  };
+
+  app.get('/api/projects/:id/sandbox', async (req) => {
+    const { id } = parseInput(idParams, req.params);
+    return sandboxStatus(requireProject(id));
+  });
+
+  app.put('/api/projects/:id/sandbox', async (req) => {
+    const { id } = parseInput(idParams, req.params);
+    const body = parseInput(
+      z.object({ enabled: z.boolean(), image, network: z.enum(['none', 'bridge']) }),
+      req.body,
+    );
+    requireProject(id);
+    s.projects.setSandbox(id, body);
+    s.audit.record({
+      actor: 'user',
+      action: 'project_sandbox_changed',
+      details: { projectId: id, ...body },
+    });
+    return toDto(s.projects.get(id)!);
+  });
+
+  /** Download an image: only ever on this explicit user action, never by the agent. */
+  app.post('/api/projects/:id/sandbox/pull', async (req) => {
+    const { id } = parseInput(idParams, req.params);
+    const body = parseInput(z.object({ image }), req.body);
+    const project = requireProject(id);
+    if (!(await dockerVersion()))
+      throw new HttpError(409, 'docker_unavailable', 'Docker is not reachable.');
+    await guarded(() => pullImage(body.image));
+    s.audit.record({
+      actor: 'user',
+      action: 'sandbox_image_pulled',
+      details: { projectId: id, image: body.image },
+    });
+    return sandboxStatus({
+      ...project,
+      sandbox: { enabled: false, network: 'none', image: body.image },
+    });
   });
 
   app.delete('/api/projects/:id', async (req, reply) => {

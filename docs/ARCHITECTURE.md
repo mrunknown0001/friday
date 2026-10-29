@@ -151,6 +151,16 @@ the UI.
 the user) and `run_finished` for every conversation; the web app turns them into system notifications
 (`lib/notifications.ts`, `lib/useAppNotices.ts`).
 
+### Command sandbox (`sandbox/docker.ts`)
+
+When a project's `sandbox` setting is enabled, `run_command.prepare` checks Docker and the image (refusing otherwise),
+scans for credentials and records `details.sandbox` for the card; `apply` scans again and runs
+`docker run` built by `dockerRunArgs` (a pure function, tested argument by argument) through the same `runProcess`
+used for host commands, then removes the container on timeout or cancel. Output paths under `/workspace` are mapped back
+to project paths before error locations are extracted. Startup detects Docker (`ToolEnvironment.docker`) and removes
+containers labelled with this instance's id (a hash of the data folder). Routes: `GET/PUT /api/projects/:id/sandbox`
+and `POST /api/projects/:id/sandbox/pull` (user action).
+
 ## Coding agent (Phase 4)
 
 | Module                  | Responsibility                                                                                                                                        |

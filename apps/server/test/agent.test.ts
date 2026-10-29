@@ -24,7 +24,7 @@ const env = await detectToolEnvironment();
 function ctx(root: string | null, over: Partial<ToolContext> = {}): ToolContext {
   return {
     project: root
-      ? { id: 'p1', name: 'proj', rootPath: root, createdAt: '', lastOpenedAt: null }
+      ? { id: 'p1', name: 'proj', rootPath: root, createdAt: '', lastOpenedAt: null, sandbox: null }
       : null,
     sessionId: 's1',
     runId: 'r1',

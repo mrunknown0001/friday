@@ -121,10 +121,23 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Losing review or undo                        | Covered actions are still re-checked before running (stale if changed), recorded as approvals with `granted_by`, shown with their diff, undoable, in the report, and audited (`approval_approved_by_task_permission`).             |
 | Notifications leaking content                | Notices carry ids, status and the approval title only; no diffs, command output or model text. The `/api/events` stream is behind the same local-only guards and, in the desktop app, the launch token.                            |
 
+## Command sandbox
+
+| Threat                                                    | Mitigation                                                                                                                                                                                                              |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Untrusted project code (tests, scripts) reaching the host | Optional per-project Docker container: only the project folder is mounted; no Docker socket; capabilities dropped, `no-new-privileges`, read-only root, private `/tmp`, CPU/memory/PID limits, `--rm`.                  |
+| Secrets in the project read by that code                  | Credential files and folders (found by a scan that ignores `.gitignore`) are covered by an empty file or an empty tmpfs; no host environment variables are passed; no network unless the user allows it.                |
+| Persistence through git hooks                             | `.git` is mounted read-only inside the container.                                                                                                                                                                       |
+| The model escaping the sandbox                            | Where commands run is a project setting only the user changes; it is part of the approval fingerprint, so changing it after review makes the approval stale. No fallback to the host if Docker or the image is missing. |
+| Unwanted downloads                                        | Images are only pulled on the user's click in Project settings; image names are validated (no options, lowercase reference).                                                                                            |
+| Leftover or foreign containers                            | Containers carry a per-instance label; timeouts and cancels remove the container; startup removes only this instance's leftovers.                                                                                       |
+
 ## Known limitations
 
-- `run_command` is **not sandboxed**: an approved command runs as the current user with full filesystem and network
-  access. The approval card says so. Container isolation for untrusted code is still to come.
+- Without the per-project **command sandbox**, an approved `run_command` runs as the current user with full
+  filesystem and network access (the card says so). With it, the command can still modify the project folder (it is
+  mounted writable), and isolation is Docker's: a container escape or a vulnerable Docker daemon is outside Friday's
+  control. Very large projects (over 20,000 entries scanned) may have credential files the scan did not reach.
 - Commit hooks are the repository's own code and run during an approved `git_commit` (the approval card lists them).
 - `remote_command` runs through the remote user's shell with that user's privileges; Friday cannot sandbox it. Remote
   processes may keep running if ssh is killed on timeout or cancel (the result says so).

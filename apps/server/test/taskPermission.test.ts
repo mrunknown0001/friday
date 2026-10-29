@@ -58,6 +58,7 @@ const commandProposal = (
     env: [],
     network: over.network ?? false,
     riskReasons: [],
+    sandbox: null,
   },
   fingerprint: 'f',
   apply: async () => ({ content: '', summary: '' }),

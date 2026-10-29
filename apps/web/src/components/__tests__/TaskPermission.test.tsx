@@ -109,6 +109,7 @@ describe('allow similar actions while approving', () => {
         env: [],
         network: false,
         riskReasons: [],
+        sandbox: null,
       },
     };
     for (const a of [del, shell, { ...edit, risk: 'high' as const }]) {

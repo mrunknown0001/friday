@@ -44,7 +44,14 @@ function makeRepo(files: Record<string, string>): string {
 
 function ctx(root: string): ToolContext {
   return {
-    project: { id: 'p', name: 'p', rootPath: root, createdAt: '', lastOpenedAt: null },
+    project: {
+      id: 'p',
+      name: 'p',
+      rootPath: root,
+      createdAt: '',
+      lastOpenedAt: null,
+      sandbox: null,
+    },
     sessionId: 's',
     runId: 'r',
     signal: new AbortController().signal,

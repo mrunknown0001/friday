@@ -3,6 +3,14 @@ import { z } from 'zod';
 import { extractLocations } from '../commands/locations.js';
 import { assessCommand } from '../commands/risk.js';
 import { childEnv, runProcess } from '../commands/runner.js';
+import {
+  findCredentials,
+  hostPaths,
+  imagePresent,
+  runInSandbox,
+  sandboxName,
+  WORKSPACE,
+} from '../sandbox/docker.js';
 import { assertRootAvailable, resolveInside, WorkspaceError } from '../workspace/paths.js';
 import { defineTool, type Proposal } from './types.js';
 
@@ -28,7 +36,7 @@ function clipOutput(output: string, max: number): { text: string; clipped: boole
 export const runCommand = defineTool({
   name: 'run_command',
   description:
-    "Run a command in the project (tests, builds, linters, diagnostics). Prefer `argv` (no shell). Use `shell_command` only when you need pipes, redirection or chaining. Every command requires the user's approval; they see the exact command, working directory and risk. Non-interactive: stdin is closed, CI=1 is set, and secrets are not passed in the environment.",
+    "Run a command in the project (tests, builds, linters, diagnostics). Prefer `argv` (no shell). Use `shell_command` only when you need pipes, redirection or chaining. Every command requires the user's approval; they see the exact command, working directory and risk. Non-interactive: stdin is closed, CI=1 is set, and secrets are not passed in the environment. If the user enabled the project's command sandbox, it runs in a Docker container that sees only the project folder (credential files hidden, .git read-only, usually no network); the result says so. You cannot choose where it runs.",
   category: 'shell',
   risk: 'medium',
   requiresProject: true,
@@ -70,11 +78,41 @@ export const runCommand = defineTool({
     const shellCommand = args.shell_command ?? null;
     const shown = argv ? displayArgv(argv) : shellCommand!;
     const assessment = assessCommand(argv, shellCommand);
-    const env = Object.keys(childEnv()).sort();
+
+    // The project's sandbox setting decides where the command runs; the model cannot choose.
+    const sandbox = ctx.project.sandbox?.enabled ? ctx.project.sandbox : null;
+    let gitDir = false;
+    let hidden = 0;
+    if (sandbox) {
+      if (!ctx.env.docker)
+        throw new WorkspaceError(
+          'unsupported',
+          'This project runs commands in a container, but Docker is not reachable. Ask the user to start Docker or turn the sandbox off in Project settings.',
+        );
+      if (!(await imagePresent(sandbox.image)))
+        throw new WorkspaceError(
+          'unsupported',
+          `This project runs commands in the container image "${sandbox.image}", which is not available locally. Ask the user to pull it in Project settings › Command sandbox; Friday never downloads images by itself.`,
+        );
+      gitDir = await fs
+        .lstat(`${root}/.git`)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
+      const masks = await findCredentials(root);
+      hidden = masks.files.length + masks.dirs.length;
+      if (assessment.network && sandbox.network === 'none')
+        assessment.reasons.push('The sandbox has no network, so this command will probably fail.');
+    }
+    const env = sandbox
+      ? ['CI', 'FORCE_COLOR', 'HOME', 'LANG', 'NO_COLOR', 'TERM']
+      : Object.keys(childEnv()).sort();
+    const where = sandbox
+      ? `in a ${sandbox.network === 'none' ? 'network-less ' : ''}container (${sandbox.image}) with only the project folder mounted`
+      : 'on this machine, as your user';
 
     return {
       title: `Run: ${shown.length > 80 ? `${shown.slice(0, 80)}…` : shown}`,
-      summary: `Runs ${argv ? 'a program directly (no shell)' : 'a shell script with /bin/sh'} in ${cwd.rel === '.' ? 'the project root' : cwd.rel} on this machine, as your user, for up to ${args.timeout_seconds}s.`,
+      summary: `Runs ${argv ? 'a program directly (no shell)' : 'a shell script with /bin/sh'} in ${cwd.rel === '.' ? 'the project root' : cwd.rel} ${where}, for up to ${args.timeout_seconds}s.`,
       category: 'shell',
       risk: assessment.risk,
       details: {
@@ -88,18 +126,43 @@ export const runCommand = defineTool({
         env,
         network: assessment.network,
         riskReasons: assessment.reasons,
+        sandbox: sandbox
+          ? {
+              image: sandbox.image,
+              network: sandbox.network,
+              hiddenCredentials: hidden,
+              gitReadOnly: gitDir,
+            }
+          : null,
       },
-      fingerprint: `cwd:${cwd.abs}`,
+      // Changing the sandbox setting after review makes the approval stale.
+      fingerprint: `cwd:${cwd.abs}|sandbox:${sandbox ? JSON.stringify(sandbox) : 'off'}`,
       timeoutMs: (args.timeout_seconds + 5) * 1000,
       async apply(execCtx) {
-        const result = await runProcess({
-          argv,
-          shellCommand,
-          cwd: cwd.abs,
+        const run = {
           timeoutMs: args.timeout_seconds * 1000,
           signal: execCtx.signal,
           ...(execCtx.emitOutput ? { onOutput: execCtx.emitOutput } : {}),
-        });
+        };
+        const result = sandbox
+          ? await runInSandbox(
+              {
+                root,
+                cwdRel: cwd.rel,
+                settings: sandbox,
+                argv,
+                shellCommand,
+                // Scanned again now: credential files created since review are hidden too.
+                masks: await findCredentials(root),
+                gitDir,
+                instance: execCtx.env.sandboxInstance,
+                name: sandboxName(),
+                uid: process.getuid?.() ?? 1000,
+                gid: process.getgid?.() ?? 1000,
+              },
+              run,
+            )
+          : await runProcess({ argv, shellCommand, cwd: cwd.abs, ...run });
         if (result.spawnError) {
           throw new WorkspaceError('unsupported', result.spawnError);
         }
@@ -110,13 +173,20 @@ export const runCommand = defineTool({
             : result.signal
               ? `killed by ${result.signal}`
               : `exit code ${result.exitCode}`;
-        const { text, clipped } = clipOutput(result.output, execCtx.maxOutputChars - 400);
+        // Container paths (/workspace/...) are shown as the project paths they map to.
+        const output = sandbox ? hostPaths(result.output, root) : result.output;
+        const { text, clipped } = clipOutput(output, execCtx.maxOutputChars - 400);
         const failed =
           result.timedOut || result.cancelled || result.signal !== null || result.exitCode !== 0;
-        const locations = failed ? extractLocations(result.output, root, cwd.abs) : [];
+        const locations = failed ? extractLocations(output, root, cwd.abs) : [];
         const content = [
           `$ ${shown}`,
           `cwd: ${cwd.rel}`,
+          ...(sandbox
+            ? [
+                `sandbox: ${sandbox.image}, network ${sandbox.network}, project at ${WORKSPACE} (paths below are shown as project paths)`,
+              ]
+            : []),
           `${status} in ${(result.durationMs / 1000).toFixed(1)}s`,
           '--- output ---',
           text || '(no output)',

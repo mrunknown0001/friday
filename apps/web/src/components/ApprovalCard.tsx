@@ -197,13 +197,26 @@ function Details({ approval }: { approval: ApprovalDto }) {
             ? 'Yes: interpreted by /bin/sh'
             : 'No: program run directly with these arguments'}
         </dd>
-        <dt className="text-zinc-500">Host</dt>
-        <dd className="text-zinc-300">This machine, as your user (not sandboxed)</dd>
+        <dt className="text-zinc-500">Runs</dt>
+        {d.sandbox ? (
+          <dd className="text-emerald-300">
+            In a container: <code className="font-mono">{d.sandbox.image}</code>,{' '}
+            {d.sandbox.network === 'none' ? 'no network' : 'outbound network allowed'}, only the
+            project folder mounted (writable)
+            {d.sandbox.gitReadOnly ? ', .git read-only' : ''}
+            {d.sandbox.hiddenCredentials
+              ? `, ${d.sandbox.hiddenCredentials} credential file${d.sandbox.hiddenCredentials === 1 ? '' : 's'} hidden`
+              : ''}
+          </dd>
+        ) : (
+          <dd className="text-zinc-300">On this machine, as your user (not sandboxed)</dd>
+        )}
         <dt className="text-zinc-500">Timeout</dt>
         <dd className="text-zinc-300">{d.timeoutSeconds}s</dd>
         <dt className="text-zinc-500">Network</dt>
         <dd className={d.network ? 'text-amber-300' : 'text-zinc-300'}>
           {d.network ? 'Likely' : 'Not expected'}
+          {d.sandbox?.network === 'none' ? ' (the container has none)' : ''}
         </dd>
         <dt className="text-zinc-500">Environment</dt>
         <dd className="font-mono text-zinc-400">{d.env.join(' ')}</dd>

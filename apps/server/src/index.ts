@@ -5,6 +5,7 @@ import { buildApp } from './app.js';
 import { ConfigError, loadConfig, resolveEnvFile } from './config.js';
 import { openDatabase } from './db/database.js';
 import { acquireDataDirLock } from './db/lock.js';
+import { cleanupSandboxes, instanceLabel } from './sandbox/docker.js';
 import { createServices } from './services.js';
 import { detectToolEnvironment } from './workspace/environment.js';
 
@@ -21,7 +22,9 @@ async function main() {
   const releaseLock = acquireDataDirLock(config.dataDir);
   process.on('exit', releaseLock);
   const db = openDatabase(path.join(config.dataDir, 'friday.db'));
-  const toolEnv = await detectToolEnvironment();
+  const toolEnv = await detectToolEnvironment(instanceLabel(config.dataDir));
+  // Containers left by a crash of this instance (labelled with its id; nobody else's).
+  const leftoverSandboxes = toolEnv.docker ? await cleanupSandboxes(toolEnv.sandboxInstance) : 0;
   const services = createServices(config, db, { toolEnv });
 
   const interrupted = services.runs.markInterrupted();
@@ -79,6 +82,8 @@ async function main() {
       desktop: config.server.launchToken !== null,
       interruptedRuns: interrupted,
       ripgrep: toolEnv.ripgrepVersion ?? 'not found (literal search fallback)',
+      docker: toolEnv.docker ?? 'not reachable (command sandbox unavailable)',
+      leftoverSandboxes,
     },
     'Friday server ready',
   );
