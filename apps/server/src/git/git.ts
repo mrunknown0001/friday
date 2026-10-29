@@ -2,13 +2,14 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { childEnv } from '../commands/runner.js';
-import { isSecretPath, WorkspaceError } from '../workspace/paths.js';
+import { isGitInternal, isSecretPath, WorkspaceError } from '../workspace/paths.js';
 
 /**
  * Settings applied to every git invocation. A repository's own config is untrusted: options such
- * as core.fsmonitor, diff/textconv drivers, and pagers can make even read-only commands execute
- * programs chosen by whoever wrote the repo. These overrides (plus --no-ext-diff/--no-textconv on
- * diff-producing commands) keep inspection from running repository-defined programs.
+ * as core.fsmonitor, filter and diff drivers, and pagers can make even read-only commands execute
+ * programs chosen by whoever wrote the repo. These overrides, the per-repository ones from
+ * neutralizeRepoPrograms, and --no-ext-diff/--no-textconv on diff-producing commands keep git from
+ * running repository-defined programs.
  */
 const SAFE_CONFIG = [
   '-c',
@@ -35,12 +36,44 @@ export interface GitResult {
 
 const MAX_BUFFER = 4 * 1024 * 1024;
 
-export function runGit(
+/**
+ * Repository-local settings that name a program git would run: content filters run even for
+ * `git status` and `git diff`, the others during commits or other operations.
+ */
+const PROGRAM_KEYS =
+  /^(filter\..+\.(clean|smudge|process)|diff\..+\.(command|textconv)|merge\..+\.driver|gpg(\..+)?\.program|core\.(gitproxy|askpass|editor|sshcommand|fsmonitor)|sequence\.editor|uploadpack\.packobjectshook)$/i;
+
+/**
+ * Overrides that blank out every program-running setting found in the repository's own config
+ * (.git/config, its includes, and worktree config). User-level and system config are trusted and
+ * left alone, so e.g. a globally installed git-lfs filter still works.
+ */
+async function neutralizeRepoPrograms(cwd: string): Promise<string[]> {
+  const keys = new Set<string>();
+  for (const scope of ['--local', '--worktree']) {
+    const out = await new Promise<string>((resolve) =>
+      execFile(
+        'git',
+        ['config', scope, '--includes', '--null', '--name-only', '--list'],
+        { cwd, env: { ...childEnv(), LC_ALL: 'C' }, timeout: 10_000 },
+        (err, stdout) => resolve(err ? '' : stdout),
+      ),
+    );
+    for (const key of out.split('\0')) if (PROGRAM_KEYS.test(key)) keys.add(key);
+  }
+  return [...keys].flatMap((k) => ['-c', `${k}=`]);
+}
+
+export async function runGit(
   cwd: string,
   args: string[],
   opts: { timeoutMs?: number; signal?: AbortSignal; allowHooks?: boolean } = {},
 ): Promise<GitResult> {
-  const config = opts.allowHooks ? SAFE_CONFIG : [...SAFE_CONFIG, '-c', 'core.hooksPath=/dev/null'];
+  const config = [
+    ...SAFE_CONFIG,
+    ...(opts.allowHooks ? [] : ['-c', 'core.hooksPath=/dev/null']),
+    ...(await neutralizeRepoPrograms(cwd)),
+  ];
   return new Promise((resolve, reject) => {
     execFile(
       'git',
@@ -104,20 +137,66 @@ export async function assertRepoRoot(root: string): Promise<void> {
   }
 }
 
-/** Refs and revisions from the model: no option injection, no shell metacharacters. */
-export const REF_PATTERN = /^(?!-)[A-Za-z0-9._/@{}~^:-]{1,200}$/;
+/**
+ * Refs and revisions from the model: no option injection, no shell metacharacters, and no ":",
+ * which would address file contents directly ("HEAD:.env", ":.env" for the staged copy) and bypass
+ * the credential-file filter.
+ */
+export const REF_PATTERN = /^(?!-)[A-Za-z0-9._/@{}~^-]{1,200}$/;
+
+/** Decode a path as git prints it: plain, or C-quoted with octal escapes for special bytes. */
+function unquoteGitPath(raw: string): string {
+  if (!raw.startsWith('"')) return raw;
+  const body = raw.slice(1, raw.endsWith('"') ? -1 : undefined);
+  const bytes: number[] = [];
+  const simple: Record<string, number> = { n: 10, t: 9, r: 13, b: 8, f: 12, a: 7, v: 11 };
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i]!;
+    if (c !== '\\') {
+      bytes.push(...Buffer.from(c));
+      continue;
+    }
+    const next = body[++i] ?? '';
+    if (/[0-7]/.test(next)) {
+      bytes.push(Number.parseInt(body.slice(i, i + 3), 8));
+      i += 2;
+    } else {
+      bytes.push(simple[next] ?? next.charCodeAt(0));
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+const stripSide = (p: string) => p.replace(/^[ab]\//, '');
+
+/** Every path a diff section names: header, ---/+++ lines, and rename/copy lines. */
+function sectionPaths(part: string): string[] {
+  const out: string[] = [];
+  const header = /^diff --git ("(?:[^"\\]|\\.)*"|\S+) ("(?:[^"\\]|\\.)*"|.+)$/m.exec(part);
+  if (header)
+    out.push(stripSide(unquoteGitPath(header[1]!)), stripSide(unquoteGitPath(header[2]!)));
+  for (const m of part.matchAll(/^(?:---|\+\+\+) (.+)$/gm)) {
+    if (m[1] !== '/dev/null') out.push(stripSide(unquoteGitPath(m[1]!)));
+  }
+  for (const m of part.matchAll(/^(?:rename|copy) (?:from|to) (.+)$/gm))
+    out.push(unquoteGitPath(m[1]!));
+  return out;
+}
 
 /**
  * Remove the per-file sections of a diff/patch that belong to credential files, keeping a
- * placeholder so the model knows the file changed.
+ * placeholder so the model knows the file changed. Paths are decoded first: git quotes names
+ * with special characters, which must not slip past the check.
  */
 export function hideSecretDiffs(patch: string): string {
   const parts = patch.split(/(?=^diff --git )/m);
   return parts
     .map((part) => {
-      const m = /^diff --git a\/(.+?) b\/(.+?)$/m.exec(part);
-      if (m && (isSecretPath(m[1]!) || isSecretPath(m[2]!))) {
-        return `diff --git a/${m[1]} b/${m[2]}\n[changes to a credential file are hidden]\n`;
+      if (!part.startsWith('diff --git ')) return part;
+      const paths = sectionPaths(part);
+      if (paths.some((p) => isSecretPath(p) || isGitInternal(p))) {
+        const shown = [...new Set(paths)].join(' -> ');
+        return `diff --git ${shown}\n[changes to a credential file are hidden]\n`;
       }
       return part;
     })

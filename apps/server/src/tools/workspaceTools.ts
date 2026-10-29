@@ -188,7 +188,7 @@ export const fileInfo = defineTool({
 export const searchCode = defineTool({
   name: 'search_code',
   description:
-    'Search file contents across the project (ripgrep when available). Literal by default; set regex=true for a regular expression. Respects .gitignore. Returns matching lines grouped by file with line numbers.',
+    'Search file contents across the project (ripgrep when available). Literal by default; set regex=true for a regular expression. Respects .gitignore. Credential files (.env, keys, …) and .git are never searched. Returns matching lines grouped by file with line numbers.',
   category: 'read_only',
   risk: 'none',
   requiresProject: true,
@@ -220,22 +220,14 @@ export const searchCode = defineTool({
       signal: ctx.signal,
     });
     const files = new Set(result.matches.map((m) => m.path)).size;
-    const hiddenNote = result.hiddenSecretFiles.length
-      ? `\n\n[Also matched in credential files whose contents are hidden by policy: ${result.hiddenSecretFiles.join(', ')}. The matches exist; tell the user rather than concluding there are none.]`
-      : '';
     if (result.matches.length === 0) {
-      return {
-        content: `No readable matches for "${args.query}" in ${target.rel}.${hiddenNote}`,
-        summary: result.hiddenSecretFiles.length
-          ? `matches only in credential files (hidden)`
-          : 'no matches',
-      };
+      return { content: `No matches for "${args.query}" in ${target.rel}.`, summary: 'no matches' };
     }
     const note = result.truncated
       ? `\n\n[results truncated at ${result.matches.length}; narrow with path or glob]`
       : '';
     return {
-      content: `${result.matches.length} matches in ${files} files:\n\n${formatMatches(result)}${note}${hiddenNote}`,
+      content: `${result.matches.length} matches in ${files} files:\n\n${formatMatches(result)}${note}`,
       summary: `${result.matches.length} matches in ${files} files${result.truncated ? ' (truncated)' : ''}`,
       truncated: result.truncated,
     };

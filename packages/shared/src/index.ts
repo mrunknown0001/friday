@@ -49,6 +49,8 @@ export interface SettingsDto {
   model: string | null;
   modelSource: 'settings' | 'env' | 'none';
   apiKeyConfigured: boolean;
+  /** Absolute path of the file the server reads NTL_* settings from. */
+  envFile: string;
   baseUrl: string;
   timeoutMs: number;
   maxRetries: number;

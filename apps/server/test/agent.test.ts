@@ -177,13 +177,14 @@ describe('tool executor', () => {
     expect(files.content.split('\n').map((l) => l.split(' ')[0])).toEqual(['src/a.ts', 'src/b.ts']);
   });
 
-  it('reports matches hidden in credential files instead of claiming none exist', async () => {
+  it('does not reveal whether a credential file matched a search', async () => {
     const root = makeProject({ '.env': 'STRIPE_KEY=sk_test_abcdefghijklmnop', 'src/a.ts': 'x' });
-    const res = await run(root, 'search_code', { query: 'STRIPE' });
-    expect(res.status).toBe('completed');
-    expect(res.content).toContain('No readable matches');
-    expect(res.content).toContain('credential files whose contents are hidden by policy: .env');
-    expect(res.content).not.toContain('sk_test_abcdefghijklmnop');
+    const hit = await run(root, 'search_code', { query: 'STRIPE_KEY=sk_test_a' });
+    const miss = await run(root, 'search_code', { query: 'STRIPE_KEY=sk_test_z' });
+    expect(hit.status).toBe('completed');
+    // Identical answers, so a model cannot guess the secret one character at a time.
+    expect(hit.content).toBe(miss.content.replace('sk_test_z', 'sk_test_a'));
+    expect(hit.content).not.toContain('.env');
   });
 
   it('advertises clean JSON schemas and hides project tools without a project', () => {

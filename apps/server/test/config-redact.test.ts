@@ -3,6 +3,30 @@ import { ConfigError, loadConfig } from '../src/config.js';
 import { Redactor } from '../src/security/redact.js';
 
 describe('loadConfig', () => {
+  it('configures the desktop launch token, file locations, and no dev origins with a token', () => {
+    const token = 'a'.repeat(43);
+    const c = loadConfig(
+      {
+        FRIDAY_LAUNCH_TOKEN: token,
+        FRIDAY_ENV_FILE: '/home/u/.config/Friday/friday.env',
+        FRIDAY_WEB_DIST: '/opt/Friday/resources/web',
+      },
+      '/repo',
+    );
+    expect(c.server.launchToken).toBe(token);
+    expect(c.server.devOrigins).toEqual([]);
+    expect(c.envFile).toBe('/home/u/.config/Friday/friday.env');
+    expect(c.webDist).toBe('/opt/Friday/resources/web');
+    expect(loadConfig({}, '/repo')).toMatchObject({
+      envFile: '/repo/.env',
+      webDist: '/repo/apps/web/dist',
+      server: { launchToken: null },
+    });
+    expect(() => loadConfig({ FRIDAY_LAUNCH_TOKEN: 'short' }, '/repo')).toThrow(
+      /FRIDAY_LAUNCH_TOKEN/,
+    );
+  });
+
   it('applies defaults and reports a missing key as unconfigured', () => {
     const c = loadConfig({}, '/repo');
     expect(c.provider).toEqual({
@@ -47,6 +71,18 @@ describe('loadConfig', () => {
 });
 
 describe('Redactor', () => {
+  it('catches env-var style names and URL credentials without mangling ordinary text', () => {
+    const r = new Redactor([]);
+    expect(r.redact('DB_PASSWORD=hunter2hunter')).toBe('DB_PASSWORD=[REDACTED]');
+    expect(r.redact('AWS_SECRET_ACCESS_KEY=abcd1234xyz')).toBe('AWS_SECRET_ACCESS_KEY=[REDACTED]');
+    expect(r.redact('MYSQL_PWD=root')).toBe('MYSQL_PWD=[REDACTED]');
+    expect(r.redact('https://deploy:s3cret@git.example.com/r.git')).toBe(
+      'https://deploy:[REDACTED]@git.example.com/r.git',
+    );
+    for (const ok of ['PWD=/home/u/app', 'max_tokens: 4096', 'The token is valid', 'node --test'])
+      expect(r.redact(ok)).toBe(ok);
+  });
+
   it('removes known secrets and common credential patterns', () => {
     const r = new Redactor(['super-secret-value-123', 'short']);
     const out = r.redact(

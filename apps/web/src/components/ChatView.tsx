@@ -385,7 +385,7 @@ export function ChatView(props: Props) {
               <p className="text-lg font-medium text-zinc-200">What are we working on?</p>
               <p className="mt-2 text-sm">
                 {project
-                  ? `Friday can explore ${project.name} with read-only tools: search, read files, and explain the code. It cannot edit files or run commands yet.`
+                  ? `Friday can read and search ${project.name} on its own. Editing files, running commands and committing each wait for your approval.`
                   : 'No project is selected, so Friday cannot see your code. Choose or add a project in the sidebar to let it read your files.'}
               </p>
             </div>

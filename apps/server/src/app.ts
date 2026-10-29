@@ -56,6 +56,7 @@ export async function buildApp(
   registerLocalOnlyGuards(app, {
     port: services.config.server.port,
     devOrigins: services.config.server.devOrigins,
+    launchToken: services.config.server.launchToken,
   });
 
   app.setErrorHandler((error, req, reply) => {

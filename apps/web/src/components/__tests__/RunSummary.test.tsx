@@ -52,7 +52,7 @@ const run = (r: RunReport | null): RunDto => ({
 describe('RunSummary', () => {
   it('shows a failed verification with files, commands, commits and drift', () => {
     render(<RunSummary run={run(report())} approvals={[]} onRollback={vi.fn()} />);
-    const card = screen.getByRole('region', { name: 'Verification report' });
+    const card = screen.getByRole('group', { name: 'Verification report' });
     expect(within(card).getByText('verification failed')).toBeTruthy();
     expect(within(card).getByText(/did not pass after the last change/)).toBeTruthy();
     expect(within(card).getByText('edited elsewhere since')).toBeTruthy();
@@ -101,7 +101,7 @@ describe('RunSummary', () => {
       resultSummary: 'exit code 0 (0.1s)',
     } as ApprovalDto;
     render(<RunSummary run={run(null)} approvals={[approval]} onRollback={vi.fn()} />);
-    expect(screen.getByRole('region', { name: 'Run record' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Run record' })).toBeTruthy();
   });
 });
 

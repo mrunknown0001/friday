@@ -256,6 +256,17 @@ describe('file helpers', () => {
   });
 });
 
+describe('path policy on case-insensitive filesystems', () => {
+  it('treats .GIT and .KUBE like .git and .kube', async () => {
+    expect(isSecretPath('.KUBE/config')).toBe(true);
+    expect(isSecretPath('deploy/.SSH/id_ed25519')).toBe(true);
+    expect(isSecretPath('.ENV')).toBe(true);
+    const root = makeProject({ '.GIT/config': 'x', 'ok.txt': 'y' });
+    await expect(resolveInside(root, '.GIT/config')).rejects.toThrow();
+    await expect(resolveInside(root, 'ok.txt')).resolves.toMatchObject({ rel: 'ok.txt' });
+  });
+});
+
 describe('search', async () => {
   const env = await detectToolEnvironment();
   const engines: Array<[string, string | null]> = [['builtin', null]];
@@ -282,10 +293,27 @@ describe('search', async () => {
       });
       const files = [...new Set(r.matches.map((m) => m.path))].sort();
       expect(files).toEqual(['README.md', 'src/app.ts']);
-      // The credential file's match is reported by name only; its contents never appear.
-      expect(r.hiddenSecretFiles).toEqual(['.env']);
+      // Credential files are not searched at all: not even their names reveal that a query matched
+      // (that would let a model guess a secret one character at a time).
+      expect(JSON.stringify(r)).not.toContain('.env');
       expect(JSON.stringify(r)).not.toContain('supersecretvalue');
       expect(r.matches.find((m) => m.path === 'src/app.ts')).toMatchObject({ line: 1 });
+    });
+
+    it('never searches .git, even when a glob would include it', async () => {
+      const root = makeProject({
+        'a.txt': 'url here',
+        '.git/config': '[remote "origin"]\n\turl = https://user:pass@example.com/r.git\n',
+      });
+      const r = await search(root, rg, {
+        query: 'url',
+        regex: false,
+        caseSensitive: false,
+        targetAbs: root,
+        glob: '**',
+        maxResults: 50,
+      });
+      expect(r.matches.map((m) => m.path)).toEqual(['a.txt']);
     });
 
     it('treats queries starting with "-" as text, not flags', async () => {

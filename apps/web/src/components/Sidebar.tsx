@@ -122,7 +122,7 @@ export function Sidebar({
           id="project-select"
           value={projectId ?? ''}
           onChange={(e) => onSelectProject(e.target.value || null)}
-          className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm outline-none focus:border-zinc-500"
+          className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm outline-none focus:border-sky-500"
         >
           <option value="">No project (chat only)</option>
           {projects.map((p) => (

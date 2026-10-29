@@ -217,7 +217,7 @@ describe('RunRecord', () => {
         ]}
       />,
     );
-    const record = screen.getByRole('region', { name: 'Run record' });
+    const record = screen.getByRole('group', { name: 'Run record' });
     expect(within(record).getByText(/1 did not succeed/)).toBeTruthy();
     expect(within(record).getByText('exit code 1 (0.2s)').className).toContain('text-red');
     expect(within(record).getByText('rejected: keep it')).toBeTruthy();

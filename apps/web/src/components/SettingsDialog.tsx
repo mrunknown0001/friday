@@ -8,6 +8,7 @@ import type {
 import { CheckCircle2, KeyRound, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../lib/api';
+import { desktop } from '../lib/desktop';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
 import { DevopsSettings } from './DevopsSettings';
@@ -191,28 +192,34 @@ export function SettingsDialog({
       <Section title="NoTokenLimit API key">
         {settings?.apiKeyConfigured ? (
           <p className="flex items-center gap-2 text-sm text-emerald-300">
-            <KeyRound className="h-4 w-4" /> Configured via{' '}
+            <KeyRound className="h-4 w-4" aria-hidden /> Configured via{' '}
             <code className="font-mono">NTL_API_KEY</code>. The key never leaves the local server.
           </p>
         ) : (
           <div className="text-sm text-zinc-300">
             <p className="flex items-center gap-2 text-amber-300">
-              <KeyRound className="h-4 w-4" /> Not configured.
+              <KeyRound className="h-4 w-4" aria-hidden /> Not configured.
             </p>
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-zinc-400">
               <li>
-                Copy <code className="font-mono">.env.example</code> to{' '}
-                <code className="font-mono">.env</code> in the project root.
+                Open <code className="font-mono break-all">{settings?.envFile ?? '.env'}</code>
+                {desktop ? '' : ' (copy .env.example if it does not exist)'}.
               </li>
               <li>
                 Set <code className="font-mono">NTL_API_KEY</code> (and optionally{' '}
                 <code className="font-mono">NTL_MODEL</code>).
               </li>
-              <li>Restart the server.</li>
+              <li>{desktop ? 'Restart the server below.' : 'Restart the server.'}</li>
             </ol>
+            {desktop && (
+              <div className="mt-2 flex gap-2">
+                <Button onClick={() => void desktop!.showConfigFile()}>Show config file</Button>
+                <Button onClick={() => void desktop!.restartServer()}>Restart server</Button>
+              </div>
+            )}
             <p className="mt-2 text-xs text-zinc-500">
               Keys are read from the server environment only and are never stored in the database or
-              sent to this page.
+              sent to this page. Don't paste keys into the chat.
             </p>
           </div>
         )}
@@ -253,14 +260,14 @@ export function SettingsDialog({
               placeholder="Filter models…"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="mb-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm outline-none focus:border-zinc-500"
+              className="mb-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm outline-none focus:border-sky-500"
             />
             <select
               aria-label="Model"
               size={8}
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
-              className="w-full rounded-md border border-zinc-700 bg-zinc-950 p-1 font-mono text-sm outline-none focus:border-zinc-500"
+              className="w-full rounded-md border border-zinc-700 bg-zinc-950 p-1 font-mono text-sm outline-none focus:border-sky-500"
             >
               {filtered.map((m) => (
                 <option key={m.id} value={m.id} className="rounded px-1.5 py-0.5">
@@ -377,7 +384,7 @@ export function SettingsDialog({
                 placeholder="tokens"
                 value={windowDraft}
                 onChange={(e) => setWindowDraft(e.target.value.replace(/[^0-9]/g, ''))}
-                className="w-28 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 font-mono text-xs outline-none focus:border-zinc-500"
+                className="w-28 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 font-mono text-xs outline-none focus:border-sky-500"
               />
               <Button size="sm" variant="ghost" onClick={() => void saveWindow()}>
                 Save
@@ -394,15 +401,25 @@ export function SettingsDialog({
       <Section
         title="Recent provider calls"
         aside={
-          <Button size="sm" variant="ghost" onClick={() => void loadCalls()}>
-            <RefreshCw className="h-3.5 w-3.5" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void loadCalls()}
+            aria-label="Refresh provider calls"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           </Button>
         }
       >
         {calls.length === 0 ? (
           <p className="text-sm text-zinc-500">No calls recorded yet.</p>
         ) : (
-          <div className="max-h-56 overflow-y-auto rounded-md border border-zinc-800">
+          <div
+            className="max-h-56 overflow-y-auto rounded-md border border-zinc-800"
+            tabIndex={0}
+            role="region"
+            aria-label="Recent provider calls"
+          >
             <table className="w-full text-left text-xs">
               <thead className="sticky top-0 bg-zinc-900 text-zinc-400">
                 <tr>

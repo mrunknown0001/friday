@@ -173,6 +173,10 @@ export const gitShow = defineTool({
   describeCall: (a) => a.ref,
   async execute(args, ctx) {
     const root = await repoRoot(ctx);
+    // Only commits: a blob id (e.g. of a committed .env) would print the file as-is.
+    const commit = (
+      await git(root, ['rev-parse', '--verify', '--end-of-options', `${args.ref}^{commit}`])
+    ).trim();
     const out = await git(root, [
       'show',
       ...DIFF_FLAGS,
@@ -180,7 +184,7 @@ export const gitShow = defineTool({
       '--stat',
       ...(args.stat_only ? [] : ['--patch']),
       '--end-of-options',
-      args.ref,
+      commit,
     ]);
     const subject = /^\s{4}(.+)$/m.exec(out)?.[1] ?? args.ref;
     return { content: hideSecretDiffs(out), summary: subject.slice(0, 80) };

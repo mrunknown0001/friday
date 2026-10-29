@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import { type Db, transaction } from './database.js';
 
 export interface Migration {
   version: number;
@@ -317,7 +317,7 @@ export const MIGRATIONS: Migration[] = [
   },
 ];
 
-export function migrate(db: Database.Database, migrations: Migration[] = MIGRATIONS): number[] {
+export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
@@ -333,14 +333,14 @@ export function migrate(db: Database.Database, migrations: Migration[] = MIGRATI
   const newlyApplied: number[] = [];
   for (const m of sorted) {
     if (applied.has(m.version)) continue;
-    db.transaction(() => {
+    transaction(db, () => {
       db.exec(m.up);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         m.version,
         m.name,
         new Date().toISOString(),
       );
-    })();
+    });
     newlyApplied.push(m.version);
   }
   return newlyApplied;

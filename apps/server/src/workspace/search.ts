@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { looksBinary, splitLines } from './files.js';
-import { isSecretPath, isWithin, WorkspaceError } from './paths.js';
+import { isGitInternal, isSecretPath, isWithin, WorkspaceError } from './paths.js';
 import { DEFAULT_EXCLUDED_DIRS, walk } from './walk.js';
 
 export interface SearchOptions {
@@ -26,11 +26,6 @@ export interface SearchResult {
   matches: SearchMatch[];
   truncated: boolean;
   engine: 'ripgrep' | 'builtin';
-  /**
-   * Credential files that contained matches. Their contents are never returned, but reporting
-   * their names keeps the model from wrongly concluding that nothing matched.
-   */
-  hiddenSecretFiles: string[];
 }
 
 const MAX_MATCH_TEXT = 300;
@@ -57,7 +52,12 @@ export async function search(
   return builtinSearch(root, opts);
 }
 
-/** ripgrep with an argument vector (no shell). Matches in secret files are dropped. */
+/**
+ * ripgrep with an argument vector (no shell). Matches in credential files and .git are dropped
+ * without a trace: even reporting "a credential file matched" would let a model guess a secret one
+ * character at a time. The check runs on every result because a caller-supplied glob can override
+ * the exclusion globs.
+ */
 function ripgrep(root: string, rgPath: string, opts: SearchOptions): Promise<SearchResult> {
   const args = [
     '--json',
@@ -88,7 +88,6 @@ function ripgrep(root: string, rgPath: string, opts: SearchOptions): Promise<Sea
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const matches: SearchMatch[] = [];
-    const hidden = new Set<string>();
     let truncated = false;
     let buffer = '';
     let stderr = '';
@@ -100,7 +99,7 @@ function ripgrep(root: string, rgPath: string, opts: SearchOptions): Promise<Sea
       clearTimeout(timer);
       opts.signal?.removeEventListener('abort', onAbort);
       if (err) reject(err);
-      else resolve({ matches, truncated, engine: 'ripgrep', hiddenSecretFiles: [...hidden] });
+      else resolve({ matches, truncated, engine: 'ripgrep' });
     };
     const stop = () => {
       if (child.exitCode === null) child.kill('SIGTERM');
@@ -130,10 +129,7 @@ function ripgrep(root: string, rgPath: string, opts: SearchOptions): Promise<Sea
         return;
       const rel = path.normalize(msg.data.path.text).split(path.sep).join('/');
       if (!isWithin(root, path.resolve(root, rel))) return;
-      if (isSecretPath(rel)) {
-        hidden.add(rel);
-        return;
-      }
+      if (isSecretPath(rel) || isGitInternal(rel)) return;
       matches.push({ path: rel, line: msg.data.line_number ?? 0, text: clip(msg.data.lines.text) });
       if (matches.length >= opts.maxResults) {
         truncated = true;
@@ -192,18 +188,14 @@ async function builtinSearch(root: string, opts: SearchOptions): Promise<SearchR
   const globRe = opts.glob ? globToRegExp(opts.glob) : null;
   const needle = opts.caseSensitive ? opts.query : opts.query.toLowerCase();
   const matches: SearchMatch[] = [];
-  const hidden: string[] = [];
   const truncated = files.length >= MAX_BUILTIN_FILES;
-  const done = (t: boolean): SearchResult => ({
-    matches,
-    truncated: t,
-    engine: 'builtin',
-    hiddenSecretFiles: hidden,
-  });
+  const done = (t: boolean): SearchResult => ({ matches, truncated: t, engine: 'builtin' });
 
   for (const rel of files) {
     if (opts.signal?.aborted) throw new WorkspaceError('unsupported', 'Search cancelled.');
     if (globRe && !globRe.test(rel) && !globRe.test(path.posix.basename(rel))) continue;
+    // Credential files and git internals are never opened.
+    if (isSecretPath(rel) || isGitInternal(rel)) continue;
     let buf: Buffer;
     try {
       buf = await fs.readFile(path.join(root, rel));
@@ -212,12 +204,6 @@ async function builtinSearch(root: string, opts: SearchOptions): Promise<SearchR
     }
     if (looksBinary(buf)) continue;
     const lines = splitLines(buf.toString('utf8'));
-    if (isSecretPath(rel)) {
-      // Contents stay on this machine; only the file name is reported.
-      if (lines.some((l) => (opts.caseSensitive ? l : l.toLowerCase()).includes(needle)))
-        hidden.push(rel);
-      continue;
-    }
     let perFile = 0;
     for (let i = 0; i < lines.length; i++) {
       const hay = opts.caseSensitive ? lines[i]! : lines[i]!.toLowerCase();

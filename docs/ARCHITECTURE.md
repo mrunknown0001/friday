@@ -17,20 +17,20 @@ tool execution happen in the server process.
 
 ## Server modules (`apps/server/src`)
 
-| Module                      | Responsibility                                                                                                             |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `config.ts`                 | Validates the environment with zod. Fails fast with variable names only, never values.                                     |
-| `db/`                       | Opens SQLite (WAL, foreign keys) and applies append-only migrations, each in its own transaction.                          |
-| `repositories/`             | Narrow data-access classes: sessions, messages, runs, settings, capabilities, provider calls, audit.                       |
-| `providers/types.ts`        | The provider-neutral `LLMProvider` interface and message, tool, and stream-event types.                                    |
-| `providers/notokenlimit.ts` | OpenAI SDK adapter: request mapping, streaming, tool-call reassembly, idle timeout, response validation, telemetry.        |
-| `providers/errors.ts`       | Maps any SDK or network failure to a `ProviderError` with a `kind` and a `retryable` flag.                                 |
-| `providers/retry.ts`        | Bounded exponential backoff with jitter. Retries only transient kinds and honours `Retry-After` (capped).                  |
-| `providers/capabilities.ts` | Conservative context-window defaults and a live probe for streaming and tool calling.                                      |
-| `chat/context.ts`           | Token estimation, history fitting (keeps tool-call groups intact), and summarization of history that no longer fits.       |
-| `chat/runManager.ts`        | Owns run lifecycles: event buffering for SSE replay, cancellation, checkpointing, persistence, one active run per session. |
-| `http/`                     | Local-only guards, routes, SSE, and error mapping.                                                                         |
-| `services.ts`               | Composition root that wires everything together. Tests replace the provider or `fetch` here.                               |
+| Module                      | Responsibility                                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config.ts`                 | Validates the environment with zod. Fails fast with variable names only, never values.                                                                          |
+| `db/`                       | Opens SQLite via Node's built-in `node:sqlite` (WAL, foreign keys), applies append-only migrations each in its own transaction, and holds the data-folder lock. |
+| `repositories/`             | Narrow data-access classes: sessions, messages, runs, settings, capabilities, provider calls, audit.                                                            |
+| `providers/types.ts`        | The provider-neutral `LLMProvider` interface and message, tool, and stream-event types.                                                                         |
+| `providers/notokenlimit.ts` | OpenAI SDK adapter: request mapping, streaming, tool-call reassembly, idle timeout, response validation, telemetry.                                             |
+| `providers/errors.ts`       | Maps any SDK or network failure to a `ProviderError` with a `kind` and a `retryable` flag.                                                                      |
+| `providers/retry.ts`        | Bounded exponential backoff with jitter. Retries only transient kinds and honours `Retry-After` (capped).                                                       |
+| `providers/capabilities.ts` | Conservative context-window defaults and a live probe for streaming and tool calling.                                                                           |
+| `chat/context.ts`           | Token estimation, history fitting (keeps tool-call groups intact), and summarization of history that no longer fits.                                            |
+| `chat/runManager.ts`        | Owns run lifecycles: event buffering for SSE replay, cancellation, checkpointing, persistence, one active run per session.                                      |
+| `http/`                     | Local-only guards, routes, SSE, and error mapping.                                                                                                              |
+| `services.ts`               | Composition root that wires everything together. Tests replace the provider or `fetch` here.                                                                    |
 
 ### Provider abstraction
 
@@ -185,7 +185,33 @@ project or with no project.
 - `lib/useRunStream.ts` wraps `EventSource` with automatic reconnect and de-duplication by `seq`.
 - `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, RunSummary (verification report and rollback), DeploymentPlanCard, DevopsSettings (SSH hosts, log sources), MemoryDialog, MemoriesUsed, AddProjectDialog, SettingsDialog, and
   small shadcn-style primitives (`ui/`) built on native elements such as `<dialog>`.
-- Markdown is rendered with react-markdown, GFM, and highlight.js. Raw HTML in model output is not rendered.
+- Markdown is rendered with react-markdown, GFM, and highlight.js. Raw HTML in model output is not rendered. The
+  renderer and the file viewer's highlighter are separate chunks loaded on demand (the renderer is prefetched when the
+  app is idle), which keeps the initial bundle at about a third of its former size.
+- `lib/desktop.ts` describes the optional desktop bridge (`window.fridayDesktop`); it is `null` in the browser.
+
+## Desktop (`apps/desktop`, Phase 7)
+
+```
+Electron main process                     utilityProcess                       Renderer (sandboxed)
+┌─────────────────────────────┐  fork   ┌───────────────────────────┐  HTTP   ┌──────────────────────┐
+│ launch token, paths, menu;  │ ──────▶ │ server bundle (index.mjs) │ ◀────── │ same React UI as the │
+│ server reports its port     │         │ FRIDAY_LAUNCH_TOKEN set:  │  + SSE  │ web app; preload adds│
+│ webRequest adds x-friday-   │         │ every request must carry  │         │ fridayDesktop bridge │
+│ token to app requests only  │         │ the token                 │         │ (3 IPC calls)        │
+└─────────────────────────────┘         └───────────────────────────┘         └──────────────────────┘
+```
+
+- The server is the same code as the web version, bundled by esbuild into one ESM file
+  (`apps/desktop/scripts/bundle-server.mjs`). With `node:sqlite` there is no native module, so the package contains no
+  `node_modules` and runs on Electron's bundled Node.
+- `main.ts` resolves paths (packaged: `~/.config/Friday/{friday.env,data,logs}`, resources for the server and UI;
+  from a checkout: the repository's `.env` and `.data`), starts the server with `FRIDAY_PORT=0`, waits for the server to report the port it bound (over the
+  utility-process message channel, so no other program can take the port in between), and loads the UI
+  from the server's origin. Server output goes to `logs/server.log`; a crash shows the log tail with a restart option.
+- Quitting sends SIGTERM and waits (up to 8 s) for the server to finish in-flight work and close the database.
+- `electron-builder.yml` produces an AppImage and a deb, with Electron fuses set (no `ELECTRON_RUN_AS_NODE`, no
+  `NODE_OPTIONS` or inspector flags, asar integrity checks, app loaded only from the asar).
 
 ## Testing
 
@@ -194,4 +220,7 @@ project or with no project.
   SQLite files, and HTTP routes through `fastify.inject`.
 - `apps/web/src/**/*.test.tsx` covers the approval card, diff parsing, the live event reducer, and run records
   with Testing Library in jsdom.
-- `apps/server/test/integration/` holds the opt-in live NoTokenLimit test. It is excluded unless `NTL_INTEGRATION=1`.
+- `apps/server/test/integration/` holds the opt-in live tests, excluded unless `NTL_INTEGRATION=1`:
+  `notokenlimit.int.test.ts` (models, streaming, capabilities) and `e2e.int.test.ts`, the full coding cycle over real
+  HTTP and SSE on a throwaway sample project (inspect → plan → approval with diff → apply → approval to run tests →
+  execute → output → verified report, then an independent `npm test` outside Friday).

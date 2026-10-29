@@ -269,7 +269,7 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
       {!compact && (
         <header className="flex flex-wrap items-center gap-2">
           <Icon className="h-4 w-4 text-amber-400" aria-hidden />
-          <h3 className="text-sm font-semibold text-zinc-100">{approval.title}</h3>
+          <h2 className="text-sm font-semibold text-zinc-100">{approval.title}</h2>
           <Badge tone={RISK_TONE[approval.risk]}>{approval.risk} risk</Badge>
           <Badge>{CATEGORY_LABEL[approval.category] ?? approval.category}</Badge>
           <Badge tone={status.tone} className="ml-auto">
@@ -326,7 +326,7 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}
                 maxLength={2000}
-                className="w-full resize-none rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm outline-none focus:border-zinc-500"
+                className="w-full resize-none rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm outline-none focus:border-sky-500"
               />
             </div>
           )}

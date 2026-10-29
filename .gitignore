@@ -1,5 +1,7 @@
 node_modules/
 dist/
+apps/desktop/build/
+apps/desktop/release/
 .data/
 *.db
 *.db-journal

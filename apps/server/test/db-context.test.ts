@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ContextOverflowError,
@@ -9,7 +8,8 @@ import {
   fitHistory,
   type HistoryItem,
 } from '../src/chat/context.js';
-import { openDatabase } from '../src/db/database.js';
+import { openDatabase, openSqlite, transaction } from '../src/db/database.js';
+import { acquireDataDirLock } from '../src/db/lock.js';
 import { migrate, MIGRATIONS } from '../src/db/migrations.js';
 import { MessageRepo } from '../src/repositories/messages.js';
 import { RunRepo } from '../src/repositories/runs.js';
@@ -27,7 +27,7 @@ function tmpDbFile() {
 
 describe('migrations', () => {
   it('applies once and records versions', () => {
-    const db = new Database(':memory:');
+    const db = openSqlite(':memory:');
     expect(migrate(db)).toEqual(MIGRATIONS.map((m) => m.version));
     expect(migrate(db)).toEqual([]);
     expect(db.prepare('SELECT version FROM schema_migrations').all()).toEqual(
@@ -36,7 +36,7 @@ describe('migrations', () => {
   });
 
   it('rolls back a failing migration atomically', () => {
-    const db = new Database(':memory:');
+    const db = openSqlite(':memory:');
     migrate(db);
     const bad = [
       ...MIGRATIONS,
@@ -53,6 +53,39 @@ describe('migrations', () => {
     expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()).toEqual({
       v: MIGRATIONS.at(-1)!.version,
     });
+  });
+
+  it('commits a transaction that returns and rolls back one that throws', () => {
+    const db = openSqlite(':memory:');
+    db.exec('CREATE TABLE t (x INTEGER)');
+    expect(transaction(db, () => db.prepare('INSERT INTO t VALUES (1)').run().changes)).toBe(1);
+    expect(() =>
+      transaction(db, () => {
+        db.prepare('INSERT INTO t VALUES (2)').run();
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(db.prepare('SELECT x FROM t').all()).toEqual([{ x: 1 }]);
+    // The connection is usable again (no transaction left open).
+    transaction(db, () => db.prepare('INSERT INTO t VALUES (3)').run());
+    expect(db.prepare('SELECT COUNT(*) AS n FROM t').get()).toEqual({ n: 2 });
+  });
+
+  it('locks the data folder against a second server and replaces a stale lock', () => {
+    const dir = path.dirname(tmpDbFile());
+    const release = acquireDataDirLock(dir);
+    const lockFile = path.join(dir, 'friday.lock');
+    expect(fs.readFileSync(lockFile, 'utf8')).toBe(String(process.pid));
+    // A live process (our parent) holding the lock blocks us.
+    fs.writeFileSync(lockFile, String(process.ppid));
+    expect(() => acquireDataDirLock(dir)).toThrow(/Another Friday server/);
+    // A lock left by a process that no longer exists is replaced.
+    fs.writeFileSync(lockFile, '999999999');
+    const release2 = acquireDataDirLock(dir);
+    expect(fs.readFileSync(lockFile, 'utf8')).toBe(String(process.pid));
+    release2();
+    expect(fs.existsSync(lockFile)).toBe(false);
+    release();
   });
 
   it('creates a private database file', () => {

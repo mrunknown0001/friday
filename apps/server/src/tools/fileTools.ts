@@ -5,7 +5,13 @@ import type { FileChangePreview, RiskLevel } from '@friday/shared';
 import { createTwoFilesPatch } from 'diff';
 import { z } from 'zod';
 import { looksBinary, MAX_TEXT_FILE_BYTES } from '../workspace/files.js';
-import { assertRootAvailable, resolveForWrite, WorkspaceError } from '../workspace/paths.js';
+import {
+  assertRootAvailable,
+  isGitInternal,
+  isWithin,
+  resolveForWrite,
+  WorkspaceError,
+} from '../workspace/paths.js';
 import { defineTool, type Proposal, type ToolContext } from './types.js';
 
 export const sha256 = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
@@ -71,16 +77,30 @@ export function makeDiff(
   return { path: rel, change, ...(fromPath ? { fromPath } : {}), diff, added, removed };
 }
 
-/** Write via a temp file and rename, so a crash never leaves a half-written file. */
-async function atomicWrite(abs: string, content: string, mode?: number) {
+/**
+ * Write via a temp file and rename, so a crash never leaves a half-written file. The target folder
+ * is resolved again immediately before writing: if a folder on the path was swapped for a symlink
+ * since the change was reviewed, the write could otherwise land outside the project.
+ */
+async function atomicWrite(root: string, abs: string, content: string, mode?: number) {
   await fs.mkdir(path.dirname(abs), { recursive: true });
+  const realDir = await fs.realpath(path.dirname(abs));
+  const relDir = path.relative(root, realDir);
+  if (!isWithin(root, realDir) || isGitInternal(relDir)) {
+    throw new WorkspaceError(
+      'outside_root',
+      `The folder for ${path.basename(abs)} now resolves outside the project; nothing was written.`,
+    );
+  }
+  // Write through the resolved folder, not the original path.
+  const target = path.join(realDir, path.basename(abs));
   const tmp = path.join(
-    path.dirname(abs),
+    realDir,
     `.${path.basename(abs)}.friday-${randomBytes(4).toString('hex')}.tmp`,
   );
   try {
     await fs.writeFile(tmp, content, { mode: mode ?? 0o644 });
-    await fs.rename(tmp, abs);
+    await fs.rename(tmp, target);
   } catch (err) {
     await fs.rm(tmp, { force: true });
     throw err;
@@ -93,6 +113,8 @@ const sizeRisk = (p: FileChangePreview): RiskLevel =>
 /** A computed, not-yet-applied change to one text file. */
 interface FilePlan {
   rel: string;
+  /** Canonical project root the plan was made for. */
+  root: string;
   abs: string;
   before: { buf: Buffer; text: string } | null;
   after: string;
@@ -109,6 +131,7 @@ async function planWrite(root: string, p: string, content: string): Promise<File
   }
   return {
     rel: target.rel,
+    root,
     abs: target.abs,
     before,
     after: content,
@@ -157,6 +180,7 @@ async function planEdit(root: string, p: string, edits: Edit[]): Promise<FilePla
     throw new WorkspaceError('unsupported', `The edits do not change ${target.rel}.`);
   return {
     rel: target.rel,
+    root,
     abs: target.abs,
     before,
     after,
@@ -167,7 +191,7 @@ async function planEdit(root: string, p: string, edits: Edit[]): Promise<FilePla
 }
 
 async function applyPlan(plan: FilePlan, ctx: ToolContext): Promise<void> {
-  await atomicWrite(plan.abs, plan.after, plan.mode);
+  await atomicWrite(plan.root, plan.abs, plan.after, plan.mode);
   ctx.recordFileChange?.({
     path: plan.rel,
     fromPath: null,
@@ -180,7 +204,7 @@ async function applyPlan(plan: FilePlan, ctx: ToolContext): Promise<void> {
 
 /** Restore the pre-change state of a plan that was applied as part of a failed batch. */
 async function undoPlan(plan: FilePlan): Promise<void> {
-  if (plan.before) await atomicWrite(plan.abs, plan.before.text, plan.mode);
+  if (plan.before) await atomicWrite(plan.root, plan.abs, plan.before.text, plan.mode);
   else await fs.rm(plan.abs, { force: true });
 }
 

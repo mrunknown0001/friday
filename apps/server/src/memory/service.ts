@@ -52,10 +52,10 @@ export function rejectReason(content: string, redactor: Redactor): string | null
   const codeLines = text.split('\n').filter((l) => /[;{}]\s*$/.test(l.trim())).length;
   if (codeLines >= 2)
     return 'This looks like source code; store a short description and the file path instead.';
-  if (redactor.redact(text) !== text)
-    return 'This looks like it contains a secret (key, token or password); secrets are never stored.';
   if (/:\/\/[^\s/:@]+:[^\s/@]+@/.test(text))
     return 'This contains a URL with embedded credentials; secrets are never stored.';
+  if (redactor.redact(text) !== text)
+    return 'This looks like it contains a secret (key, token or password); secrets are never stored.';
   // Natural-language secrets ("the staging password is hunter2"): a secret word followed by a value
   // that looks like a credential (has a digit or symbol). "The API key is stored in Vault" passes.
   const stated =
@@ -64,6 +64,14 @@ export function rejectReason(content: string, redactor: Redactor): string | null
     );
   if (stated && /[\d\W_]/.test(stated[2]!)) {
     return 'This looks like it states a secret value; secrets are never stored. Note where the secret lives instead (e.g. "in the .env file").';
+  }
+  // "login admin:Summer2024!" — a user:password pair after a login-ish word.
+  const pair =
+    /\b(?:login|logins|user(?:name)?|account|creds?|credentials?)\b[^\n]{0,24}?[\w.@-]{2,}:([^\s:/]{6,})/i.exec(
+      text,
+    );
+  if (pair && /[\d\W_]/.test(pair[1]!)) {
+    return 'This looks like a user name and password; secrets are never stored. Note where the credentials live instead.';
   }
   const tokens = text.match(/[A-Za-z0-9+/_=-]{32,}/g) ?? [];
   if (tokens.some((t) => /[A-Za-z]/.test(t) && /\d/.test(t) && !t.includes('/'))) {

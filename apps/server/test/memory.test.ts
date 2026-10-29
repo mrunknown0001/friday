@@ -35,6 +35,9 @@ const agent = (projectId: string | null, sessionId: string | null) => ({
 describe('memory write policy', () => {
   const r = new Redactor();
   it('rejects secrets, credentials in URLs, random tokens, code, and junk', () => {
+    expect(rejectReason('Staging DB uses DB_PASSWORD=hunter2hunter', r)).toMatch(/secret/);
+    expect(rejectReason('Admin panel login admin:Summer2024!', r)).toMatch(/password/);
+    expect(rejectReason('The admin panel login page is at /admin', r)).toBeNull();
     expect(rejectReason('ok', r)).toMatch(/Too short/);
     expect(rejectReason('x'.repeat(700), r)).toMatch(/Too long/);
     expect(rejectReason('The staging API key is sk-abcdefghijklmnopqrstuvwxyz123456', r)).toMatch(

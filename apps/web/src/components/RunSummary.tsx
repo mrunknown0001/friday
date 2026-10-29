@@ -44,13 +44,14 @@ export function RunSummary({
   );
 
   return (
-    <section
+    <div
+      role="group"
       aria-label="Verification report"
       className="ml-10 space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5 text-xs"
     >
       <header className="flex flex-wrap items-center gap-2">
         <ClipboardCheck className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
-        <h3 className="font-medium text-zinc-200">Verification report</h3>
+        <h2 className="font-medium text-zinc-200">Verification report</h2>
         <Badge tone={status.tone}>{status.label}</Badge>
         <span className="text-zinc-500">from Friday’s records, not the model</span>
         {active.length > 0 && (
@@ -92,19 +93,19 @@ export function RunSummary({
 
       {report.files.length > 0 && (
         <div>
-          <h4 className="mb-0.5 text-zinc-500">Files</h4>
+          <h3 className="mb-0.5 text-zinc-500">Files</h3>
           <ul className="space-y-0.5">
             {report.files.map((f, i) => (
               <li key={`${f.path}-${i}`} className="flex flex-wrap items-center gap-2">
                 <span
-                  className={cn('w-16 shrink-0', f.reverted ? 'text-zinc-600' : 'text-zinc-400')}
+                  className={cn('w-16 shrink-0', f.reverted ? 'text-zinc-500' : 'text-zinc-400')}
                 >
                   {f.reverted ? 'undone' : CHANGE[f.change]}
                 </span>
                 <span
                   className={cn(
                     'font-mono',
-                    f.reverted ? 'text-zinc-600 line-through' : 'text-zinc-200',
+                    f.reverted ? 'text-zinc-500 line-through' : 'text-zinc-200',
                   )}
                 >
                   {f.fromPath ? `${f.fromPath} → ${f.path}` : f.path}
@@ -122,7 +123,7 @@ export function RunSummary({
 
       {report.commands.length > 0 && (
         <div>
-          <h4 className="mb-0.5 text-zinc-500">Commands</h4>
+          <h3 className="mb-0.5 text-zinc-500">Commands</h3>
           <ul className="space-y-0.5">
             {report.commands.map((c, i) => (
               <li key={i} className="flex flex-wrap items-center gap-2">
@@ -149,7 +150,7 @@ export function RunSummary({
 
       {report.commits.length > 0 && (
         <div>
-          <h4 className="mb-0.5 text-zinc-500">Commits</h4>
+          <h3 className="mb-0.5 text-zinc-500">Commits</h3>
           <ul>
             {report.commits.map((c) => (
               <li key={c} className="flex items-center gap-2 font-mono text-zinc-200">
@@ -162,7 +163,7 @@ export function RunSummary({
 
       {skipped.length > 0 && (
         <div>
-          <h4 className="mb-0.5 text-zinc-500">Not executed</h4>
+          <h3 className="mb-0.5 text-zinc-500">Not executed</h3>
           <ul>
             {skipped.map((a) => (
               <li key={a.id} className="text-zinc-400">
@@ -173,6 +174,6 @@ export function RunSummary({
           </ul>
         </div>
       )}
-    </section>
+    </div>
   );
 }

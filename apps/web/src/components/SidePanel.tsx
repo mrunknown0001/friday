@@ -5,7 +5,6 @@ import type {
   ProjectDto,
   TreeEntryDto,
 } from '@friday/shared';
-import hljs from 'highlight.js/lib/common';
 import {
   Undo2,
   CheckCircle2,
@@ -17,7 +16,7 @@ import {
   Link2,
   OctagonAlert,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { formatBytes } from '../lib/format';
@@ -95,7 +94,7 @@ function TreeNode({
         type="button"
         onClick={() => void toggle()}
         aria-expanded={entry.type === 'dir' ? open : undefined}
-        className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[13px] text-zinc-300 hover:bg-zinc-800"
+        className="flex min-h-6 w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[13px] text-zinc-300 hover:bg-zinc-800"
         style={{ paddingLeft: `${depth * 12 + 4}px` }}
         title={entry.path}
       >
@@ -121,7 +120,7 @@ function TreeNode({
         )}
         <span className="truncate">{entry.name}</span>
         {entry.type === 'file' && (
-          <span className="ml-auto shrink-0 text-[11px] text-zinc-600">
+          <span className="ml-auto shrink-0 text-[11px] text-zinc-500">
             {formatBytes(entry.size)}
           </span>
         )}
@@ -140,7 +139,7 @@ function TreeNode({
           ))}
           {children.length === 0 && (
             <li
-              className="py-0.5 text-xs text-zinc-600"
+              className="py-0.5 text-xs text-zinc-500"
               style={{ paddingLeft: `${(depth + 1) * 12 + 24}px` }}
             >
               empty
@@ -175,14 +174,25 @@ function FileViewer({
     };
   }, [projectId, path]);
 
-  // highlight.js escapes the source text, so its HTML output is safe to inject.
-  const html = useMemo(() => {
-    if (!file?.content) return null;
-    if (file.language && hljs.getLanguage(file.language)) {
-      return hljs.highlight(file.content, { language: file.language, ignoreIllegals: true }).value;
-    }
-    return null;
+  // highlight.js (loaded on demand) escapes the source text, so its HTML output is safe to inject.
+  const [highlighted, setHighlighted] = useState<{ file: FileViewDto; html: string } | null>(null);
+  useEffect(() => {
+    const content = file?.content;
+    const language = file?.language;
+    if (!file || !content || !language) return;
+    let cancelled = false;
+    void import('highlight.js/lib/common').then(({ default: hljs }) => {
+      if (cancelled || !hljs.getLanguage(language)) return;
+      setHighlighted({
+        file,
+        html: hljs.highlight(content, { language, ignoreIllegals: true }).value,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [file]);
+  const html = highlighted?.file === file ? highlighted.html : null;
 
   return (
     <Dialog open onClose={onClose} title={path}>
@@ -234,7 +244,7 @@ function Changes({
             className={cn(
               'w-16 shrink-0 text-[11px]',
               c.revertedAt
-                ? 'text-zinc-600'
+                ? 'text-zinc-500'
                 : c.change === 'delete'
                   ? 'text-red-400'
                   : 'text-emerald-400',
@@ -245,7 +255,7 @@ function Changes({
           <span
             className={cn(
               'min-w-0 flex-1 truncate font-mono text-zinc-300',
-              c.revertedAt && 'text-zinc-600 line-through',
+              c.revertedAt && 'text-zinc-500 line-through',
             )}
             title={c.fromPath ? `${c.fromPath} → ${c.path}` : c.path}
           >
@@ -324,7 +334,7 @@ export function SidePanel({
         <h2 className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
           Files
           {project && (
-            <span className="ml-1 normal-case tracking-normal text-zinc-600">· {project.name}</span>
+            <span className="ml-1 normal-case tracking-normal text-zinc-500">· {project.name}</span>
           )}
         </h2>
         {!project ? (
@@ -346,7 +356,7 @@ export function SidePanel({
             ))}
           </ul>
         )}
-        <p className="mt-2 px-3 text-[11px] text-zinc-600">
+        <p className="mt-2 px-3 text-[11px] text-zinc-500">
           Respects .gitignore; dependency and build folders are hidden.
         </p>
       </section>

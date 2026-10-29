@@ -43,18 +43,19 @@ export function RunRecord({ approvals }: { approvals: ApprovalDto[] }) {
   if (settled.length === 0) return null;
   const failures = settled.filter((a) => outcome(a).kind === 'bad').length;
   return (
-    <section
+    <div
+      role="group"
       aria-label="Run record"
       className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs"
     >
-      <h3 className="mb-1 flex items-center gap-1.5 font-medium text-zinc-300">
+      <h2 className="mb-1 flex items-center gap-1.5 font-medium text-zinc-300">
         <ClipboardList className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
         Run record
         <span className="font-normal text-zinc-500">
           · from Friday’s logs, not the model
           {failures > 0 && <span className="text-red-400"> · {failures} did not succeed</span>}
         </span>
-      </h3>
+      </h2>
       <ul className="space-y-0.5">
         {settled.map((a) => {
           const o = outcome(a);
@@ -67,6 +68,6 @@ export function RunRecord({ approvals }: { approvals: ApprovalDto[] }) {
           );
         })}
       </ul>
-    </section>
+    </div>
   );
 }

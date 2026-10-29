@@ -56,10 +56,10 @@ export function DiffView({ diff, maxHeight = 'max-h-96' }: { diff: string; maxHe
         <tbody>
           {lines.map((l, i) => (
             <tr key={i} className={ROW[l.kind]} data-kind={l.kind}>
-              <td className="w-10 select-none border-r border-zinc-800/80 px-1.5 text-right text-zinc-600">
+              <td className="w-10 select-none border-r border-zinc-800/80 px-1.5 text-right text-zinc-500">
                 {l.oldNo ?? ''}
               </td>
-              <td className="w-10 select-none border-r border-zinc-800/80 px-1.5 text-right text-zinc-600">
+              <td className="w-10 select-none border-r border-zinc-800/80 px-1.5 text-right text-zinc-500">
                 {l.newNo ?? ''}
               </td>
               <td className="whitespace-pre px-2">

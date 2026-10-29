@@ -33,7 +33,7 @@ const CATEGORIES: MemoryCategory[] = [
 
 type Filter = 'all' | 'user' | 'project' | 'operational' | 'session';
 const input =
-  'rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm outline-none focus:border-zinc-500';
+  'rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm outline-none focus:border-sky-500';
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function MemoryRow({

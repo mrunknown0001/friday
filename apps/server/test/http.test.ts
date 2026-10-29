@@ -59,6 +59,45 @@ describe('local-only HTTP guards', () => {
     expect(res.json().error.code).toBe('forbidden_host');
   });
 
+  it('requires the launch token on every request when one is configured (desktop)', async () => {
+    const token = 'T'.repeat(43);
+    const config = testConfig();
+    config.server.launchToken = token;
+    const { app } = await setup([], config);
+    for (const headers of [LOCAL, { ...LOCAL, 'x-friday-token': 'T'.repeat(42) }]) {
+      const res = await app.inject({ method: 'GET', url: '/api/settings', headers });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error.code).toBe('invalid_launch_token');
+    }
+    const ok = await app.inject({
+      method: 'GET',
+      url: '/api/settings',
+      headers: { ...LOCAL, 'x-friday-token': token },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body).not.toContain(token);
+  });
+
+  it('accepts its own origin when the OS picked the port (desktop binds port 0)', async () => {
+    const config = testConfig();
+    config.server.port = 0;
+    const { app } = await setup([], config);
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const port = (app.server.address() as { port: number }).port;
+    const res = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      method: 'POST',
+      headers: { ...MUTATE, origin: `http://127.0.0.1:${port}` },
+      body: '{}',
+    });
+    expect(res.status).toBe(201);
+    const foreign = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      method: 'POST',
+      headers: { ...MUTATE, origin: 'http://127.0.0.1:4317' },
+      body: '{}',
+    });
+    expect(foreign.status).toBe(403);
+  });
+
   it('rejects foreign origins and cross-site fetches', async () => {
     const { app } = await setup([]);
     const a = await app.inject({

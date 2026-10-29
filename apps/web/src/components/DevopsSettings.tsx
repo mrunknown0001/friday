@@ -11,7 +11,7 @@ const ENV_TONE: Record<HostEnvironment, Tone> = {
   production: 'danger',
 };
 const input =
-  'w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm outline-none focus:border-zinc-500';
+  'w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm outline-none focus:border-sky-500';
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function Block({ title, children }: { title: string; children: ReactNode }) {

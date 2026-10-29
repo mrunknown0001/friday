@@ -27,8 +27,15 @@ export function testConfig(overrides: Partial<AppConfig['provider']> = {}): AppC
       maxRetries: 2,
       ...overrides,
     },
-    server: { host: '127.0.0.1', port: 4317, devOrigins: ['http://localhost:5173'] },
+    server: {
+      host: '127.0.0.1',
+      port: 4317,
+      devOrigins: ['http://localhost:5173'],
+      launchToken: null,
+    },
     dataDir: ':memory:',
+    envFile: '/friday/.env',
+    webDist: '/friday/apps/web/dist',
     agent: {
       maxIterations: 8,
       maxToolCalls: 12,

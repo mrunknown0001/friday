@@ -28,7 +28,7 @@ export function DeploymentPlanCard({ plan }: { plan: DeploymentPlanDto }) {
     >
       <header className="flex flex-wrap items-center gap-2">
         <Rocket className="h-4 w-4 text-zinc-400" aria-hidden />
-        <h3 className="font-semibold text-zinc-100">{plan.title}</h3>
+        <h2 className="font-semibold text-zinc-100">{plan.title}</h2>
         <Badge tone={ENV_TONE[plan.environment]} className="uppercase">
           {plan.environment}
         </Badge>
@@ -48,7 +48,7 @@ export function DeploymentPlanCard({ plan }: { plan: DeploymentPlanDto }) {
 
       {plan.preChecks.length > 0 && (
         <div>
-          <h4 className="mb-0.5 text-xs font-medium text-zinc-400">Before starting</h4>
+          <h3 className="mb-0.5 text-xs font-medium text-zinc-400">Before starting</h3>
           <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-200">
             {plan.preChecks.map((c) => (
               <li key={c}>{c}</li>
@@ -58,7 +58,7 @@ export function DeploymentPlanCard({ plan }: { plan: DeploymentPlanDto }) {
       )}
 
       <div>
-        <h4 className="mb-1 text-xs font-medium text-zinc-400">Steps</h4>
+        <h3 className="mb-1 text-xs font-medium text-zinc-400">Steps</h3>
         <ol className="space-y-1.5">
           {plan.steps.map((step, i) => (
             <li key={i} className="rounded-md border border-zinc-800 bg-zinc-950/60 p-2 text-xs">
@@ -83,7 +83,7 @@ export function DeploymentPlanCard({ plan }: { plan: DeploymentPlanDto }) {
 
       {plan.verification.length > 0 && (
         <div>
-          <h4 className="mb-0.5 text-xs font-medium text-zinc-400">Verification</h4>
+          <h3 className="mb-0.5 text-xs font-medium text-zinc-400">Verification</h3>
           <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-200">
             {plan.verification.map((v) => (
               <li key={v}>{v}</li>

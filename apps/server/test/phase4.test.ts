@@ -113,11 +113,36 @@ describe('git inspection tools', () => {
     expect(diff.content).not.toContain('topsecretvalue');
     expect(diff.content).toContain('+b');
     expect(hideSecretDiffs('diff --git a/x b/x\n+ok\n')).toBe('diff --git a/x b/x\n+ok\n');
+    // git quotes paths with non-ASCII or special characters; those must be decoded and hidden too.
+    const quoted = hideSecretDiffs(
+      'diff --git "a/caf\\303\\251/.env" "b/caf\\303\\251/.env"\n--- "a/caf\\303\\251/.env"\n+++ "b/caf\\303\\251/.env"\n+API_KEY=leaked\n',
+    );
+    expect(quoted).toContain('[changes to a credential file are hidden]');
+    expect(quoted).not.toContain('leaked');
+  });
+
+  it('never shows credential files through revision:path or blob ids', async () => {
+    const root = makeRepo({ '.env': 'API_KEY=topsecretvalue\n', 'a.txt': 'a\n' });
+    for (const ref of ['HEAD:.env', ':.env', 'HEAD~0:.env']) {
+      const r = await run(root, 'git_show', { ref });
+      expect(r.status, ref).toBe('error');
+      expect(r.content).not.toContain('topsecretvalue');
+    }
+    const blob = g(root, 'rev-parse', 'HEAD:.env').trim();
+    const byId = await run(root, 'git_show', { ref: blob });
+    expect(byId.status).toBe('error');
+    expect(byId.content).not.toContain('topsecretvalue');
   });
 
   it('never runs programs configured by a malicious repository', async () => {
-    const root = makeRepo({ 'a.txt': 'one\n', '.gitattributes': 'a.txt diff=evil\n' });
+    const root = makeRepo({
+      'a.txt': 'one\n',
+      '.gitattributes': 'a.txt diff=evil\n* filter=pwn\n',
+    });
     const sentinel = path.join(root, 'PWNED');
+    // Content filters run on plain `git status`/`git diff` unless neutralised.
+    g(root, 'config', 'filter.pwn.clean', `sh -c 'touch ${sentinel}; cat'`);
+    g(root, 'config', 'filter.pwn.process', `sh -c 'touch ${sentinel}'`);
     g(root, 'config', 'core.fsmonitor', `touch ${sentinel}; echo`);
     g(root, 'config', 'diff.evil.textconv', `sh -c 'touch ${sentinel}; cat "$0"'`);
     g(root, 'config', 'diff.external', `sh -c 'touch ${sentinel}'`);

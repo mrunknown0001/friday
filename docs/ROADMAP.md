@@ -131,5 +131,18 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
 ## Phase 7: Polish and hardening
 
-- ⬜ Electron shell (context isolation, no renderer Node, preload bridge, per-launch API token)
-- ⬜ Security review, accessibility pass, performance (code-split highlight.js), installer and docs
+- ✅ SQLite moved to Node's built-in `node:sqlite` (FTS5 included): no native modules, same code under Node and Electron
+- ✅ Electron shell (Electron 44): sandboxed renderer with context isolation and no Node, three-call preload bridge
+  with sender checks, per-launch token added at the network layer, navigation/pop-up/permission lockdown, fuses,
+  server in a utility process that binds its own port, crash and startup dialogs, graceful shutdown
+- ✅ Desktop configuration: `~/.config/Friday/friday.env` (0600), Settings shows the path with **Show config file**
+  and **Restart server**; native folder picker for projects; data-folder lock
+- ✅ Linux installers: AppImage and deb via electron-builder (`npm run dist:desktop`)
+- ✅ Independent security review; all 9 findings fixed with regression tests (see SECURITY.md, Phase 7)
+- ✅ Accessibility: axe-core audit of five screens down to 0 violations (contrast, labels, headings, landmarks, focus,
+  target size)
+- ✅ Performance: Markdown renderer and highlighter load on demand; initial bundle 840 KB → 357 KB
+- ✅ Live end-to-end test of the full coding cycle on a throwaway project (`e2e.int.test.ts`)
+- ✅ Docs: desktop install and configuration, backup and restore, recovery table
+- ✅ Verified live on 2026-10-29: packaged app and AppImage launch with fuses on; key setup → restart → real
+  connection test from the desktop app; end-to-end test passed with `claude-sonnet-4.6`

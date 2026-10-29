@@ -6,7 +6,7 @@ import type {
   MemoryScope,
   MemoryStatus,
 } from '@friday/shared';
-import type { Db } from '../db/database.js';
+import { type Db, transaction } from '../db/database.js';
 
 interface MemoryRow {
   id: string;
@@ -273,12 +273,12 @@ export class MemoryRepo {
     const bump = this.db.prepare(
       'UPDATE memories SET use_count = use_count + 1, last_used_at = ? WHERE id = ?',
     );
-    this.db.transaction(() => {
+    transaction(this.db, () => {
       for (const r of refs) {
         insert.run(runId, r.id, r.reason, JSON.stringify(r));
         bump.run(now, r.id);
       }
-    })();
+    });
   }
 
   /** Snapshots (as shown at the time) of memories used per run in a session. */

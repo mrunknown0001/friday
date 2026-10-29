@@ -70,7 +70,11 @@ const ENV_TEMPLATE = /\.(example|sample|template|dist|defaults)$/i;
  * they are blocked even inside an authorized project. Templates like `.env.example` stay readable.
  */
 export function isSecretPath(relPath: string): boolean {
-  const segments = relPath.split(/[\\/]/).filter(Boolean);
+  // Compared case-insensitively: on Windows drives (/mnt/c under WSL) ".KUBE" is ".kube".
+  const segments = relPath
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .map((s) => s.toLowerCase());
   if (segments.some((s) => SECRET_DIRS.has(s))) return true;
   const base = segments.at(-1) ?? '';
   const lower = base.toLowerCase();
@@ -79,9 +83,12 @@ export function isSecretPath(relPath: string): boolean {
   return SECRET_EXTENSIONS.has(path.extname(lower));
 }
 
-/** Git internals (including remotes with embedded tokens) are off-limits until the Git tools exist. */
-function isGitInternal(relPath: string): boolean {
-  return relPath.split(/[\\/]/).includes('.git');
+/**
+ * Git internals (config can hold remotes with embedded tokens, hooks are executable). Compared
+ * case-insensitively for case-insensitive filesystems, where ".GIT/config" is ".git/config".
+ */
+export function isGitInternal(relPath: string): boolean {
+  return relPath.split(/[\\/]/).some((s) => s.toLowerCase() === '.git');
 }
 
 export interface ResolvedPath {

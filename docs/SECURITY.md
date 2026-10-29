@@ -87,6 +87,29 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Unwanted personal profiling                  | User-scope memories proposed by the agent stay pending until approved; memory can be disabled globally or per project; deleting is permanent.                   |
 | FTS query injection                          | Search text is reduced to quoted word tokens before reaching FTS5.                                                                                              |
 
+## Threats addressed in Phase 7 (desktop app and hardening)
+
+| Threat                                                       | Mitigation                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Other local programs or users driving the agent (desktop)    | A 256-bit token generated at each launch is required on every request (compared as fixed-length digests). Electron adds it at the network layer to the app's own requests only; page JavaScript never sees it, and it is never logged or stored.                        |
+| Another program taking the desktop server's port             | The server binds port 0 itself and reports the port over the utility-process channel, so there is no gap between choosing a port and binding it.                                                                                                                        |
+| Renderer compromise reaching the OS                          | `contextIsolation`, `sandbox`, no `nodeIntegration`. The preload exposes three calls (folder picker, restart, show config file); IPC is honoured only from the app window's top frame on the server's origin.                                                           |
+| Navigation, pop-ups and permission prompts                   | Navigation and redirects off the app origin are blocked (http/https links open in the system browser), `window.open` and webviews are denied, and every permission except clipboard writes for the app is refused.                                                      |
+| Repurposing the packaged binary                              | Electron fuses: `RunAsNode`, `NODE_OPTIONS` and inspector flags disabled; asar integrity validation and app-from-asar-only enabled.                                                                                                                                     |
+| Two servers on one database                                  | A PID lock file in the data folder; a stale lock from a crash is replaced.                                                                                                                                                                                              |
+| API key storage (desktop)                                    | `friday.env` is created `0600` in the user's config folder and read only by the server process. Settings shows its path, never its contents.                                                                                                                            |
+| Committed credential files via git (`HEAD:.env`, blob ids)   | Revisions may not contain `:`; `git_show` resolves the revision to a commit first, so blobs and trees are refused.                                                                                                                                                      |
+| Repository-defined programs in read-only git commands        | Before every git call, program-running keys in the repository's own config (filter, diff, merge, gpg, editor, askpass, proxy, …) are read and blanked with `-c key=`. User and system config stay trusted.                                                              |
+| Guessing secrets through search results                      | Credential files and `.git` are never searched, and nothing in the result depends on their contents (previously "matched in .env" was reported, which allowed character-by-character guessing). Every ripgrep result is re-checked, so a glob cannot re-include `.git`. |
+| Credential diffs with quoted file names                      | Diff sections are matched on decoded paths from the header, `---`/`+++` and rename lines, so C-quoted names are hidden too.                                                                                                                                             |
+| Case-insensitive filesystems (`/mnt/c` under WSL)            | `.git` and credential-folder checks compare lower-cased path segments.                                                                                                                                                                                                  |
+| Env-style secrets (`DB_PASSWORD=`, `AWS_SECRET_ACCESS_KEY=`) | Redaction matches secret words inside variable names and `user:password@` in URLs; the memory policy also refuses `login user:password` pairs.                                                                                                                          |
+| Folder swapped for a symlink between approval and write      | The target folder is resolved again right before writing, and the write goes through the resolved path.                                                                                                                                                                 |
+
+An independent review (2026-10-29) of the HTTP guards, approval engine, path confinement, command and git execution,
+SSH, renderer, Electron shell and memory policy found the issues listed above; all are fixed and covered by tests.
+Not reviewed in depth: the deployment-plan module beyond its remote tools.
+
 ## Known limitations
 
 - `run_command` is **not sandboxed**: an approved command runs as the current user with full filesystem and network
@@ -98,8 +121,9 @@ as a privileged local service from day one, even though Phase 1 has no tools.
   slip through. Review saved memories periodically.
 - Risk notes on commands are heuristics for the reviewer; they never relax the approval requirement.
 
-- Any process running as the same OS user can call the API. A per-launch bearer token (for Electron, passed through the
-  preload bridge) is planned for Phase 7.
+- In the **web app**, any process running as the same OS user can call the API on `127.0.0.1:4317`. The desktop app
+  closes this with its per-launch token. In both, a process running as you can still read the data folder and the
+  config file; Friday cannot defend against malware already running under your account.
 - Redaction is pattern-based and cannot catch every secret format.
 - The context-window size is an estimate (about 3.5 characters per token) unless the user configures it.
 - NoTokenLimit adds its own hidden prompt (~1,100 tokens measured), which Friday cannot see or override. Friday

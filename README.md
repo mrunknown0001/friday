@@ -2,7 +2,7 @@
 
 A local-first AI coding and DevOps assistant that uses [NoTokenLimit](https://notokenlimit.com) as its model provider.
 
-**Current status: Phase 6 (memory).** Friday works on authorized projects (read, edit, test, commit; each change
+**Current status: Phase 7 (desktop app and hardening).** Friday runs as a Linux desktop app or as a local web app. It works on authorized projects (read, edit, test, commit; each change
 approved by you) and on servers (diagnostics, logs, Docker, deployment plans, approved SSH commands with production
 safeguards). It remembers durable facts across conversations (project commands and decisions, procedures, your
 approved preferences), shows which memories informed each answer, and keeps each project's memory isolated. Every
@@ -10,11 +10,60 @@ task ends with a verification report built from Friday's own records. See [docs/
 
 ## Requirements
 
-- Node.js ≥ 22.12 (tested on 22.23) and npm
-- Linux, macOS, or WSL2. `better-sqlite3` ships prebuilt binaries for common platforms.
+- **Desktop app:** 64-bit Linux, or WSL2 with WSLg. Nothing else; Node.js is built in.
+- **From source / web app:** Node.js ≥ 22.13 (tested on 22.23) and npm, on Linux, macOS or WSL2. Friday uses Node's
+  built-in SQLite, so there are no native modules to compile.
 - A NoTokenLimit API key
 
-## Setup
+## Desktop app
+
+### Install
+
+Build the packages (or use ones built for you):
+
+```bash
+npm install
+```
+
+```bash
+npm run dist:desktop
+```
+
+This writes `apps/desktop/release/Friday-<version>-x86_64.AppImage` and `apps/desktop/release/friday_<version>_amd64.deb`.
+
+- **AppImage:** `chmod +x Friday-*.AppImage`, then run it. It needs FUSE and the usual desktop libraries; on WSL or a
+  minimal system install them with `sudo apt install libfuse2t64 libnss3 libasound2t64 libgtk-3-0 libxss1 libxtst6`.
+  Without FUSE, run it as `./Friday-*.AppImage --appimage-extract-and-run`.
+- **deb (Debian/Ubuntu):** `sudo apt install ./friday_<version>_amd64.deb`, then start **Friday** from the app menu or
+  run `friday`.
+
+To try the desktop shell from a source checkout without packaging, run `npm run desktop`.
+
+### Configure
+
+On first launch Friday creates `~/.config/Friday/friday.env`, readable by you only. Use **Friday › Show Config File**
+(or **Settings › Show config file**), set `NTL_API_KEY=` to your key, save, then click **Restart server** in Settings
+(or **Friday › Restart Server**). Pick a model and test the connection as described in [First run](#first-run).
+Never paste a key into the chat.
+
+| What                         | Where                                                             |
+| ---------------------------- | ----------------------------------------------------------------- |
+| Config (API key, model, …)   | `~/.config/Friday/friday.env`                                     |
+| Data (conversations, memory) | `~/.config/Friday/data/` (`FRIDAY_DATA_DIR` overrides it)         |
+| Server log                   | `~/.config/Friday/logs/server.log` (**Friday › Open Server Log**) |
+
+`npm run desktop` from a checkout uses the repository's `.env` and `.data/` instead, so it shares history with the web
+version. Only one Friday server can use a data folder at a time.
+
+### How it is put together
+
+The window is a sandboxed Chromium page with no Node.js access. It talks to the same local server as the web version,
+which the app starts on a random loopback port. Every request carries a secret generated at launch, added outside the
+page, so other programs and users on the machine cannot drive the agent. The page can ask the app for exactly three
+things: a native folder picker, a server restart, and showing the config file. Links to other sites open in your
+browser. Details: [docs/SECURITY.md](docs/SECURITY.md#threats-addressed-in-phase-7-desktop-app-and-hardening).
+
+## Setup (web app from source)
 
 ```bash
 npm install
@@ -55,7 +104,8 @@ npm start
 
 ## Projects
 
-1. In the sidebar, click the **Add project** icon and enter the absolute path of a project folder.
+1. In the sidebar, click the **Add project** icon and enter the absolute path of a project folder (in the desktop app,
+   **Browse…** opens a folder picker).
    Adding it authorizes Friday to **read** inside that folder only. Broad locations (`/`, your home folder, system
    directories, whole drives) are refused.
 2. Conversations started while a project is selected are bound to it permanently; tools can only see that project.
@@ -200,54 +250,75 @@ new model for tool use.
 
 ## Data
 
-- SQLite database: `./.data/friday.db` (override with `FRIDAY_DATA_DIR`). The file is created with `0600` permissions.
-- Stored: conversations, run state, settings, model capabilities, provider-call metadata (no prompt text), and an audit log.
-- Back up by copying the `.data` directory while the server is stopped.
-- Reset by stopping the server and deleting `.data/`.
+- SQLite database: `friday.db` in the data folder (`./.data/` for the web app, `~/.config/Friday/data/` for the desktop
+  app; override with `FRIDAY_DATA_DIR`). The folder is created `0700` and the database `0600`.
+- Stored: conversations, run state and checkpoints, approvals, file-change backups for undo, settings, model
+  capabilities, memories, SSH host records (key paths, never passwords), provider-call metadata (no prompt text), and an
+  audit log. API keys are never stored.
+- `friday.lock` in the data folder holds the running server's PID, so two servers cannot share one database. A lock
+  left by a crash is replaced automatically.
+
+### Backup and restore
+
+1. Quit Friday (or stop `npm start`), so the database is closed cleanly.
+2. Copy the whole data folder (it includes `friday.db` and, while running, `friday.db-wal`).
+3. To restore, quit Friday and put the copy back in place. To start fresh, delete the folder instead.
 
 ### Recovery
 
-- If the server stops mid-response, the run is marked **interrupted** on the next start. Any partial text that was
-  checkpointed stays visible, and **Retry** re-runs the request.
-- Partial, cancelled, and failed responses are kept for display but are never fed back to the model as context.
+| Situation                                  | What happens / what to do                                                                                                                                            |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server or app stopped mid-task             | On the next start the run is marked **interrupted** with its checkpoint, and pending approvals are cancelled (they can never run late). Use **Resume** or **Retry**. |
+| Desktop server crashed                     | A dialog shows the end of the server log with **Restart server**. The full log is in `~/.config/Friday/logs/server.log`.                                             |
+| "Another Friday server … is already using" | Another Friday (web or desktop) is running on the same data folder. Quit it, or point one of them at a different `FRIDAY_DATA_DIR`.                                  |
+| "NoTokenLimit is not configured"           | Set `NTL_API_KEY` in the file shown in Settings, then restart the server.                                                                                            |
+| A change Friday made was wrong             | **Undo** in the side panel, or **Roll back this run** on the verification report. Both refuse to overwrite edits you made since.                                     |
+| Database damaged                           | Quit Friday, move the data folder aside, start Friday (a new database is created), then restore your last backup.                                                    |
+
+Partial, cancelled, and failed responses are kept for display but are never fed back to the model as context.
 
 ## Scripts
 
-| Command                    | What it does                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------ |
-| `npm run dev`              | API server (tsx watch) and Vite dev server together                                  |
-| `npm run build`            | Type-check and build the web UI and server                                           |
-| `npm start`                | Run the compiled server, which also serves the built UI                              |
-| `npm test`                 | Unit and integration tests (mocked HTTP; no API key needed)                          |
-| `npm run test:integration` | **Live** NoTokenLimit test; needs `NTL_API_KEY` and `NTL_MODEL`, uses a little quota |
-| `npm run typecheck`        | Strict TypeScript across all workspaces                                              |
-| `npm run lint`             | ESLint                                                                               |
-| `npm run format`           | Prettier                                                                             |
+| Command                    | What it does                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `npm run dev`              | API server (tsx watch) and Vite dev server together                                             |
+| `npm run build`            | Type-check and build the web UI, server and desktop shell                                       |
+| `npm start`                | Run the compiled server, which also serves the built UI                                         |
+| `npm test`                 | Unit and integration tests (mocked HTTP; no API key needed)                                     |
+| `npm run test:integration` | **Live** tests incl. the end-to-end coding cycle (needs `NTL_API_KEY`, `NTL_MODEL`; uses quota) |
+| `npm run desktop`          | Build everything and open the desktop app from the checkout                                     |
+| `npm run dist:desktop`     | Build the Linux AppImage and deb into `apps/desktop/release/`                                   |
+| `npm run typecheck`        | Strict TypeScript across all workspaces                                                         |
+| `npm run lint`             | ESLint                                                                                          |
+| `npm run format`           | Prettier                                                                                        |
 
 ## Configuration
 
-| Variable                      | Default                           | Notes                                                          |
-| ----------------------------- | --------------------------------- | -------------------------------------------------------------- |
-| `NTL_API_KEY`                 | none                              | Required for any model call                                    |
-| `NTL_MODEL`                   | none                              | Default model; a model chosen in Settings takes precedence     |
-| `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1` | Must be HTTPS (plain HTTP is allowed only for localhost)       |
-| `NTL_TIMEOUT_MS`              | `120000`                          | Response-header timeout and stream idle timeout                |
-| `NTL_MAX_RETRIES`             | `2`                               | Retries for transient errors only (429, 5xx, network, timeout) |
-| `FRIDAY_PORT`                 | `4317`                            | The server always binds to `127.0.0.1`                         |
-| `FRIDAY_WEB_PORT`             | `5173`                            | Vite dev server port (`npm run dev` only)                      |
-| `FRIDAY_DATA_DIR`             | `./.data`                         | SQLite location                                                |
-| `FRIDAY_AGENT_MAX_ITERATIONS` | `20`                              | Model turns per request before the run pauses as `blocked`     |
-| `FRIDAY_AGENT_MAX_TOOL_CALLS` | `40`                              | Tool calls per request before the run pauses as `blocked`      |
-| `FRIDAY_TOOL_TIMEOUT_MS`      | `30000`                           | Per-tool-call timeout                                          |
-| `FRIDAY_TOOL_OUTPUT_CHARS`    | `20000`                           | Maximum characters of one tool result sent to the model        |
-| SSH known hosts               | `<data dir>/ssh/`                 | Per-host files built from the keys you trusted                 |
-| `FRIDAY_APPROVAL_TTL_MS`      | `900000`                          | How long an approval request stays valid (15 minutes)          |
+| Variable                      | Default                           | Notes                                                           |
+| ----------------------------- | --------------------------------- | --------------------------------------------------------------- |
+| `NTL_API_KEY`                 | none                              | Required for any model call                                     |
+| `NTL_MODEL`                   | none                              | Default model; a model chosen in Settings takes precedence      |
+| `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1` | Must be HTTPS (plain HTTP is allowed only for localhost)        |
+| `NTL_TIMEOUT_MS`              | `120000`                          | Response-header timeout and stream idle timeout                 |
+| `NTL_MAX_RETRIES`             | `2`                               | Retries for transient errors only (429, 5xx, network, timeout)  |
+| `FRIDAY_PORT`                 | `4317`                            | The server always binds to `127.0.0.1`                          |
+| `FRIDAY_WEB_PORT`             | `5173`                            | Vite dev server port (`npm run dev` only)                       |
+| `FRIDAY_DATA_DIR`             | `./.data`                         | SQLite location (desktop: `~/.config/Friday/data`)              |
+| `FRIDAY_ENV_FILE`             | `./.env`                          | File the `NTL_*` settings are read from (desktop: `friday.env`) |
+| `FRIDAY_WEB_DIST`             | `apps/web/dist`                   | Built UI the server serves                                      |
+| `FRIDAY_AGENT_MAX_ITERATIONS` | `20`                              | Model turns per request before the run pauses as `blocked`      |
+| `FRIDAY_AGENT_MAX_TOOL_CALLS` | `40`                              | Tool calls per request before the run pauses as `blocked`       |
+| `FRIDAY_TOOL_TIMEOUT_MS`      | `30000`                           | Per-tool-call timeout                                           |
+| `FRIDAY_TOOL_OUTPUT_CHARS`    | `20000`                           | Maximum characters of one tool result sent to the model         |
+| SSH known hosts               | `<data dir>/ssh/`                 | Per-host files built from the keys you trusted                  |
+| `FRIDAY_APPROVAL_TTL_MS`      | `900000`                          | How long an approval request stays valid (15 minutes)           |
 
 ## Layout
 
 ```
 apps/server     Fastify API, agent orchestration, provider adapter, SQLite
 apps/web        React + Vite + Tailwind UI
+apps/desktop    Electron shell (main process, preload bridge, packaging)
 packages/shared Type-only API contract shared by server and web
 docs/           Architecture, security model, roadmap
 ```
