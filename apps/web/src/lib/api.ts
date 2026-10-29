@@ -1,6 +1,11 @@
 import type {
   ApiErrorBody,
   ConnectionTestResult,
+  FileViewDto,
+  ProjectDto,
+  ProjectOverviewDto,
+  SystemInfoDto,
+  TreeEntryDto,
   MessageDto,
   ModelCapabilities,
   ModelInfo,
@@ -81,8 +86,29 @@ export const api = {
     request<ModelCapabilities>('PUT', '/api/provider/capabilities/context-window', { tokens }),
   providerCalls: () => request<{ calls: ProviderCallDto[] }>('GET', '/api/provider/calls'),
 
-  sessions: () => request<{ sessions: SessionSummaryDto[] }>('GET', '/api/sessions'),
-  createSession: () => request<SessionSummaryDto>('POST', '/api/sessions', {}),
+  system: () => request<SystemInfoDto>('GET', '/api/system'),
+  projects: () => request<{ projects: ProjectDto[] }>('GET', '/api/projects'),
+  addProject: (path: string, name?: string) =>
+    request<ProjectDto>('POST', '/api/projects', name ? { path, name } : { path }),
+  removeProject: (id: string) => request<void>('DELETE', `/api/projects/${id}`),
+  projectOverview: (id: string) =>
+    request<ProjectOverviewDto>('GET', `/api/projects/${id}/overview`),
+  projectTree: (id: string, path = '.') =>
+    request<{ path: string; entries: TreeEntryDto[]; truncated: boolean }>(
+      'GET',
+      `/api/projects/${id}/tree?path=${encodeURIComponent(path)}`,
+    ),
+  projectFile: (id: string, path: string) =>
+    request<FileViewDto>('GET', `/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
+
+  /** projectId null lists conversations that have no project. */
+  sessions: (projectId: string | null) =>
+    request<{ sessions: SessionSummaryDto[] }>(
+      'GET',
+      `/api/sessions?project=${projectId ?? 'none'}`,
+    ),
+  createSession: (projectId: string | null) =>
+    request<SessionSummaryDto>('POST', '/api/sessions', { projectId }),
   session: (id: string) => request<SessionDetailDto>('GET', `/api/sessions/${id}`),
   renameSession: (id: string, title: string) =>
     request<SessionSummaryDto>('PATCH', `/api/sessions/${id}`, { title }),

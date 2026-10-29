@@ -93,6 +93,68 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX audit_events_session ON audit_events(session_id, id);
     `,
   },
+  {
+    version: 2,
+    name: 'projects_and_tools',
+    up: `
+      CREATE TABLE projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        root_path TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        last_opened_at TEXT
+      );
+
+      -- A session is bound to at most one project for its whole life (no cross-project context).
+      ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
+      ALTER TABLE sessions ADD COLUMN plan TEXT;
+      CREATE INDEX sessions_project ON sessions(project_id, updated_at);
+
+      -- SQLite cannot alter a CHECK constraint, so rebuild runs with the new statuses
+      -- ('blocked' now, 'awaiting_approval' for the Phase 3 approval engine).
+      CREATE TABLE runs_v2 (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        user_message_id INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN
+          ('running','awaiting_approval','completed','failed','cancelled','interrupted','blocked')),
+        model TEXT,
+        error_kind TEXT,
+        error_message TEXT,
+        retryable INTEGER NOT NULL DEFAULT 0,
+        iterations INTEGER NOT NULL DEFAULT 0,
+        tool_call_count INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+      INSERT INTO runs_v2 (id, session_id, user_message_id, status, model, error_kind, error_message,
+                           retryable, started_at, finished_at)
+        SELECT id, session_id, user_message_id, status, model, error_kind, error_message,
+               retryable, started_at, finished_at FROM runs;
+      DROP TABLE runs;
+      ALTER TABLE runs_v2 RENAME TO runs;
+      CREATE INDEX runs_session ON runs(session_id, started_at);
+      CREATE INDEX runs_status ON runs(status);
+
+      CREATE TABLE tool_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        call_id TEXT NOT NULL,
+        result_message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        arguments TEXT NOT NULL,
+        category TEXT,
+        status TEXT NOT NULL CHECK (status IN ('completed','error','denied','skipped')),
+        summary TEXT NOT NULL,
+        truncated INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX tool_calls_run ON tool_calls(run_id);
+      CREATE INDEX tool_calls_message ON tool_calls(result_message_id);
+    `,
+  },
 ];
 
 export function migrate(db: Database.Database, migrations: Migration[] = MIGRATIONS): number[] {

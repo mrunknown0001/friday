@@ -2,6 +2,8 @@
 
 Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
+**Current phase: 3 (approval engine).**
+
 ## Phase 1: Foundation
 
 - ✅ npm-workspaces monorepo (server, web, shared contract), strict TypeScript, ESLint, Prettier
@@ -28,14 +30,25 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
 ## Phase 2: Read-only coding agent
 
-- ⬜ Projects table, open/authorize a folder, per-project isolation
-- ⬜ Workspace tools: list, read (line ranges), metadata, ripgrep search, manifest/framework detection, `.gitignore`
-  handling
-- ⬜ Canonical path resolution, root enforcement, symlink-escape protection, binary and large-file handling
-- ⬜ Tool registry with zod schemas, permission category and risk level per tool; unknown tools denied
-- ⬜ Agent loop: tool calls → validate → execute → observe, with iteration, tool-call, and output-size limits,
-  loop and repeated-failure detection
-- ⬜ Activity timeline in the UI; plan/checklist display
+- ✅ Projects: authorize a folder (canonical root, broad/system locations refused), switch projects, sessions
+  permanently bound to one project, remove a project without touching files
+- ✅ Workspace tools: `inspect_project`, `list_directory`, `find_files`, `search_code` (ripgrep, literal fallback),
+  `read_file` (line ranges), `file_info`, plus `update_plan`
+- ✅ Path confinement: traversal, absolute-path and symlink escapes blocked; `.gitignore` (nested) and default
+  exclusions honoured; binary and oversized files handled; credential files and `.git` internals never read
+- ✅ Tool registry: zod schemas → JSON Schema for the model; permission category and risk per tool; backend policy
+  check on every call; unknown and non-read-only tools denied
+- ✅ Agent loop: tool calls → validate → execute → observe; limits on iterations, tool calls, output size, per-tool
+  timeout; duplicate-call and consecutive-failure detection; cancellation between and during tools; `blocked` status
+  with Continue
+- ✅ Tool history persisted (assistant tool calls, tool results, execution metadata) and repaired if a run died
+  mid-tool; older tool output clipped to fit the context window
+- ✅ UI: project switcher and authorization dialog, tool activity timeline (expandable output), plan checklist,
+  read-only file explorer with syntax-highlighted viewer
+- ✅ 102 automated tests (46 new: path security, walking, detection, search on both engines, tool executor, agent loop,
+  project routes)
+- ✅ Verified live on 2026-10-29 with `claude-haiku-4.5`: the agent used 6 real tool calls to find a planted bug in a
+  disposable sample project and cited `src/cart.js:5`; `.env` contents never reached the model or database
 
 ## Phase 3: Approval engine
 

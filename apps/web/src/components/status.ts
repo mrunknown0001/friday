@@ -7,6 +7,7 @@ export const RUN_STATUS_TONE: Record<RunStatus, Tone> = {
   failed: 'danger',
   cancelled: 'warning',
   interrupted: 'warning',
+  blocked: 'warning',
 };
 
 export const MESSAGE_STATUS_LABEL: Record<
@@ -23,4 +24,6 @@ export const PHASE_LABEL: Record<RunPhase, string> = {
   compacting: 'Compacting conversation',
   waiting_for_model: 'Thinking',
   streaming: 'Responding',
+  running_tool: 'Running tool',
+  reading_results: 'Reading results',
 };

@@ -74,6 +74,11 @@ export type ProviderCallRecorder = (record: ProviderCallRecord) => void;
  */
 export interface LLMProvider {
   readonly id: string;
+  /**
+   * Tokens the provider adds to every request on its side (hidden system prompts). Subtracted from
+   * the context budget so our own estimates do not overflow the real window.
+   */
+  readonly promptOverheadTokens?: number;
   isConfigured(): boolean;
   listModels(signal?: AbortSignal): Promise<ModelInfo[]>;
   streamChat(request: ChatRequest): AsyncGenerator<StreamEvent, void, undefined>;

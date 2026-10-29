@@ -67,11 +67,46 @@ deliberately low guesses, marked `assumed`, until the user configures a value.
   `sessions.summary` with `summary_through_message_id` and injected into the single system message. If summarization
   fails, the run continues with plain trimming and says so in a phase event.
 
+## Agent loop (Phase 2)
+
+`RunManager.execute` runs one request as a loop:
+
+1. Build the system prompt: project name, root, detected stack, capabilities, rules, untrusted-content policy.
+2. Build context from the whole session (user, assistant, and tool messages), repair any tool call that lacks a
+   result (crash between call and result), clip tool output from earlier turns, and fit the window (minus the
+   provider's hidden-prompt overhead). History is trimmed by whole turns, so it always starts with a user message.
+3. Stream one model turn with the allowed tool definitions. Persist the assistant message with its tool calls.
+4. No tool calls means the final answer: the run is `completed`.
+5. Otherwise execute each call through `executeToolCall` (policy → JSON parse → zod validation → execute with
+   timeout and cancellation → redact → truncate) and persist a `tool` message plus a `tool_calls` metadata row.
+6. Repeat. Safeguards: `maxIterations`, `maxToolCalls`, at most 2 identical calls (same tool and canonicalized
+   arguments), and `maxConsecutiveToolFailures`. Hitting one ends the run as `blocked`, which is retryable: the
+   model continues from the recorded tool work.
+
+Tool failures are returned to the model as `Error: …` results so it can correct itself. They never throw out of the
+loop.
+
+## Tools and workspace (`tools/`, `workspace/`)
+
+| Module                    | Responsibility                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `tools/types.ts`          | `ToolSpec`: name, description, permission category, risk, zod schema, executor. zod → JSON Schema.                       |
+| `tools/policy.ts`         | The only place that decides allow, deny, or (Phase 3) approval. Phase 2 allows `read_only` and `agent_state`.            |
+| `tools/registry.ts`       | Registers tools, advertises only policy-allowed ones, and validates and executes calls.                                  |
+| `tools/workspaceTools.ts` | `inspect_project`, `list_directory`, `find_files`, `search_code`, `read_file`, `file_info`.                              |
+| `tools/planTool.ts`       | `update_plan`: stores the checklist on the session and emits `plan_updated`.                                             |
+| `workspace/paths.ts`      | Canonical resolution inside the root, symlink-escape checks, credential and `.git` blocking, project-root authorization. |
+| `workspace/walk.ts`       | Depth-first listing honouring nested `.gitignore` and default exclusions; symlinks not followed.                         |
+| `workspace/search.ts`     | ripgrep via argv (no shell) with JSON output, or a literal-only built-in fallback.                                       |
+| `workspace/detect.ts`     | Stack, package-manager, manifest, and script detection from top-level files.                                             |
+
+The UI's file explorer (`/api/projects/:id/tree` and `/file`) uses the same `resolveInside` confinement as the agent.
+
 ## Web (`apps/web/src`)
 
 - `lib/api.ts` is a typed fetch client. It adds the `x-friday-client` header on mutating requests.
 - `lib/useRunStream.ts` wraps `EventSource` with automatic reconnect and de-duplication by `seq`.
-- `components/` contains Sidebar, ChatView (messages, live run, error and retry card, composer), SettingsDialog, and
+- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, error/retry/continue card, composer), SidePanel (plan and file explorer), AddProjectDialog, SettingsDialog, and
   small shadcn-style primitives (`ui/`) built on native elements such as `<dialog>`.
 - Markdown is rendered with react-markdown, GFM, and highlight.js. Raw HTML in model output is not rendered.
 

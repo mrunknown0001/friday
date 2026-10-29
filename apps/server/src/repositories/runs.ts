@@ -1,4 +1,4 @@
-import type { ProviderErrorKind, RunDto, RunStatus } from '@friday/shared';
+import type { RunDto, RunErrorKind, RunStatus } from '@friday/shared';
 import type { Db } from '../db/database.js';
 
 interface RunRow {
@@ -7,7 +7,7 @@ interface RunRow {
   user_message_id: number;
   status: RunStatus;
   model: string | null;
-  error_kind: ProviderErrorKind | null;
+  error_kind: RunErrorKind | null;
   error_message: string | null;
   retryable: number;
   started_at: string;
@@ -68,7 +68,7 @@ export class RunRepo {
   finish(
     id: string,
     status: Exclude<RunStatus, 'running'>,
-    error?: { kind: ProviderErrorKind; message: string; retryable: boolean },
+    error?: { kind: RunErrorKind; message: string; retryable: boolean },
   ): RunRecord {
     this.db
       .prepare(
@@ -84,6 +84,12 @@ export class RunRepo {
         id,
       );
     return this.get(id)!;
+  }
+
+  recordProgress(id: string, iterations: number, toolCallCount: number): void {
+    this.db
+      .prepare('UPDATE runs SET iterations = ?, tool_call_count = ? WHERE id = ?')
+      .run(iterations, toolCallCount, id);
   }
 
   /** Called at startup: runs left 'running' by a crash or restart can no longer progress. */

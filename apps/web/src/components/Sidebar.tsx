@@ -1,5 +1,5 @@
-import type { SessionSummaryDto } from '@friday/shared';
-import { MessageSquarePlus, Pencil, Settings, Trash2 } from 'lucide-react';
+import type { ProjectDto, SessionSummaryDto } from '@friday/shared';
+import { FolderPlus, FolderX, MessageSquarePlus, Pencil, Settings, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn';
 import { Badge } from './ui/badge';
@@ -7,6 +7,11 @@ import { Button } from './ui/button';
 import { RUN_STATUS_TONE } from './status';
 
 interface Props {
+  projects: ProjectDto[];
+  projectId: string | null;
+  onSelectProject: (id: string | null) => void;
+  onAddProject: () => void;
+  onRemoveProject: (id: string) => void;
   sessions: SessionSummaryDto[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -18,6 +23,11 @@ interface Props {
 }
 
 export function Sidebar({
+  projects,
+  projectId,
+  onSelectProject,
+  onAddProject,
+  onRemoveProject,
   sessions,
   activeId,
   onSelect,
@@ -28,6 +38,7 @@ export function Sidebar({
   settingsWarning,
 }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
+  const current = projects.find((p) => p.id === projectId) ?? null;
   const [draft, setDraft] = useState('');
 
   const commitRename = (id: string) => {
@@ -54,6 +65,68 @@ export function Sidebar({
         >
           <MessageSquarePlus className="h-4 w-4" />
         </Button>
+      </div>
+
+      <div className="border-b border-zinc-800 px-4 pb-3">
+        <div className="mb-1 flex items-center justify-between">
+          <label
+            htmlFor="project-select"
+            className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
+          >
+            Project
+          </label>
+          <div className="flex">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={onAddProject}
+              aria-label="Add project"
+              title="Add project"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+            </Button>
+            {current && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                aria-label={`Remove project ${current.name}`}
+                title="Remove project (files are not touched)"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Remove "${current.name}" from Friday? Files on disk are not touched; its conversations are kept without project access.`,
+                    )
+                  ) {
+                    onRemoveProject(current.id);
+                  }
+                }}
+              >
+                <FolderX className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+        <select
+          id="project-select"
+          value={projectId ?? ''}
+          onChange={(e) => onSelectProject(e.target.value || null)}
+          className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm outline-none focus:border-zinc-500"
+        >
+          <option value="">No project (chat only)</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+              {p.available ? '' : ' (missing)'}
+            </option>
+          ))}
+        </select>
+        {current && (
+          <p className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={current.rootPath}>
+            {current.rootPath}
+          </p>
+        )}
       </div>
 
       <nav aria-label="Conversations" className="flex-1 overflow-y-auto px-2 pb-2">

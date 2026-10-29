@@ -5,6 +5,7 @@ import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
 import { openDatabase } from './db/database.js';
 import { createServices } from './services.js';
+import { detectToolEnvironment } from './workspace/environment.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Works from both src/ (tsx) and dist/ (compiled): two levels up from apps/server/<dir>.
@@ -16,7 +17,8 @@ async function main() {
 
   const config = loadConfig(process.env, repoRoot);
   const db = openDatabase(path.join(config.dataDir, 'friday.db'));
-  const services = createServices(config, db);
+  const toolEnv = await detectToolEnvironment();
+  const services = createServices(config, db, { toolEnv });
 
   const interrupted = services.runs.markInterrupted();
   if (interrupted > 0) {
@@ -53,6 +55,7 @@ async function main() {
       model: services.modelSettings.resolve().model,
       dataDir: config.dataDir,
       interruptedRuns: interrupted,
+      ripgrep: toolEnv.ripgrepVersion ?? 'not found (literal search fallback)',
     },
     'Friday server ready',
   );

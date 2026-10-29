@@ -1,11 +1,25 @@
-import type { RunDto, RunEvent, RunPhase } from '@friday/shared';
+import type { PlanStep, RunDto, RunEvent, RunPhase, ToolCallStatus } from '@friday/shared';
 import { useEffect, useState } from 'react';
+
+export type LiveBlock =
+  | { kind: 'text'; text: string }
+  | {
+      kind: 'tool';
+      callId: string;
+      name: string;
+      arguments: string;
+      status: ToolCallStatus | 'running';
+      summary: string;
+      durationMs: number | null;
+    };
 
 export interface LiveRun {
   runId: string;
-  text: string;
+  /** Streamed output in order: assistant text interleaved with tool activity. */
+  blocks: LiveBlock[];
   phase: RunPhase | null;
   phaseDetail: string | null;
+  plan: PlanStep[] | null;
   finished: RunDto | null;
   connectionLost: boolean;
 }
@@ -14,23 +28,87 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'run_started',
   'phase',
   'text_delta',
+  'tool_started',
+  'tool_finished',
+  'plan_updated',
   'message_saved',
   'run_finished',
 ];
+
+const initial = (runId: string): LiveRun => ({
+  runId,
+  blocks: [],
+  phase: null,
+  phaseDetail: null,
+  plan: null,
+  finished: null,
+  connectionLost: false,
+});
+
+function apply(prev: LiveRun, event: RunEvent): LiveRun {
+  const next = { ...prev, connectionLost: false };
+  switch (event.type) {
+    case 'text_delta': {
+      const last = prev.blocks.at(-1);
+      next.blocks =
+        last?.kind === 'text'
+          ? [...prev.blocks.slice(0, -1), { kind: 'text', text: last.text + event.delta }]
+          : [...prev.blocks, { kind: 'text', text: event.delta }];
+      break;
+    }
+    case 'tool_started':
+      next.blocks = [
+        ...prev.blocks,
+        {
+          kind: 'tool',
+          callId: event.callId,
+          name: event.name,
+          arguments: event.arguments,
+          status: 'running',
+          summary: '',
+          durationMs: null,
+        },
+      ];
+      break;
+    case 'tool_finished':
+      next.blocks = prev.blocks.map((b) =>
+        b.kind === 'tool' && b.callId === event.callId
+          ? { ...b, status: event.status, summary: event.summary, durationMs: event.durationMs }
+          : b,
+      );
+      // Calls skipped before starting (limits, cancellation) have no tool_started event.
+      if (!prev.blocks.some((b) => b.kind === 'tool' && b.callId === event.callId)) {
+        next.blocks.push({
+          kind: 'tool',
+          callId: event.callId,
+          name: event.name,
+          arguments: '',
+          status: event.status,
+          summary: event.summary,
+          durationMs: event.durationMs,
+        });
+      }
+      break;
+    case 'phase':
+      next.phase = event.phase;
+      next.phaseDetail = event.detail ?? null;
+      break;
+    case 'plan_updated':
+      next.plan = event.plan;
+      break;
+    case 'run_finished':
+      next.finished = event.run;
+      break;
+    default:
+      break;
+  }
+  return next;
+}
 
 /**
  * Follows a run's Server-Sent Events. EventSource reconnects automatically and sends
  * Last-Event-ID, so the server replays only what was missed.
  */
-const initial = (runId: string): LiveRun => ({
-  runId,
-  text: '',
-  phase: null,
-  phaseDetail: null,
-  finished: null,
-  connectionLost: false,
-});
-
 export function useRunStream(
   runId: string | null,
   onFinished: (run: RunDto) => void,
@@ -46,24 +124,7 @@ export function useRunStream(
       const event = JSON.parse(raw.data) as RunEvent;
       if (event.seq !== 0 && event.seq <= lastSeq) return;
       lastSeq = event.seq;
-      setLive((prev) => {
-        const next = { ...(prev?.runId === runId ? prev : initial(runId)), connectionLost: false };
-        switch (event.type) {
-          case 'text_delta':
-            next.text += event.delta;
-            break;
-          case 'phase':
-            next.phase = event.phase;
-            next.phaseDetail = event.detail ?? null;
-            break;
-          case 'run_finished':
-            next.finished = event.run;
-            break;
-          default:
-            break;
-        }
-        return next;
-      });
+      setLive((prev) => apply(prev?.runId === runId ? prev : initial(runId), event));
       if (event.type === 'run_finished') {
         source.close();
         onFinished(event.run);

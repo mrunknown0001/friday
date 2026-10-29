@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { AgentLimitsDto } from '@friday/shared';
 import { z } from 'zod';
 
 const DEFAULT_BASE_URL = 'https://notokenlimit.com/api/v1';
@@ -42,6 +43,10 @@ const envSchema = z.object({
   FRIDAY_DATA_DIR: optionalString,
   FRIDAY_WEB_PORT: intFromEnv(5173, 1, 65_535),
   FRIDAY_DEV_ORIGINS: optionalString,
+  FRIDAY_AGENT_MAX_ITERATIONS: intFromEnv(20, 1, 100),
+  FRIDAY_AGENT_MAX_TOOL_CALLS: intFromEnv(40, 1, 300),
+  FRIDAY_TOOL_TIMEOUT_MS: intFromEnv(30_000, 1_000, 300_000),
+  FRIDAY_TOOL_OUTPUT_CHARS: intFromEnv(20_000, 2_000, 200_000),
 });
 
 export interface AppConfig {
@@ -59,6 +64,7 @@ export interface AppConfig {
     devOrigins: string[];
   };
   dataDir: string;
+  agent: AgentLimitsDto;
 }
 
 export class ConfigError extends Error {}
@@ -88,5 +94,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, repoRoot: string): AppConfig 
     },
     server: { host: '127.0.0.1', port: e.FRIDAY_PORT, devOrigins },
     dataDir: path.resolve(repoRoot, e.FRIDAY_DATA_DIR ?? '.data'),
+    agent: {
+      maxIterations: e.FRIDAY_AGENT_MAX_ITERATIONS,
+      maxToolCalls: e.FRIDAY_AGENT_MAX_TOOL_CALLS,
+      maxToolOutputChars: e.FRIDAY_TOOL_OUTPUT_CHARS,
+      toolTimeoutMs: e.FRIDAY_TOOL_TIMEOUT_MS,
+      maxConsecutiveToolFailures: 4,
+    },
   };
 }

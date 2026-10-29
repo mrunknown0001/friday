@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { AppConfig } from '../src/config.js';
 import { openDatabase } from '../src/db/database.js';
 import { ProviderError } from '../src/providers/errors.js';
@@ -8,6 +11,7 @@ import type {
   LLMProvider,
   ModelInfo,
   StreamEvent,
+  ToolCall,
 } from '../src/providers/types.js';
 import { createServices, type ServiceOverrides } from '../src/services.js';
 
@@ -25,6 +29,13 @@ export function testConfig(overrides: Partial<AppConfig['provider']> = {}): AppC
     },
     server: { host: '127.0.0.1', port: 4317, devOrigins: ['http://localhost:5173'] },
     dataDir: ':memory:',
+    agent: {
+      maxIterations: 8,
+      maxToolCalls: 12,
+      maxToolOutputChars: 20_000,
+      toolTimeoutMs: 5_000,
+      maxConsecutiveToolFailures: 3,
+    },
   };
 }
 
@@ -147,6 +158,7 @@ export function mockFetch(handlers: MockHandler[]) {
 
 export interface StreamStep {
   chunks?: string[];
+  toolCalls?: ToolCall[];
   delayMs?: number;
   finishReason?: FinishReason;
   /** Throw this error after emitting `errorAfter` chunks (default: after all chunks). */
@@ -186,7 +198,12 @@ export class ScriptedProvider implements LLMProvider {
       if (req.signal?.aborted) throw new ProviderError('cancelled');
       yield { type: 'text', delta: chunks[i]! };
     }
-    yield { type: 'finish', finishReason: step.finishReason ?? 'stop', usage: null };
+    for (const call of step.toolCalls ?? []) yield { type: 'tool_call', call };
+    yield {
+      type: 'finish',
+      finishReason: step.finishReason ?? (step.toolCalls?.length ? 'tool_calls' : 'stop'),
+      usage: null,
+    };
   }
 
   async complete(req: ChatRequest): Promise<CompletionResult> {
@@ -215,3 +232,33 @@ function sleepAbortable(ms: number, signal?: AbortSignal) {
     );
   });
 }
+
+// ---------- Disposable project folders ----------
+
+const tempDirs: string[] = [];
+
+/** Create a temp project from a map of relative paths to contents. Returns its canonical root. */
+export function makeProject(files: Record<string, string | Buffer>): string {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'friday-proj-')));
+  tempDirs.push(dir);
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+  }
+  return dir;
+}
+
+export function cleanupProjects(): void {
+  for (const d of tempDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+}
+
+export const call = (
+  name: string,
+  args: unknown,
+  id = `call_${name}_${Math.random().toString(36).slice(2, 8)}`,
+): ToolCall => ({
+  id,
+  name,
+  argumentsJson: JSON.stringify(args),
+});

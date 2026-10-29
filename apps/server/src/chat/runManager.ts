@@ -1,25 +1,52 @@
 import { randomUUID } from 'node:crypto';
-import type { MessageDto, RunDto, RunEvent, RunPhase } from '@friday/shared';
+import type {
+  AgentLimitsDto,
+  MessageDto,
+  ModelCapabilities,
+  PlanStep,
+  RunDto,
+  RunErrorKind,
+  RunEvent,
+  RunPhase,
+} from '@friday/shared';
 import { HttpError } from '../http/errors.js';
 import { ProviderError } from '../providers/errors.js';
-import type { ChatMessage, FinishReason, LLMProvider } from '../providers/types.js';
+import type {
+  ChatMessage,
+  ChatRequest,
+  FinishReason,
+  LLMProvider,
+  ToolCall,
+  ToolDefinition,
+} from '../providers/types.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
-import type { MessageRepo } from '../repositories/messages.js';
+import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
+import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
 import { toRunDto, type RunRepo } from '../repositories/runs.js';
 import { DEFAULT_SESSION_TITLE, type SessionRepo } from '../repositories/sessions.js';
 import type { AuditRepo } from '../repositories/telemetry.js';
+import type { ToolCallRepo } from '../repositories/toolCalls.js';
 import type { Redactor } from '../security/redact.js';
-import { ContextOverflowError, fitHistory, summarizeHistory, type HistoryItem } from './context.js';
-import { SYSTEM_PROMPT } from './systemPrompt.js';
+import { executeToolCall, type ToolExecution, type ToolRegistry } from '../tools/registry.js';
+import { detectProject } from '../workspace/detect.js';
+import type { ToolEnvironment } from '../workspace/environment.js';
+import { assertRootAvailable } from '../workspace/paths.js';
+import { ContextOverflowError, fitHistory, repairToolPairs, summarizeHistory } from './context.js';
+import { buildSystemPrompt } from './systemPrompt.js';
 
 export interface RunManagerDeps {
   provider: LLMProvider;
   sessions: SessionRepo;
   messages: MessageRepo;
   runs: RunRepo;
+  projects: ProjectRepo;
+  toolCalls: ToolCallRepo;
   capabilities: CapabilityRepo;
   audit: AuditRepo;
   redactor: Redactor;
+  registry: ToolRegistry;
+  toolEnv: ToolEnvironment;
+  limits: AgentLimitsDto;
   resolveModel: () => string | null;
   maxOutputTokens?: number;
   /** How often partial assistant output is checkpointed to the database. */
@@ -45,8 +72,26 @@ interface ActiveRun {
   finished: Promise<void>;
 }
 
+/** Stops the loop without being an error from the provider. */
+class RunBlocked extends Error {
+  constructor(
+    readonly kind: RunErrorKind,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+interface TurnResult {
+  text: string;
+  toolCalls: ToolCall[];
+  finishReason: FinishReason;
+}
+
 const MAX_BUFFERED_EVENTS = 20_000;
 export const MAX_USER_MESSAGE_CHARS = 200_000;
+/** An identical call (same tool and arguments) runs at most this many times per run. */
+const MAX_IDENTICAL_CALLS = 2;
 
 export class RunManager {
   private readonly runs = new Map<string, ActiveRun>();
@@ -78,10 +123,13 @@ export class RunManager {
       this.deps.sessions.rename(sessionId, title);
     }
     const run = this.launch(sessionId, userMessage, model);
-    return { run, userMessage: this.deps.messages.get(userMessage.id)! };
+    return { run, userMessage: toMessageDto(this.deps.messages.get(userMessage.id)!) };
   }
 
-  /** Re-run the latest user message after a failed, cancelled, or interrupted run. */
+  /**
+   * Re-run after a failed, cancelled, interrupted, or blocked run. Completed tool work stays in the
+   * history, so the model continues from where it stopped rather than starting over.
+   */
   retry(sessionId: string): { run: RunDto } {
     const model = this.preflight(sessionId);
     const latest = this.deps.runs.latestForSession(sessionId);
@@ -151,7 +199,7 @@ export class RunManager {
     return model;
   }
 
-  private launch(sessionId: string, userMessage: MessageDto, model: string): RunDto {
+  private launch(sessionId: string, userMessage: StoredMessage, model: string): RunDto {
     const id = randomUUID();
     const record = this.deps.runs.create({ id, sessionId, userMessageId: userMessage.id, model });
     this.deps.sessions.touch(sessionId);
@@ -167,7 +215,7 @@ export class RunManager {
     this.runs.set(id, active);
     this.activeBySession.set(sessionId, id);
     this.emit(active, { type: 'run_started', runId: id, sessionId, model });
-    active.finished = this.execute(active, userMessage, model).finally(() => {
+    active.finished = this.execute(active, model).finally(() => {
       active.done = true;
       active.listeners.clear();
       this.activeBySession.delete(sessionId);
@@ -193,27 +241,46 @@ export class RunManager {
     this.emit(run, detail ? { type: 'phase', phase, detail } : { type: 'phase', phase });
   }
 
+  private aborted(run: ActiveRun): void {
+    if (run.controller.signal.aborted) throw new ProviderError('cancelled');
+  }
+
+  // ---------------------------------------------------------------- context
+
+  private toChatMessage(m: StoredMessage): ChatMessage {
+    switch (m.role) {
+      case 'user':
+        return { role: 'user', content: m.content };
+      case 'tool':
+        return { role: 'tool', toolCallId: m.toolCallId ?? '', content: m.content };
+      default:
+        return m.rawToolCalls.length > 0
+          ? { role: 'assistant', content: m.content || null, toolCalls: m.rawToolCalls }
+          : { role: 'assistant', content: m.content };
+    }
+  }
+
   private async buildContext(
     run: ActiveRun,
-    userMessage: MessageDto,
     model: string,
+    systemPrompt: string,
   ): Promise<ChatMessage[]> {
     const { sessions, messages, capabilities } = this.deps;
     const maxOut = this.deps.maxOutputTokens ?? 8_192;
-    const contextWindow = capabilities.get(model).contextWindow;
+    const contextWindow =
+      capabilities.get(model).contextWindow - (this.deps.provider.promptOverheadTokens ?? 0);
 
     const plan = () => {
       const session = sessions.get(run.sessionId)!;
-      const history: HistoryItem[] = messages
-        .contextHistory(run.sessionId, session.summaryThroughMessageId ?? 0, userMessage.id)
-        .map((m) => ({
-          id: m.id,
-          message: { role: m.role as 'user' | 'assistant', content: m.content },
-        }));
+      const history = repairToolPairs(
+        messages
+          .contextHistory(run.sessionId, session.summaryThroughMessageId ?? 0)
+          .map((m) => ({ id: m.id, message: this.toChatMessage(m) })),
+      );
       return {
         session,
         fit: fitHistory({
-          systemPrompt: SYSTEM_PROMPT,
+          systemPrompt,
           summary: session.summary,
           history,
           contextWindow,
@@ -223,7 +290,6 @@ export class RunManager {
     };
 
     const initial = plan();
-    const session = initial.session;
     let fit = initial.fit;
     if (fit.dropped.length > 0) {
       this.phase(run, 'compacting', `Summarizing ${fit.dropped.length} older messages`);
@@ -231,7 +297,7 @@ export class RunManager {
         const summary = await summarizeHistory(
           this.deps.provider,
           model,
-          session.summary,
+          initial.session.summary,
           fit.dropped,
           run.controller.signal,
         );
@@ -240,9 +306,9 @@ export class RunManager {
           this.deps.redactor.redact(summary),
           fit.dropped.at(-1)!.id,
         );
-        ({ fit } = plan());
+        fit = plan().fit;
       } catch {
-        if (run.controller.signal.aborted) throw new ProviderError('cancelled');
+        this.aborted(run);
         // Fall back to plain trimming: the oldest messages are omitted from this request only.
         this.phase(
           run,
@@ -254,7 +320,14 @@ export class RunManager {
     return fit.messages;
   }
 
-  private async execute(run: ActiveRun, userMessage: MessageDto, model: string): Promise<void> {
+  // ---------------------------------------------------------------- one model turn
+
+  private async modelTurn(
+    run: ActiveRun,
+    model: string,
+    request: ChatRequest,
+    caps: ModelCapabilities,
+  ): Promise<TurnResult> {
     const { messages, provider } = this.deps;
     let text = '';
     let assistantId: number | null = null;
@@ -279,42 +352,13 @@ export class RunManager {
       }
     };
 
-    const finalize = (status: 'complete' | 'cancelled' | 'error', content: string) => {
-      if (assistantId === null) {
-        if (!content) return;
-        assistantId = messages.insert({
-          sessionId: run.sessionId,
-          runId: run.id,
-          role: 'assistant',
-          content,
-          status,
-          model,
-        }).id;
-      } else {
-        messages.update(assistantId, content, status);
-      }
-      this.emit(run, { type: 'message_saved', message: messages.get(assistantId)! });
-    };
-
     try {
-      this.phase(run, 'preparing');
-      const context = await this.buildContext(run, userMessage, model);
-      if (run.controller.signal.aborted) throw new ProviderError('cancelled');
-
-      this.phase(run, 'waiting_for_model');
-      const caps = this.deps.capabilities.get(model);
-      const request = {
-        model,
-        messages: context,
-        maxOutputTokens: this.deps.maxOutputTokens ?? 8_192,
-        signal: run.controller.signal,
-        operation: 'chat',
-      };
-
+      let toolCalls: ToolCall[] = [];
       let finishReason: FinishReason = 'unknown';
       if (caps.streaming === 'unsupported') {
         const result = await provider.complete(request);
         text = result.text;
+        toolCalls = result.toolCalls;
         finishReason = result.finishReason;
         if (text) this.emit(run, { type: 'text_delta', delta: text });
       } else {
@@ -328,22 +372,219 @@ export class RunManager {
             text += ev.delta;
             this.emit(run, { type: 'text_delta', delta: ev.delta });
             checkpoint();
-          } else if (ev.type === 'finish') {
+          } else if (ev.type === 'tool_call') {
+            toolCalls.push(ev.call);
+          } else {
             finishReason = ev.finishReason;
           }
-          // Phase 1 offers no tools, so tool_call events are ignored.
         }
       }
 
       let content = text;
-      if (finishReason === 'length')
-        content += '\n\n_[Response truncated: the output token limit was reached.]_';
-      if (finishReason === 'content_filter')
-        content += '\n\n_[Response stopped by the provider content filter.]_';
-      if (!content.trim()) content = '_[The model returned an empty response.]_';
-      finalize('complete', content);
-      this.finish(run, 'completed');
+      if (toolCalls.length === 0) {
+        if (finishReason === 'length')
+          content += '\n\n_[Response truncated: the output token limit was reached.]_';
+        if (finishReason === 'content_filter')
+          content += '\n\n_[Response stopped by the provider content filter.]_';
+        if (!content.trim()) content = '_[The model returned an empty response.]_';
+      }
+      const saved =
+        assistantId === null
+          ? messages.insert({
+              sessionId: run.sessionId,
+              runId: run.id,
+              role: 'assistant',
+              content,
+              status: 'complete',
+              model,
+              toolCalls,
+            })
+          : (messages.update(assistantId, content, 'complete', toolCalls),
+            messages.get(assistantId)!);
+      this.emit(run, { type: 'message_saved', message: toMessageDto(saved) });
+      return { text: content, toolCalls, finishReason };
+    } catch (err) {
+      // Keep whatever was streamed, marked so it is shown but never fed back to the model.
+      const status =
+        err instanceof ProviderError && err.kind === 'cancelled' ? 'cancelled' : 'error';
+      if (assistantId !== null) messages.update(assistantId, text, status);
+      else if (text)
+        messages.insert({
+          sessionId: run.sessionId,
+          runId: run.id,
+          role: 'assistant',
+          content: text,
+          status,
+          model,
+        });
+      throw err;
+    }
+  }
+
+  // ---------------------------------------------------------------- tools
+
+  private recordToolResult(run: ActiveRun, call: ToolCall, exec: ToolExecution): void {
+    const message = this.deps.messages.insert({
+      sessionId: run.sessionId,
+      runId: run.id,
+      role: 'tool',
+      content: exec.content,
+      status: 'complete',
+      toolCallId: call.id,
+    });
+    this.deps.toolCalls.insert({
+      sessionId: run.sessionId,
+      runId: run.id,
+      callId: call.id,
+      resultMessageId: message.id,
+      name: call.name,
+      arguments: this.deps.redactor.redact(call.argumentsJson),
+      category: exec.category,
+      status: exec.status,
+      summary: exec.summary,
+      truncated: exec.truncated,
+      durationMs: exec.durationMs,
+    });
+    this.emit(run, {
+      type: 'tool_finished',
+      callId: call.id,
+      name: call.name,
+      status: exec.status,
+      summary: exec.summary,
+      durationMs: exec.durationMs,
+    });
+  }
+
+  private skipped(
+    call: ToolCall,
+    reason: string,
+    category: ToolExecution['category'] = null,
+  ): ToolExecution {
+    return {
+      status: 'skipped',
+      content: `Not executed: ${reason}`,
+      summary: reason,
+      label: call.name,
+      truncated: false,
+      durationMs: 0,
+      category,
+    };
+  }
+
+  // ---------------------------------------------------------------- the agent loop
+
+  private async execute(run: ActiveRun, model: string): Promise<void> {
+    const { limits, registry } = this.deps;
+    let iterations = 0;
+    let toolCallsUsed = this.deps.toolCalls.countForRun(run.id);
+    let consecutiveFailures = 0;
+    const callCounts = new Map<string, number>();
+
+    try {
+      this.phase(run, 'preparing');
+      const session = this.deps.sessions.get(run.sessionId)!;
+      const project = session.projectId ? this.deps.projects.get(session.projectId) : null;
+      const caps = this.deps.capabilities.get(model);
+      const tools: ToolDefinition[] =
+        caps.toolCalling === 'unsupported' ? [] : registry.definitions(!!project);
+      const systemPrompt = buildSystemPrompt({
+        project,
+        detection: project ? await this.detect(project) : null,
+        toolsEnabled: tools.length > 0,
+      });
+
+      for (;;) {
+        this.aborted(run);
+        if (iterations >= limits.maxIterations) {
+          throw new RunBlocked(
+            'limit_reached',
+            `Stopped after ${limits.maxIterations} model turns without a final answer. Send a follow-up (or Retry) to let it continue.`,
+          );
+        }
+        iterations++;
+        const context = await this.buildContext(run, model, systemPrompt);
+        this.aborted(run);
+        this.phase(run, iterations === 1 ? 'waiting_for_model' : 'reading_results');
+
+        const turn = await this.modelTurn(
+          run,
+          model,
+          {
+            model,
+            messages: context,
+            maxOutputTokens: this.deps.maxOutputTokens ?? 8_192,
+            signal: run.controller.signal,
+            operation: 'chat',
+            ...(tools.length ? { tools, toolChoice: 'auto' as const } : {}),
+          },
+          caps,
+        );
+        this.deps.runs.recordProgress(run.id, iterations, toolCallsUsed);
+
+        if (turn.toolCalls.length === 0) {
+          this.finish(run, 'completed');
+          return;
+        }
+
+        let blocked: RunBlocked | null = null;
+        for (const call of turn.toolCalls) {
+          if (run.controller.signal.aborted) {
+            this.recordToolResult(run, call, this.skipped(call, 'the run was cancelled'));
+            continue;
+          }
+          if (blocked) {
+            this.recordToolResult(run, call, this.skipped(call, 'the run stopped'));
+            continue;
+          }
+          if (toolCallsUsed >= limits.maxToolCalls) {
+            blocked = new RunBlocked(
+              'limit_reached',
+              `Reached the limit of ${limits.maxToolCalls} tool calls for one request. Send a follow-up (or Retry) to let it continue.`,
+            );
+            this.recordToolResult(run, call, this.skipped(call, 'tool-call limit reached'));
+            continue;
+          }
+          toolCallsUsed++;
+          this.emit(run, {
+            type: 'tool_started',
+            callId: call.id,
+            name: call.name,
+            arguments: call.argumentsJson.slice(0, 500),
+          });
+          this.phase(run, 'running_tool', call.name);
+
+          const key = `${call.name}\u0000${canonicalArgs(call.argumentsJson)}`;
+          const seen = (callCounts.get(key) ?? 0) + 1;
+          callCounts.set(key, seen);
+          const exec =
+            seen > MAX_IDENTICAL_CALLS
+              ? this.skipped(
+                  call,
+                  `identical ${call.name} call already made ${seen - 1} times in this request; use the earlier result or change the arguments`,
+                  registry.get(call.name)?.category ?? null,
+                )
+              : await executeToolCall(registry, call, this.toolContext(run, project), {
+                  timeoutMs: limits.toolTimeoutMs,
+                });
+          this.recordToolResult(run, call, exec);
+
+          consecutiveFailures = exec.status === 'completed' ? 0 : consecutiveFailures + 1;
+          if (consecutiveFailures >= limits.maxConsecutiveToolFailures) {
+            blocked = new RunBlocked(
+              'repeated_failures',
+              `Stopped after ${consecutiveFailures} consecutive failed tool calls. Check the tool errors above, then send guidance or Retry.`,
+            );
+          }
+        }
+        this.deps.runs.recordProgress(run.id, iterations, toolCallsUsed);
+        this.aborted(run);
+        if (blocked) throw blocked;
+      }
     } catch (raw) {
+      if (raw instanceof RunBlocked) {
+        this.finish(run, 'blocked', { kind: raw.kind, message: raw.message, retryable: true });
+        return;
+      }
       const err =
         raw instanceof ProviderError
           ? raw
@@ -353,41 +594,81 @@ export class RunManager {
                 'unknown',
                 this.deps.redactor.redact(raw instanceof Error ? raw.message : String(raw)),
               );
-      if (err.kind === 'cancelled') {
-        finalize('cancelled', text);
-        this.finish(run, 'cancelled');
-      } else {
-        finalize('error', text);
-        this.finish(run, 'failed', err);
+      if (err.kind === 'cancelled') this.finish(run, 'cancelled');
+      else {
+        this.finish(run, 'failed', {
+          kind: raw instanceof ContextOverflowError ? 'context_overflow' : err.kind,
+          message: err.message,
+          retryable: err.retryable || err.kind === 'unknown',
+          status: err.status,
+        });
       }
     }
   }
 
+  private async detect(project: ProjectRecord) {
+    try {
+      await assertRootAvailable(project.rootPath);
+      return await detectProject(project.rootPath);
+    } catch {
+      return null;
+    }
+  }
+
+  private toolContext(run: ActiveRun, project: ProjectRecord | null) {
+    return {
+      project,
+      sessionId: run.sessionId,
+      runId: run.id,
+      signal: run.controller.signal,
+      redactor: this.deps.redactor,
+      env: this.deps.toolEnv,
+      maxOutputChars: this.deps.limits.maxToolOutputChars,
+      setPlan: (plan: PlanStep[]) => {
+        this.deps.sessions.setPlan(run.sessionId, plan);
+        this.emit(run, { type: 'plan_updated', plan });
+      },
+    };
+  }
+
   private finish(
     run: ActiveRun,
-    status: 'completed' | 'cancelled' | 'failed',
-    err?: ProviderError,
+    status: 'completed' | 'cancelled' | 'failed' | 'blocked',
+    err?: { kind: RunErrorKind; message: string; retryable: boolean; status?: number | null },
   ) {
     const record = this.deps.runs.finish(
       run.id,
       status,
-      err
-        ? {
-            kind: err.kind,
-            message: err.message,
-            retryable: err.retryable || err.kind === 'unknown',
-          }
-        : undefined,
+      err ? { kind: err.kind, message: err.message, retryable: err.retryable } : undefined,
     );
     this.deps.sessions.touch(run.sessionId);
     if (err) {
       this.deps.audit.record({
         sessionId: run.sessionId,
         actor: 'system',
-        action: 'run_failed',
-        details: { runId: run.id, kind: err.kind, status: err.status },
+        action: status === 'blocked' ? 'run_blocked' : 'run_failed',
+        details: { runId: run.id, kind: err.kind, status: err.status ?? null },
       });
     }
     this.emit(run, { type: 'run_finished', run: toRunDto(record) });
+  }
+}
+
+/** Normalize argument JSON so `{"a":1,"b":2}` and `{ "b": 2, "a": 1 }` count as the same call. */
+function canonicalArgs(json: string): string {
+  try {
+    const sortKeys = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(sortKeys)
+        : v && typeof v === 'object'
+          ? Object.fromEntries(
+              Object.keys(v)
+                .sort()
+                .map((k) => [k, sortKeys((v as Record<string, unknown>)[k])]),
+            )
+          : v;
+    return JSON.stringify(sortKeys(JSON.parse(json)));
+  } catch {
+    return json;
   }
 }

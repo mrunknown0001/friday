@@ -19,12 +19,30 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Runaway requests                                  | Bounded retries for transient errors only, per-request header timeout, stream idle timeout, cancellation, 200 000-character message limit, 1 MB default body limit.                                                                                  |
 | Local data disclosure                             | The data directory is created `0700` and the database file `0600`.                                                                                                                                                                                   |
 
+## Threats addressed in Phase 2 (read-only tools)
+
+| Threat                                   | Mitigation                                                                                                                                                                                                           |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model reads outside the project          | Every path goes through `resolveInside`: lexical check, then `realpath` check against the canonical root, so `../`, absolute paths, and symlinks pointing out are refused.                                           |
+| Over-broad authorization                 | Project roots must be absolute, existing directories. `/`, the home directory, its ancestors, system directories, and whole drives are refused, both as typed and after resolving symlinks.                          |
+| Project root swapped after authorization | Each tool call re-verifies that the root still resolves to the same canonical directory.                                                                                                                             |
+| Secrets sent to the model provider       | Credential files and `.git` internals are never read, including via symlink, by tools or the UI viewer. Search drops their matches and reports only the file name. All tool output also passes through the redactor. |
+| Cross-project leakage                    | A session's project is fixed at creation. Tools receive only that project's root, and context comes only from that session.                                                                                          |
+| Model invoking mutating or unknown tools | `policy.decide` runs on the server for every call. Phase 2 allows only `read_only` and `agent_state`; everything else returns `denied` and is never advertised.                                                      |
+| Malformed or hostile tool arguments      | JSON parse plus zod validation before execution; ripgrep runs with an argv array (no shell), `-e` for the query and `--` before paths; the built-in fallback has no regex mode (ReDoS).                              |
+| Runaway agent                            | Iteration, tool-call, duplicate-call, consecutive-failure, output-size, and per-tool timeout limits; cancellation between and during tools.                                                                          |
+| Prompt injection via file contents       | The system prompt labels file contents, search results, and file names as data. Tools are read-only, so injected instructions cannot cause changes.                                                                  |
+
 ## Known limitations
 
 - Any process running as the same OS user can call the API. A per-launch bearer token (for Electron, passed through the
   preload bridge) is planned for Phase 7.
 - Redaction is pattern-based and cannot catch every secret format.
 - The context-window size is an estimate (about 3.5 characters per token) unless the user configures it.
+- NoTokenLimit adds its own hidden prompt (~1,100 tokens measured), which Friday cannot see or override. Friday
+  reserves 1,500 tokens of context for it.
+- The credential-file list is a denylist of common names. A secret stored in an ordinary source file can still be read
+  and sent to the model; redaction catches only known patterns.
 - NoTokenLimit's `/models` endpoint does not authenticate. Model "availability" checks only prove a model ID exists, not
   that the user's plan can use it. The connection test, which makes a real completion request, is the authoritative check.
 

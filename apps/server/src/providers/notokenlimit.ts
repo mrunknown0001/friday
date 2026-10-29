@@ -74,6 +74,8 @@ class IdleTimeout extends Error {}
 
 export class NoTokenLimitProvider implements LLMProvider {
   readonly id = 'notokenlimit';
+  /** Measured 2026-10-29: a ~60-token request was billed as ~1,180 prompt tokens. */
+  readonly promptOverheadTokens = 1_500;
   private readonly client: OpenAI | null;
 
   constructor(private readonly opts: NoTokenLimitOptions) {

@@ -2,10 +2,10 @@
 
 A local-first AI coding and DevOps assistant that uses [NoTokenLimit](https://notokenlimit.com) as its model provider.
 
-**Current status: Phase 1 (foundation).** Friday is a persistent, streaming chat assistant with a hardened local
-server, a NoTokenLimit provider adapter (streaming, tool-call parsing, retries, error classification, capability probing),
-and context-window management. It **cannot yet read files, run commands, or modify anything**. Those tools arrive in
-Phases 2–4, behind the approval engine. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Current status: Phase 2 (read-only coding agent).** Friday can open an authorized project and investigate it with
+read-only tools: it inspects the stack, lists and searches files, reads specific line ranges, publishes a plan, and
+answers with `path:line` evidence. Every tool call is visible in an activity timeline. It **cannot modify files, run
+commands, or use git yet**; those arrive with the approval engine in Phases 3–4. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -52,6 +52,27 @@ npm start
    plan's access to the model. NoTokenLimit's `/models` endpoint returns its public catalog and does not validate the key.
 4. Optionally click **Probe capabilities** to verify streaming and tool calling for that model (two tiny requests).
 
+## Projects
+
+1. In the sidebar, click the **Add project** icon and enter the absolute path of a project folder.
+   Adding it authorizes Friday to **read** inside that folder only. Broad locations (`/`, your home folder, system
+   directories, whole drives) are refused.
+2. Conversations started while a project is selected are bound to it permanently; tools can only see that project.
+   "No project (chat only)" conversations have no file access.
+3. The side panel shows the agent's plan and a read-only file explorer.
+
+What Friday will not read, even inside a project: credential files (`.env`, `.env.*` except templates such as
+`.env.example`, private keys, `.npmrc`, `auth.json`, `*.tfstate`, `.ssh/`, `.aws/`, …) and `.git` internals.
+Search still reports _that_ a credential file matched, by name only, so the model does not wrongly conclude a value
+is absent. Everything Friday does read is sent to your NoTokenLimit model.
+
+### Choosing a model
+
+Tool calling has been verified live on `claude-haiku-4.5`. In testing through NoTokenLimit, haiku sometimes opens
+replies with a self-introduction (NoTokenLimit appears to add its own hidden prompt of roughly 1,100 tokens), while
+`claude-sonnet-4.6` and `gemini-3-flash` answered cleanly. Use **Settings → Probe capabilities** before relying on a
+new model for tool use.
+
 ## Data
 
 - SQLite database: `./.data/friday.db` (override with `FRIDAY_DATA_DIR`). The file is created with `0600` permissions.
@@ -80,16 +101,20 @@ npm start
 
 ## Configuration
 
-| Variable          | Default                           | Notes                                                          |
-| ----------------- | --------------------------------- | -------------------------------------------------------------- |
-| `NTL_API_KEY`     | none                              | Required for any model call                                    |
-| `NTL_MODEL`       | none                              | Default model; a model chosen in Settings takes precedence     |
-| `NTL_BASE_URL`    | `https://notokenlimit.com/api/v1` | Must be HTTPS (plain HTTP is allowed only for localhost)       |
-| `NTL_TIMEOUT_MS`  | `120000`                          | Response-header timeout and stream idle timeout                |
-| `NTL_MAX_RETRIES` | `2`                               | Retries for transient errors only (429, 5xx, network, timeout) |
-| `FRIDAY_PORT`     | `4317`                            | The server always binds to `127.0.0.1`                         |
-| `FRIDAY_WEB_PORT` | `5173`                            | Vite dev server port (`npm run dev` only)                      |
-| `FRIDAY_DATA_DIR` | `./.data`                         | SQLite location                                                |
+| Variable                      | Default                           | Notes                                                          |
+| ----------------------------- | --------------------------------- | -------------------------------------------------------------- |
+| `NTL_API_KEY`                 | none                              | Required for any model call                                    |
+| `NTL_MODEL`                   | none                              | Default model; a model chosen in Settings takes precedence     |
+| `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1` | Must be HTTPS (plain HTTP is allowed only for localhost)       |
+| `NTL_TIMEOUT_MS`              | `120000`                          | Response-header timeout and stream idle timeout                |
+| `NTL_MAX_RETRIES`             | `2`                               | Retries for transient errors only (429, 5xx, network, timeout) |
+| `FRIDAY_PORT`                 | `4317`                            | The server always binds to `127.0.0.1`                         |
+| `FRIDAY_WEB_PORT`             | `5173`                            | Vite dev server port (`npm run dev` only)                      |
+| `FRIDAY_DATA_DIR`             | `./.data`                         | SQLite location                                                |
+| `FRIDAY_AGENT_MAX_ITERATIONS` | `20`                              | Model turns per request before the run pauses as `blocked`     |
+| `FRIDAY_AGENT_MAX_TOOL_CALLS` | `40`                              | Tool calls per request before the run pauses as `blocked`      |
+| `FRIDAY_TOOL_TIMEOUT_MS`      | `30000`                           | Per-tool-call timeout                                          |
+| `FRIDAY_TOOL_OUTPUT_CHARS`    | `20000`                           | Maximum characters of one tool result sent to the model        |
 
 ## Layout
 

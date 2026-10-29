@@ -76,6 +76,89 @@ export interface ProviderCallDto {
   outputTokens: number | null;
 }
 
+export interface ProjectDto {
+  id: string;
+  name: string;
+  rootPath: string;
+  createdAt: string;
+  lastOpenedAt: string | null;
+  /** False if the folder no longer exists or is no longer a directory. */
+  available: boolean;
+}
+
+export interface ProjectOverviewDto {
+  project: ProjectDto;
+  stack: string[];
+  packageManagers: string[];
+  manifests: string[];
+  isGitRepo: boolean;
+}
+
+export interface TreeEntryDto {
+  name: string;
+  path: string;
+  type: 'file' | 'dir' | 'symlink';
+  size: number | null;
+}
+
+export interface FileViewDto {
+  path: string;
+  size: number;
+  binary: boolean;
+  tooLarge: boolean;
+  content: string | null;
+  language: string | null;
+}
+
+export interface SystemInfoDto {
+  ripgrep: string | null;
+  platform: string;
+  node: string;
+  agentLimits: AgentLimitsDto;
+}
+
+export interface AgentLimitsDto {
+  maxIterations: number;
+  maxToolCalls: number;
+  maxToolOutputChars: number;
+  toolTimeoutMs: number;
+  maxConsecutiveToolFailures: number;
+}
+
+export type PermissionCategory =
+  | 'read_only'
+  | 'agent_state'
+  | 'file_create'
+  | 'file_modify'
+  | 'file_delete'
+  | 'shell'
+  | 'network'
+  | 'git'
+  | 'remote'
+  | 'database'
+  | 'deployment';
+
+export type RiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
+
+export type ToolCallStatus = 'completed' | 'error' | 'denied' | 'skipped';
+
+export interface PlanStep {
+  title: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+}
+
+/** Execution metadata for a tool result message. */
+export interface ToolExecutionDto {
+  callId: string;
+  name: string;
+  /** Model-supplied arguments (JSON text, truncated for display). */
+  arguments: string;
+  status: ToolCallStatus;
+  summary: string;
+  durationMs: number;
+  truncated: boolean;
+}
+
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageStatus = 'complete' | 'partial' | 'cancelled' | 'error';
 
@@ -88,16 +171,26 @@ export interface MessageDto {
   status: MessageStatus;
   model: string | null;
   createdAt: string;
+  /** Assistant messages: tool calls the model requested. */
+  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
+  /** Tool messages: the call this result answers, plus execution metadata. */
+  toolCallId?: string;
+  tool?: ToolExecutionDto;
 }
 
-export type RunStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type RunStatus =
+  'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'blocked';
+
+/** Why a run stopped without completing. Provider errors plus agent-loop safeguards. */
+export type RunErrorKind =
+  ProviderErrorKind | 'limit_reached' | 'repeated_failures' | 'context_overflow';
 
 export interface RunDto {
   id: string;
   sessionId: string;
   status: RunStatus;
   model: string | null;
-  errorKind: ProviderErrorKind | null;
+  errorKind: RunErrorKind | null;
   errorMessage: string | null;
   retryable: boolean;
   startedAt: string;
@@ -106,6 +199,7 @@ export interface RunDto {
 
 export interface SessionSummaryDto {
   id: string;
+  projectId: string | null;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -116,15 +210,33 @@ export interface SessionDetailDto extends SessionSummaryDto {
   messages: MessageDto[];
   latestRun: RunDto | null;
   hasSummary: boolean;
+  plan: PlanStep[] | null;
 }
 
-export type RunPhase = 'preparing' | 'compacting' | 'waiting_for_model' | 'streaming';
+export type RunPhase =
+  | 'preparing'
+  | 'compacting'
+  | 'waiting_for_model'
+  | 'streaming'
+  | 'running_tool'
+  | 'reading_results';
 
 /** Server-Sent Event payloads for a run. `seq` is also sent as the SSE `id`. */
 export type RunEvent =
   | { seq: number; type: 'run_started'; runId: string; sessionId: string; model: string }
   | { seq: number; type: 'phase'; phase: RunPhase; detail?: string }
   | { seq: number; type: 'text_delta'; delta: string }
+  | { seq: number; type: 'tool_started'; callId: string; name: string; arguments: string }
+  | {
+      seq: number;
+      type: 'tool_finished';
+      callId: string;
+      name: string;
+      status: ToolCallStatus;
+      summary: string;
+      durationMs: number;
+    }
+  | { seq: number; type: 'plan_updated'; plan: PlanStep[] }
   | { seq: number; type: 'message_saved'; message: MessageDto }
   | {
       seq: number;
