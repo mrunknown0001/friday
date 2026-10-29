@@ -169,6 +169,9 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
   requests; Friday read only the new log lines through the cursor and stopped the server on request. The UI's
   Output and Stop worked, axe found 0 violations, and after a `kill -9` of Friday the next start stopped the
   orphaned server
-- ⬜ Image attachments: paste screenshots or photos from the clipboard (or attach files) so Friday can inspect an
-  actual UI or read an image (queued)
+- ✅ Image attachments: paste screenshots from the clipboard, drop or pick images (up to 4 per message, downsized in
+  the app), thumbnails with a full-size view; `view_image` for project image files; image-input capability probe.
+  Verified live on 2026-10-30 with `claude-sonnet-4.6`: a pasted 2560×1440 checkout screenshot (stored as 1430×804)
+  was described from what was visible, `view_image` read a mockup's button label, colour and error text correctly,
+  the probe reported image input as supported, an existing database migrated, and axe found 0 violations
 - ⬜ Code map for large repos (see the suggestion list)

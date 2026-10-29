@@ -38,6 +38,8 @@ export interface ModelCapabilities {
   model: string;
   streaming: CapabilityState;
   toolCalling: CapabilityState;
+  /** Whether the model accepts images (attachments, view_image). */
+  imageInput: CapabilityState;
   /** Context window in tokens. `contextWindowSource` says whether it was assumed or configured. */
   contextWindow: number;
   contextWindowSource: 'assumed' | 'configured';
@@ -520,6 +522,19 @@ export interface MessageDto {
   /** Tool messages: the call this result answers, plus execution metadata. */
   toolCallId?: string;
   tool?: ToolExecutionDto;
+  /** Images attached to a user message, or returned by view_image. */
+  attachments?: AttachmentDto[];
+}
+
+/** An image the user attached (or view_image loaded). The bytes are at /api/attachments/:id. */
+export interface AttachmentDto {
+  id: string;
+  name: string | null;
+  mime: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  size: number;
+  width: number;
+  height: number;
+  createdAt: string;
 }
 
 export type RunStatus =

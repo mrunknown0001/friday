@@ -162,6 +162,20 @@ dialog suggests one for the project's stack (e.g. `node:22-bookworm-slim`), show
 your machine. Commands can still change files in the project folder, so review them as usual. Requires Docker (checked
 at startup and from the dialog).
 
+### Images and screenshots
+
+Paste a screenshot into the message box (Ctrl+V), drop image files on it, or use the image button, up to 4 per
+message. Friday can then look at the actual UI, an error dialog, a photo or a diagram. Images are scaled down in the
+app to what models actually read (at most 1568 px per side, about 1.15 megapixels) before upload. They are stored
+with the conversation in the local database and shown as thumbnails you can open full size. Friday also has a
+`view_image` tool for PNG, JPEG, WebP and GIF files in the project (mockups, screenshots in docs), which runs without
+approval like `read_file`. Credential files stay off-limits.
+
+Images are sent to the model provider with the message, and text in an image cannot be redacted, so don't attach
+screenshots that show secrets. To save context, only the images of the 3 most recent messages that have any are
+re-sent to the model; older ones become a short note. Settings › Model capabilities shows whether the model accepts
+images (the probe sends a tiny picture), and a model known not to is refused up front with a clear message.
+
 ### Background processes
 
 For commands that keep running (dev servers, `tsc --watch`, test watchers), Friday uses `start_process` instead of

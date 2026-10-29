@@ -1,3 +1,4 @@
+import { imageTokens } from '../attachments/image.js';
 import type { ChatMessage, LLMProvider } from '../providers/types.js';
 
 /** Rough, provider-agnostic token estimate. Deliberately pessimistic (~3.5 chars/token). */
@@ -13,6 +14,12 @@ export function estimateMessageTokens(m: ChatMessage): number {
         overhead +
         estimateTokens(m.content ?? '') +
         (m.toolCalls ?? []).reduce((n, tc) => n + estimateTokens(tc.name + tc.argumentsJson), 0)
+      );
+    case 'user':
+      return (
+        overhead +
+        estimateTokens(m.content) +
+        (m.images ?? []).reduce((n, img) => n + imageTokens(img.width, img.height), 0)
       );
     default:
       return overhead + estimateTokens(m.content);
@@ -186,7 +193,9 @@ export async function summarizeHistory(
       const text =
         m.role === 'assistant'
           ? `${m.content ?? ''}${m.toolCalls?.length ? `\n[called: ${m.toolCalls.map((c) => c.name).join(', ')}]` : ''}`
-          : m.content;
+          : m.role === 'user' && m.images?.length
+            ? `${m.content}\n[${m.images.length} image(s) attached, not included in this transcript]`
+            : m.content;
       const clipped =
         text.length > SUMMARY_ITEM_CHAR_LIMIT
           ? `${text.slice(0, SUMMARY_ITEM_CHAR_LIMIT)} [...]`

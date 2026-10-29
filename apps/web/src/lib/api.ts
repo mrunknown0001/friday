@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   ApprovalDto,
+  AttachmentDto,
   FileChangeDto,
   HostEnvironment,
   LogSourceDto,
@@ -40,17 +41,24 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
+async function request<T>(
+  method: string,
+  url: string,
+  body?: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<T> {
+  const headers: Record<string, string> = { ...extraHeaders };
   // Required by the server's CSRF guard on mutating requests.
   if (method !== 'GET') headers['x-friday-client'] = '1';
-  if (body !== undefined) headers['content-type'] = 'application/json';
+  // Blobs (image uploads) are sent as they are, with their own type.
+  const raw = body instanceof Blob;
+  if (body !== undefined) headers['content-type'] = raw ? body.type : 'application/json';
   let res: Response;
   try {
     res = await fetch(url, {
       method,
       headers,
-      body: body === undefined ? null : JSON.stringify(body),
+      body: body === undefined ? null : raw ? body : JSON.stringify(body),
     });
   } catch {
     throw new ApiError(
@@ -140,10 +148,16 @@ export const api = {
   renameSession: (id: string, title: string) =>
     request<SessionSummaryDto>('PATCH', `/api/sessions/${id}`, { title }),
   deleteSession: (id: string) => request<void>('DELETE', `/api/sessions/${id}`),
-  sendMessage: (id: string, content: string) =>
+  sendMessage: (id: string, content: string, attachmentIds: string[] = []) =>
     request<{ run: RunDto; userMessage: MessageDto }>('POST', `/api/sessions/${id}/messages`, {
       content,
+      ...(attachmentIds.length ? { attachmentIds } : {}),
     }),
+  uploadAttachment: (image: Blob, name: string) =>
+    request<AttachmentDto>('POST', '/api/attachments', image, {
+      'x-file-name': encodeURIComponent(name),
+    }),
+  removeAttachment: (id: string) => request<void>('DELETE', `/api/attachments/${id}`),
   decideApproval: (
     id: string,
     body: {

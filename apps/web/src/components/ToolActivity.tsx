@@ -1,8 +1,9 @@
-import type { ApprovalDto, DeploymentPlanDto, ToolCallStatus } from '@friday/shared';
+import type { ApprovalDto, AttachmentDto, DeploymentPlanDto, ToolCallStatus } from '@friday/shared';
 import { Ban, Check, ChevronRight, CircleSlash, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn';
 import { ApprovalCard } from './ApprovalCard';
+import { AttachmentThumbs } from './Attachments';
 import { DeploymentPlanCard } from './DeploymentPlanCard';
 import { isFailedCommand } from './RunRecord';
 
@@ -22,6 +23,8 @@ export interface ToolItem {
   deploymentPlan?: DeploymentPlanDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
+  /** Images the tool showed the model (view_image). */
+  attachments?: AttachmentDto[] | undefined;
 }
 
 /** Compact, human-readable form of a tool call's arguments. */
@@ -98,6 +101,8 @@ export function toolLabel(name: string, argsJson: string): string {
       return str(a.id);
     case 'list_processes':
       return '';
+    case 'view_image':
+      return str(a.path);
     default:
       return Object.values(a).map(str).join(' ').slice(0, 80);
   }
@@ -117,7 +122,8 @@ const STATUS_ICON = {
 function ToolRow({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
   const live = item.status === 'running' && !!item.terminal;
-  const expandable = !!item.output || !!item.approval || !!item.terminal;
+  const expandable =
+    !!item.output || !!item.approval || !!item.terminal || !!item.attachments?.length;
   const shown = open || live;
   const label = toolLabel(item.name, item.arguments);
   return (
@@ -169,6 +175,9 @@ function ToolRow({ item }: { item: ToolItem }) {
           {item.output ?? item.terminal}
           {item.truncated && '\n[output was truncated before being sent to the model]'}
         </pre>
+      )}
+      {shown && item.attachments && (
+        <AttachmentThumbs attachments={item.attachments} className="mx-2 mb-1" />
       )}
     </li>
   );

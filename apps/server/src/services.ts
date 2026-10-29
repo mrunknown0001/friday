@@ -9,6 +9,7 @@ import type { LLMProvider, ModelInfo } from './providers/types.js';
 import { CapabilityRepo } from './repositories/capabilities.js';
 import { ApprovalService } from './approvals/service.js';
 import { ApprovalRepo } from './repositories/approvals.js';
+import { AttachmentRepo } from './repositories/attachments.js';
 import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
 import { MessageRepo } from './repositories/messages.js';
@@ -82,6 +83,7 @@ export interface Services {
   approvalRepo: ApprovalRepo;
   approvals: ApprovalService;
   fileChanges: FileChangeRepo;
+  attachments: AttachmentRepo;
   sshHosts: SshHostRepo;
   ssh: SshService;
   logSources: LogSourceRepo;
@@ -142,6 +144,7 @@ export function createServices(
   const toolCalls = new ToolCallRepo(db);
   const approvalRepo = new ApprovalRepo(db);
   const fileChanges = new FileChangeRepo(db);
+  const attachments = new AttachmentRepo(db);
   const sshHosts = new SshHostRepo(db);
   const ssh = new SshService(
     sshHosts,
@@ -179,6 +182,7 @@ export function createServices(
     approvals,
     approvalRepo,
     fileChanges,
+    attachments,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
     memory,
@@ -207,6 +211,7 @@ export function createServices(
     approvalRepo,
     approvals,
     fileChanges,
+    attachments,
     sshHosts,
     ssh,
     logSources,

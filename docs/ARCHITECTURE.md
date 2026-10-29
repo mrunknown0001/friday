@@ -173,6 +173,21 @@ never start a process. The server's `onClose` stops everything. Startup's `reapO
 carry the marker. `run_command` and `start_process` share `prepareCommand` (folder, risk, sandbox checks). The system
 prompt lists each process's current status, so the model does not trust stale history.
 
+### Images (`attachments/`, `routes/attachments.ts`, `tools/imageTools.ts`)
+
+`POST /api/attachments` takes a raw image body. `attachments/image.ts` derives the type and size from the bytes and
+applies the limits. The `attachments` table (migration 10) stores the bytes with `message_id` NULL until
+`POST /api/sessions/:id/messages` sends them with `attachmentIds`. Then `RunManager.startMessage` checks that they are
+unsent, belong to this conversation, number at most 4, and that the model is not known to refuse images, and binds
+them to the user message. `MessageDto.attachments` carries metadata only; the bytes are served by
+`GET /api/attachments/:id`. When building context, `withImages` attaches images (`ChatMessage.images`, sent as
+OpenAI `image_url` data URLs) to the 3 most recent messages that have any and replaces older ones with a note.
+`view_image` results carry `ToolOutput.images`; they are stored as attachments of the tool message and sent in a
+synthetic user message right after the tool results, since chat APIs only accept images from the user. A provider
+`bad_request` or `unsupported` error on a request with images marks the model's `imageInput` capability unsupported.
+The probe sends a 16×16 red PNG. The web app downsizes images (`lib/images.ts`) and uploads them as soon as they are
+pasted, dropped or picked.
+
 ## Coding agent (Phase 4)
 
 | Module                  | Responsibility                                                                                                                                        |

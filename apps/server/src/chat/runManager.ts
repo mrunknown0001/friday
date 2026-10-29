@@ -17,10 +17,13 @@ import type {
   ChatMessage,
   ChatRequest,
   FinishReason,
+  ImageInput,
   LLMProvider,
   ToolCall,
   ToolDefinition,
 } from '../providers/types.js';
+import { IMAGE_LIMITS } from '../attachments/image.js';
+import type { AttachmentRepo } from '../repositories/attachments.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
@@ -56,6 +59,7 @@ import {
   fitHistory,
   repairToolPairs,
   summarizeHistory,
+  type HistoryItem,
 } from './context.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { buildSuggestions } from '../reports/suggestions.js';
@@ -80,6 +84,7 @@ export interface RunManagerDeps {
   approvals: ApprovalService;
   approvalRepo: ApprovalRepo;
   fileChanges: FileChangeRepo;
+  attachments: AttachmentRepo;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   memory?: MemoryService;
@@ -156,10 +161,16 @@ export class RunManager {
   constructor(private readonly deps: RunManagerDeps) {}
 
   /** Start a run for a new user message. Validates configuration before persisting anything. */
-  startMessage(sessionId: string, content: string): { run: RunDto; userMessage: MessageDto } {
+  startMessage(
+    sessionId: string,
+    content: string,
+    attachmentIds: string[] = [],
+  ): { run: RunDto; userMessage: MessageDto } {
     const model = this.preflight(sessionId);
     const text = content.trim();
-    if (!text) throw new HttpError(400, 'empty_message', 'Message is empty.');
+    const ids = [...new Set(attachmentIds)];
+    if (!text && !ids.length) throw new HttpError(400, 'empty_message', 'Message is empty.');
+    if (ids.length) this.checkAttachments(sessionId, ids, model);
     if (text.length > MAX_USER_MESSAGE_CHARS) {
       throw new HttpError(
         413,
@@ -167,15 +178,18 @@ export class RunManager {
         `Message exceeds ${MAX_USER_MESSAGE_CHARS} characters.`,
       );
     }
-    const userMessage = this.deps.messages.insert({
+    const inserted = this.deps.messages.insert({
       sessionId,
       role: 'user',
       content: text,
       status: 'complete',
     });
+    if (ids.length) this.deps.attachments.bind(ids, sessionId, inserted.id);
+    const userMessage = this.deps.messages.get(inserted.id)!;
     const session = this.deps.sessions.get(sessionId)!;
     if (session.title === DEFAULT_SESSION_TITLE) {
-      const title = text.split('\n')[0]!.slice(0, 60).trim() || DEFAULT_SESSION_TITLE;
+      const title =
+        text.split('\n')[0]!.slice(0, 60).trim() || (ids.length ? 'Image' : DEFAULT_SESSION_TITLE);
       this.deps.sessions.rename(sessionId, title);
     }
     const run = this.launch(sessionId, userMessage, model);
@@ -303,6 +317,31 @@ export class RunManager {
     await this.runs.get(runId)?.finished;
   }
 
+  /** Attachments must be this user's pending uploads, few enough, for a model that sees images. */
+  private checkAttachments(sessionId: string, ids: string[], model: string): void {
+    if (ids.length > IMAGE_LIMITS.perMessage)
+      throw new HttpError(
+        400,
+        'too_many_attachments',
+        `Attach at most ${IMAGE_LIMITS.perMessage} images per message.`,
+      );
+    for (const id of ids) {
+      const a = this.deps.attachments.get(id);
+      if (!a || a.messageId !== null || (a.sessionId !== null && a.sessionId !== sessionId))
+        throw new HttpError(
+          400,
+          'attachment_not_found',
+          'An attached image was not found or was already sent. Attach it again.',
+        );
+    }
+    if (this.deps.capabilities.get(model).imageInput === 'unsupported')
+      throw new HttpError(
+        400,
+        'images_unsupported',
+        `The model "${model}" does not accept images. Choose another model in Settings, or remove the images.`,
+      );
+  }
+
   private preflight(sessionId: string): string {
     if (!this.deps.sessions.get(sessionId))
       throw new HttpError(404, 'session_not_found', 'Session not found.');
@@ -386,6 +425,77 @@ export class RunManager {
     }
   }
 
+  /**
+   * Images go to the model with the most recent messages that have them; older ones become a
+   * short note, so a long conversation does not resend every screenshot. Images a tool loaded
+   * (view_image) follow its results as a user message, the only place chat APIs accept them.
+   */
+  private withImages(stored: StoredMessage[], items: HistoryItem[]): HistoryItem[] {
+    const withAttachments = stored.filter((m) => m.attachments?.length);
+    if (!withAttachments.length) return items;
+    const recent = withAttachments.slice(-IMAGE_LIMITS.recentMessages).map((m) => m.id);
+    const data = this.deps.attachments.withData(recent);
+    const byId = new Map(stored.map((m) => [m.id, m]));
+    const images = (id: number) =>
+      (data.get(id) ?? []).map((a) => ({
+        mime: a.mime,
+        base64: a.data.toString('base64'),
+        width: a.width,
+        height: a.height,
+      }));
+    const note = (m: StoredMessage) =>
+      `[${m.attachments!.length} image(s) ${m.role === 'tool' ? 'loaded' : 'attached'} here (${m.attachments!.map((a) => a.name ?? `${a.width}×${a.height}`).join(', ')}) are no longer sent, to save context. ${m.role === 'tool' ? 'Call view_image again' : 'Ask the user to attach them again'} if you need to look at them.]`;
+
+    const out: HistoryItem[] = [];
+    let pending: { id: number; names: string[]; images: ImageInput[] } | null = null;
+    const flush = () => {
+      if (!pending) return;
+      out.push({
+        id: pending.id,
+        message: {
+          role: 'user',
+          content: `[Image(s) loaded by view_image: ${pending.names.join(', ')}. This is tool output, not a message from the user.]`,
+          images: pending.images,
+        },
+      });
+      pending = null;
+    };
+    for (const item of items) {
+      const m = byId.get(item.id);
+      const has = m?.attachments?.length && m.role === item.message.role;
+      if (item.message.role !== 'tool') flush();
+      if (!has) {
+        out.push(item);
+        continue;
+      }
+      const isRecent = recent.includes(m.id);
+      if (item.message.role === 'user') {
+        out.push({
+          ...item,
+          message: isRecent
+            ? { ...item.message, images: images(m.id) }
+            : { ...item.message, content: `${item.message.content}\n${note(m)}`.trim() },
+        });
+      } else if (item.message.role === 'tool') {
+        if (isRecent) {
+          pending ??= { id: item.id, names: [], images: [] };
+          pending.names.push(...m.attachments!.map((a) => a.name ?? 'image'));
+          pending.images.push(...images(m.id));
+          out.push(item);
+        } else {
+          out.push({
+            ...item,
+            message: { ...item.message, content: `${item.message.content}\n${note(m)}` },
+          });
+        }
+      } else {
+        out.push(item);
+      }
+    }
+    flush();
+    return out;
+  }
+
   private async buildContext(
     run: ActiveRun,
     model: string,
@@ -403,10 +513,10 @@ export class RunManager {
 
     const plan = () => {
       const session = sessions.get(run.sessionId)!;
-      const history = repairToolPairs(
-        messages
-          .contextHistory(run.sessionId, session.summaryThroughMessageId ?? 0)
-          .map((m) => ({ id: m.id, message: this.toChatMessage(m) })),
+      const stored = messages.contextHistory(run.sessionId, session.summaryThroughMessageId ?? 0);
+      const history = this.withImages(
+        stored,
+        repairToolPairs(stored.map((m) => ({ id: m.id, message: this.toChatMessage(m) }))),
       );
       return {
         session,
@@ -452,6 +562,22 @@ export class RunManager {
   }
 
   // ---------------------------------------------------------------- one model turn
+
+  /**
+   * A request with images that the provider rejects as invalid most likely failed because the
+   * model cannot read images: remember that, and say so instead of a generic error.
+   */
+  private imageRefusal(err: unknown, model: string, request: ChatRequest): unknown {
+    if (!(err instanceof ProviderError) || !['bad_request', 'unsupported'].includes(err.kind))
+      return err;
+    if (!request.messages.some((m) => m.role === 'user' && m.images?.length)) return err;
+    this.deps.capabilities.setImageInput(model, 'unsupported');
+    return new ProviderError(
+      err.kind,
+      `the model "${model}" did not accept the images; choose a model that supports images in Settings, or send the message without them`,
+      { status: err.status, cause: err },
+    );
+  }
 
   private async modelTurn(
     run: ActiveRun,
@@ -534,7 +660,8 @@ export class RunManager {
             messages.get(assistantId)!);
       this.emit(run, { type: 'message_saved', message: toMessageDto(saved) });
       return { text: content, toolCalls, finishReason };
-    } catch (err) {
+    } catch (caught) {
+      const err = this.imageRefusal(caught, model, request);
       // Keep whatever was streamed, marked so it is shown but never fed back to the model.
       const status =
         err instanceof ProviderError && err.kind === 'cancelled' ? 'cancelled' : 'error';
@@ -568,6 +695,12 @@ export class RunManager {
       status: 'complete',
       toolCallId: call.id,
     });
+    if (exec.images?.length) {
+      const ids = exec.images.map(
+        (img) => this.deps.attachments.create(img.data, img.info, img.name, run.sessionId).id,
+      );
+      this.deps.attachments.bind(ids, run.sessionId, message.id);
+    }
     this.deps.toolCalls.insert({
       sessionId: run.sessionId,
       runId: run.id,
@@ -623,7 +756,12 @@ export class RunManager {
       const project = session.projectId ? this.deps.projects.get(session.projectId) : null;
       const caps = this.deps.capabilities.get(model);
       const tools: ToolDefinition[] =
-        caps.toolCalling === 'unsupported' ? [] : registry.definitions(!!project);
+        caps.toolCalling === 'unsupported'
+          ? []
+          : registry
+              .definitions(!!project)
+              // A model known not to read images is not offered the tool that shows it one.
+              .filter((t) => t.name !== 'view_image' || caps.imageInput !== 'unsupported');
       // Memory: pinned, session notes, and the most relevant others for this request.
       const memoryRefs =
         this.deps.memory?.retrieve(

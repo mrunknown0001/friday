@@ -226,6 +226,7 @@ describe('tool executor', () => {
         'list_processes',
         'read_process_output',
         'stop_process',
+        'view_image',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;
@@ -464,6 +465,7 @@ describe('agent loop', () => {
     s.capabilities.saveProbe('test-model', {
       streaming: 'supported',
       toolCalling: 'unsupported',
+      imageInput: 'unknown',
       notes: null,
     });
     ({ run } = s.runManager.startMessage(plain.id, 'again'));

@@ -424,6 +424,8 @@ export function SettingsDialog({
               <Badge tone={CAP_TONE[caps.streaming]}>{caps.streaming}</Badge>
               <span className="ml-3 text-zinc-400">Tool calling</span>
               <Badge tone={CAP_TONE[caps.toolCalling]}>{caps.toolCalling}</Badge>
+              <span className="ml-3 text-zinc-400">Images</span>
+              <Badge tone={CAP_TONE[caps.imageInput]}>{caps.imageInput}</Badge>
               <span className="ml-3 text-zinc-400">Context</span>
               <span className="font-mono text-zinc-200">{caps.contextWindow.toLocaleString()}</span>
               <span className="text-xs text-zinc-500">({caps.contextWindowSource})</span>

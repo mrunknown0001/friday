@@ -294,8 +294,21 @@ function toRequestBody(req: ChatRequest): ChatCompletionCreateParamsBase {
 function toWireMessage(m: ChatMessage): ChatCompletionMessageParam {
   switch (m.role) {
     case 'system':
-    case 'user':
       return { role: m.role, content: m.content };
+    case 'user':
+      return m.images?.length
+        ? {
+            role: 'user',
+            content: [
+              // Some backends reject empty text blocks (an image sent without words).
+              ...(m.content ? [{ type: 'text' as const, text: m.content }] : []),
+              ...m.images.map((img) => ({
+                type: 'image_url' as const,
+                image_url: { url: `data:${img.mime};base64,${img.base64}` },
+              })),
+            ],
+          }
+        : { role: 'user', content: m.content };
     case 'tool':
       return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
     case 'assistant':
