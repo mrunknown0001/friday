@@ -13,6 +13,8 @@ import type {
   FileViewDto,
   ProjectDto,
   ProjectOverviewDto,
+  SandboxSettings,
+  SandboxStatusDto,
   SystemInfoDto,
   TreeEntryDto,
   MessageDto,
@@ -100,6 +102,11 @@ export const api = {
   addProject: (path: string, name?: string) =>
     request<ProjectDto>('POST', '/api/projects', name ? { path, name } : { path }),
   removeProject: (id: string) => request<void>('DELETE', `/api/projects/${id}`),
+  projectSandbox: (id: string) => request<SandboxStatusDto>('GET', `/api/projects/${id}/sandbox`),
+  setProjectSandbox: (id: string, settings: SandboxSettings) =>
+    request<ProjectDto>('PUT', `/api/projects/${id}/sandbox`, settings),
+  pullSandboxImage: (id: string, image: string) =>
+    request<SandboxStatusDto>('POST', `/api/projects/${id}/sandbox/pull`, { image }),
   projectOverview: (id: string) =>
     request<ProjectOverviewDto>('GET', `/api/projects/${id}/overview`),
   projectTree: (id: string, path = '.') =>

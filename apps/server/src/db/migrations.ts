@@ -324,6 +324,14 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE approvals ADD COLUMN granted_by TEXT REFERENCES approvals(id);
     `,
   },
+  {
+    version: 9,
+    name: 'project_sandbox',
+    up: `
+      -- Per-project command sandbox settings (JSON: enabled, image, network). NULL = off.
+      ALTER TABLE projects ADD COLUMN sandbox TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

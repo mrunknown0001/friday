@@ -149,7 +149,12 @@ export function createServices(
   const deploymentPlans = new DeploymentPlanRepo(db);
   const memoryRepo = new MemoryRepo(db);
   const registry = overrides.registry ?? new ToolRegistry();
-  const toolEnv = overrides.toolEnv ?? { ripgrep: null, ripgrepVersion: null };
+  const toolEnv = overrides.toolEnv ?? {
+    ripgrep: null,
+    ripgrepVersion: null,
+    docker: null,
+    sandboxInstance: 'default',
+  };
   const capabilities = new CapabilityRepo(db);
   const audit = new AuditRepo(db);
   const modelSettings = new ModelSettings(settings, config.provider.envModel);

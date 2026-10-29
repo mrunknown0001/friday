@@ -6,6 +6,7 @@ import {
   MessageSquarePlus,
   Pencil,
   Settings,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -20,6 +21,7 @@ interface Props {
   onSelectProject: (id: string | null) => void;
   onAddProject: () => void;
   onRemoveProject: (id: string) => void;
+  onProjectSettings: () => void;
   sessions: SessionSummaryDto[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -37,6 +39,7 @@ export function Sidebar({
   onSelectProject,
   onAddProject,
   onRemoveProject,
+  onProjectSettings,
   sessions,
   activeId,
   onSelect,
@@ -96,6 +99,18 @@ export function Sidebar({
             >
               <FolderPlus className="h-3.5 w-3.5" />
             </Button>
+            {current && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                aria-label={`Project settings for ${current.name}`}
+                title="Project settings (command sandbox)"
+                onClick={onProjectSettings}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            )}
             {current && (
               <Button
                 variant="ghost"

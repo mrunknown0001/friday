@@ -158,4 +158,9 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 - ✅ Verified live on 2026-10-30 with `claude-sonnet-4.6`: one approval for the task permission, then the edit and the
   test run were approved automatically and the report was verified; notification raised for a conversation in the
   background and opened it on click; notifications granted and the notice stream connected in the desktop app
-- ⬜ Run commands in a container (sandbox), long-running processes, code map for large repos (see the suggestion list)
+- ✅ Command sandbox: per-project Docker container for `run_command` (project folder only, credentials hidden, `.git`
+  read-only, no network by default, no host env, dropped capabilities, read-only root, limits); user-controlled image
+  pulls; refuses instead of falling back to the host. Verified live on 2026-10-30 with `claude-sonnet-4.6`: failing
+  test, fix and passing test all ran in `node:22-alpine` with the card saying so, the project's `.env` value never
+  appeared, and no containers were left behind
+- ⬜ Long-running processes, code map for large repos (see the suggestion list)

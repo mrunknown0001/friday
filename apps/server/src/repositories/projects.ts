@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SandboxSettings } from '@friday/shared';
 import type { Db } from '../db/database.js';
 
 export interface ProjectRecord {
@@ -8,6 +9,7 @@ export interface ProjectRecord {
   rootPath: string;
   createdAt: string;
   lastOpenedAt: string | null;
+  sandbox: SandboxSettings | null;
 }
 
 interface ProjectRow {
@@ -16,6 +18,7 @@ interface ProjectRow {
   root_path: string;
   created_at: string;
   last_opened_at: string | null;
+  sandbox: string | null;
 }
 
 const toRecord = (r: ProjectRow): ProjectRecord => ({
@@ -24,6 +27,7 @@ const toRecord = (r: ProjectRow): ProjectRecord => ({
   rootPath: r.root_path,
   createdAt: r.created_at,
   lastOpenedAt: r.last_opened_at,
+  sandbox: r.sandbox ? (JSON.parse(r.sandbox) as SandboxSettings) : null,
 });
 
 export class ProjectRepo {
@@ -59,6 +63,14 @@ export class ProjectRepo {
 
   rename(id: string, name: string): boolean {
     return this.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id).changes > 0;
+  }
+
+  setSandbox(id: string, sandbox: SandboxSettings | null): boolean {
+    return (
+      this.db
+        .prepare('UPDATE projects SET sandbox = ? WHERE id = ?')
+        .run(sandbox ? JSON.stringify(sandbox) : null, id).changes > 0
+    );
   }
 
   touch(id: string): void {

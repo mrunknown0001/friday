@@ -33,7 +33,7 @@ function services() {
 function ctx(s: ReturnType<typeof services>, root: string | null, sessionId = 's'): ToolContext {
   return {
     project: root
-      ? { id: 'p', name: 'p', rootPath: root, createdAt: '', lastOpenedAt: null }
+      ? { id: 'p', name: 'p', rootPath: root, createdAt: '', lastOpenedAt: null, sandbox: null }
       : null,
     sessionId,
     runId: 'r',

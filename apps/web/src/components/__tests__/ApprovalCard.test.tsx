@@ -140,7 +140,35 @@ describe('ApprovalCard: commands', () => {
       riskReasons: [
         'Installs or fetches packages with npm; this downloads code and may run its install scripts.',
       ],
+      sandbox: null,
     },
+  });
+
+  it('says when a command runs in the project container, and what it can reach', () => {
+    const details = cmd.details as Extract<ApprovalDto['details'], { kind: 'command' }>;
+    render(
+      <ApprovalCard
+        approval={{
+          ...cmd,
+          details: {
+            ...details,
+            sandbox: {
+              image: 'node:22-bookworm-slim',
+              network: 'none',
+              hiddenCredentials: 2,
+              gitReadOnly: true,
+            },
+          },
+        }}
+        onDecide={vi.fn()}
+      />,
+    );
+    const runs = screen.getByText(/In a container/);
+    expect(runs.textContent).toContain('node:22-bookworm-slim');
+    expect(runs.textContent).toContain('no network');
+    expect(runs.textContent).toContain('.git read-only');
+    expect(runs.textContent).toContain('2 credential files hidden');
+    expect(screen.getByText(/the container has none/)).toBeTruthy();
   });
 
   it('shows the exact command, working directory, shell use, host, environment and risks', () => {
@@ -148,7 +176,7 @@ describe('ApprovalCard: commands', () => {
     expect(screen.getByLabelText('Exact command').textContent).toBe("$ npm install 'left pad'");
     expect(screen.getByText('packages/app')).toBeTruthy();
     expect(screen.getByText(/No: program run directly/)).toBeTruthy();
-    expect(screen.getByText(/This machine, as your user/)).toBeTruthy();
+    expect(screen.getByText(/On this machine, as your user/)).toBeTruthy();
     expect(screen.getByText('Likely')).toBeTruthy();
     expect(screen.getByText('CI HOME PATH')).toBeTruthy();
     expect(screen.getByText(/may run its install scripts/)).toBeTruthy();

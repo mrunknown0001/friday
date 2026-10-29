@@ -86,6 +86,26 @@ export interface ProjectDto {
   lastOpenedAt: string | null;
   /** False if the folder no longer exists or is no longer a directory. */
   available: boolean;
+  /** Where run_command executes for this project; null = on this machine. */
+  sandbox: SandboxSettings | null;
+}
+
+/** Run a project's commands in a throwaway Docker container instead of on this machine. */
+export interface SandboxSettings {
+  enabled: boolean;
+  /** Docker image, e.g. "node:22-bookworm-slim". Must already be present locally. */
+  image: string;
+  /** "none": no network at all (default); "bridge": Docker's default outbound network. */
+  network: 'none' | 'bridge';
+}
+
+export interface SandboxStatusDto {
+  /** Docker server version, or null if Docker is not reachable. */
+  docker: string | null;
+  /** Image suggested for the project's stack. */
+  suggestedImage: string;
+  /** Whether the configured (or suggested) image is present locally. */
+  imagePresent: boolean | null;
 }
 
 export interface ProjectOverviewDto {
@@ -176,6 +196,15 @@ export type ApprovalDetails =
       env: string[];
       network: boolean;
       riskReasons: string[];
+      /** Set when the command runs in the project's container instead of on this machine. */
+      sandbox: {
+        image: string;
+        network: 'none' | 'bridge';
+        /** Credential files and folders hidden inside the container. */
+        hiddenCredentials: number;
+        /** .git is mounted read-only, so nothing in the container can plant git hooks. */
+        gitReadOnly: boolean;
+      } | null;
     }
   | {
       kind: 'git';

@@ -10,6 +10,7 @@ import type {
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AddProjectDialog } from './components/AddProjectDialog';
+import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { ChatView } from './components/ChatView';
 import { MemoryDialog } from './components/MemoryDialog';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -49,6 +50,7 @@ export function App() {
   const [projectId, setProjectId] = useState<string | null>(() => readStored(PROJECT_KEY));
   const [sidePanelOpen, setSidePanelOpen] = useState(() => readStored(PANEL_KEY) !== '0');
   const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [detail, setDetail] = useState<SessionDetailDto | null>(null);
   const [changes, setChanges] = useState<{ sessionId: string; list: FileChangeDto[] } | null>(null);
@@ -133,6 +135,9 @@ export function App() {
   // at something else: another window, another app, or another conversation.
   useAppNotices((n) => {
     if (n.type === 'run_finished') void loadSessions();
+    // A run started elsewhere (another window, the API) in the conversation on screen: attach to it.
+    if (n.type === 'approval_requested' && n.sessionId === activeId && runId !== n.runId)
+      void loadDetail(n.sessionId);
     const elsewhere = document.hidden || !document.hasFocus() || n.sessionId !== activeId;
     if (!elsewhere) return;
     const where = sessions.find((s) => s.id === n.sessionId)?.title;
@@ -307,6 +312,7 @@ export function App() {
         projectId={projectId}
         onSelectProject={selectProject}
         onAddProject={() => setAddProjectOpen(true)}
+        onProjectSettings={() => setProjectSettingsOpen(true)}
         onRemoveProject={(id) =>
           void api
             .removeProject(id)
@@ -395,6 +401,13 @@ export function App() {
           plan={live?.plan ?? shownDetail?.plan ?? null}
           changes={sessionChanges}
           onRevert={(c) => void revert(c)}
+        />
+      )}
+      {projectSettingsOpen && project && (
+        <ProjectSettingsDialog
+          project={project}
+          onClose={() => setProjectSettingsOpen(false)}
+          onSaved={() => void loadProjects()}
         />
       )}
       {addProjectOpen && (

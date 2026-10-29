@@ -135,11 +135,32 @@ Reading is automatic. These need your approval, one action at a time, unless the
 - Requests expire after 15 minutes (`FRIDAY_APPROVAL_TTL_MS`). An expired request never runs.
 - Each approval is bound to a hash of the exact action and the file state you reviewed. If the file changes before
   the action runs, it is **not** executed (marked _stale_) and Friday must re-read and propose again.
-- Commands run as your user on this machine. **This is not a sandbox.** stdin is closed, `CI=1` is set, and only a
-  small allowlist of environment variables is passed (no API keys or tokens).
+- By default commands run as your user on this machine. **That is not a sandbox.** stdin is closed, `CI=1` is set,
+  and only a small allowlist of environment variables is passed (no API keys or tokens). For untrusted code, turn on
+  the [command sandbox](#command-sandbox).
 - **Undo** restores a file only if it is still exactly as Friday left it; it never overwrites your later edits.
   **Roll back this run** on a verification report undoes all of a task's file changes, newest first, and does nothing
   if any of them was edited since.
+
+### Command sandbox
+
+Per project (sidebar › **Project settings**, next to the project picker), Friday can run commands in a throwaway Docker
+container instead of on your machine. The container:
+
+- sees only the project folder (writable, so tests and builds work), mounted at `/workspace`;
+- has credential files and folders hidden (`.env`, keys, `.aws/` …, found even when git-ignored) and `.git` mounted
+  read-only, so nothing can plant git hooks that later run on your machine;
+- gets no network by default (you can allow outbound network per project), no Docker socket, and none of your
+  environment variables;
+- runs as your user id with all Linux capabilities dropped, `no-new-privileges`, a read-only root filesystem with a
+  private `/tmp`, CPU, memory and process limits, and is removed when the command ends (or times out).
+
+Every command still needs your approval, and the card says where it will run. The setting is yours: Friday cannot
+switch it, and changing it after a card was shown makes that card stale. Friday never downloads images itself: the
+dialog suggests one for the project's stack (e.g. `node:22-bookworm-slim`), shows whether it is present, and has a
+**Pull** button. If Docker or the image is missing, commands are refused with that explanation instead of running on
+your machine. Commands can still change files in the project folder, so review them as usual. Requires Docker (checked
+at startup and from the dialog).
 
 ### Task permissions
 
