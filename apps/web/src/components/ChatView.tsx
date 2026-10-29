@@ -9,6 +9,7 @@ import type {
 } from '@friday/shared';
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowUp,
   FolderOpen,
   Loader2,
@@ -27,6 +28,7 @@ import { SuggestionChips } from './SuggestionChips';
 import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
 import { ToolActivity, type ToolItem } from './ToolActivity';
+import { cn } from '../lib/cn';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
@@ -308,12 +310,39 @@ export function ChatView(props: Props) {
   const [submitting, setSubmitting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  // Shown when the user has scrolled up; `unseen` marks new activity below since then.
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const [unseen, setUnseen] = useState(false);
   const running = !!live && !live.finished;
+  const sessionId = detail?.id;
+
+  const isNearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+
+  // A different conversation always opens at its latest message.
+  useEffect(() => {
+    stickToBottom.current = true;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [sessionId]);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [detail?.messages.length, live?.blocks, approvals.length]);
+    if (!el) return;
+    if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    } else if (!isNearBottom(el)) {
+      setUnseen(true);
+    }
+    setAwayFromBottom(!isNearBottom(el));
+  }, [sessionId, detail?.messages.length, live?.blocks, approvals.length]);
+
+  const scrollToBottom = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = true;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
+  };
 
   const submit = async () => {
     const text = draft.trim();
@@ -370,70 +399,100 @@ export function ChatView(props: Props) {
         </Button>
       </header>
 
-      <div
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-        className="flex-1 overflow-y-auto"
-        aria-live="polite"
-      >
-        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-6">
-          {rows.length === 0 && !running && (
-            <div className="mt-16 text-center text-zinc-400">
-              <p className="text-lg font-medium text-zinc-200">What are we working on?</p>
-              <p className="mt-2 text-sm">
-                {project
-                  ? `Friday can read and search ${project.name} on its own. Editing files, running commands and committing each wait for your approval.`
-                  : 'No project is selected, so Friday cannot see your code. Choose or add a project in the sidebar to let it read your files.'}
-              </p>
-            </div>
-          )}
-          {rows.map((r) =>
-            r.kind === 'user' ? (
-              <UserRow key={r.m.id} m={r.m} />
-            ) : r.kind === 'assistant' ? (
-              <AssistantRow key={r.m.id} content={r.m.content} footer={<MessageFooter m={r.m} />} />
-            ) : r.kind === 'record' ? (
-              <div key={`rec-${r.runId}`} className="space-y-2">
-                <MemoriesUsed refs={r.memories} />
-                {r.approvals.length > 0 && (
-                  <RunSummary
-                    run={runsById.get(r.runId)}
-                    approvals={r.approvals}
-                    onRollback={onRollback}
-                  />
-                )}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const near = isNearBottom(e.currentTarget);
+            stickToBottom.current = near;
+            setAwayFromBottom(!near);
+            if (near) setUnseen(false);
+          }}
+          className="flex-1 overflow-y-auto"
+          aria-live="polite"
+        >
+          <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-6">
+            {rows.length === 0 && !running && (
+              <div className="mt-16 text-center text-zinc-400">
+                <p className="text-lg font-medium text-zinc-200">What are we working on?</p>
+                <p className="mt-2 text-sm">
+                  {project
+                    ? `Friday can read and search ${project.name} on its own. Editing files, running commands and committing each wait for your approval.`
+                    : 'No project is selected, so Friday cannot see your code. Choose or add a project in the sidebar to let it read your files.'}
+                </p>
               </div>
-            ) : (
-              <ToolActivity key={r.key} items={r.items} />
-            ),
-          )}
-          {running && <MemoriesUsed refs={live.memoriesUsed} />}
-          {running && <LiveOutput live={live} byCall={byCall} plans={plansByCall} />}
-          {pending.map((a) => (
-            <ApprovalCard
-              key={a.id}
-              approval={a}
-              onDecide={(decision, note, confirmation) => onDecide(a, decision, note, confirmation)}
-              onCancelRun={running ? onStop : undefined}
-            />
-          ))}
-          {showProblem && <RunProblem run={latest} onRetry={onRetry} disabled={!canSend} />}
-          {!running && latest?.status === 'completed' && latest.suggestions && (
-            <SuggestionChips
-              steps={latest.suggestions}
-              disabled={submitting || !canSend}
-              onPrompt={(prompt) => {
-                stickToBottom.current = true;
-                setSubmitting(true);
-                void onSend(prompt).finally(() => setSubmitting(false));
-              }}
-              onOpenMemory={props.onOpenMemory}
-            />
-          )}
+            )}
+            {rows.map((r) =>
+              r.kind === 'user' ? (
+                <UserRow key={r.m.id} m={r.m} />
+              ) : r.kind === 'assistant' ? (
+                <AssistantRow
+                  key={r.m.id}
+                  content={r.m.content}
+                  footer={<MessageFooter m={r.m} />}
+                />
+              ) : r.kind === 'record' ? (
+                <div key={`rec-${r.runId}`} className="space-y-2">
+                  <MemoriesUsed refs={r.memories} />
+                  {r.approvals.length > 0 && (
+                    <RunSummary
+                      run={runsById.get(r.runId)}
+                      approvals={r.approvals}
+                      onRollback={onRollback}
+                    />
+                  )}
+                </div>
+              ) : (
+                <ToolActivity key={r.key} items={r.items} />
+              ),
+            )}
+            {running && <MemoriesUsed refs={live.memoriesUsed} />}
+            {running && <LiveOutput live={live} byCall={byCall} plans={plansByCall} />}
+            {pending.map((a) => (
+              <ApprovalCard
+                key={a.id}
+                approval={a}
+                onDecide={(decision, note, confirmation) =>
+                  onDecide(a, decision, note, confirmation)
+                }
+                onCancelRun={running ? onStop : undefined}
+              />
+            ))}
+            {showProblem && <RunProblem run={latest} onRetry={onRetry} disabled={!canSend} />}
+            {!running && latest?.status === 'completed' && latest.suggestions && (
+              <SuggestionChips
+                steps={latest.suggestions}
+                disabled={submitting || !canSend}
+                onPrompt={(prompt) => {
+                  stickToBottom.current = true;
+                  setSubmitting(true);
+                  void onSend(prompt).finally(() => setSubmitting(false));
+                }}
+                onOpenMemory={props.onOpenMemory}
+              />
+            )}
+          </div>
         </div>
+        {awayFromBottom && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            aria-label={unseen ? 'Scroll to latest (new activity)' : 'Scroll to latest'}
+            title="Scroll to latest"
+            className={cn(
+              'absolute bottom-4 left-1/2 flex h-9 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900/95 text-xs text-zinc-200 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:bg-zinc-800',
+              unseen ? 'px-3' : 'w-9',
+            )}
+          >
+            <ArrowDown className="h-4 w-4" aria-hidden />
+            {unseen && (
+              <>
+                New activity
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-400" aria-hidden />
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       <div className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-5 py-3">
