@@ -16,6 +16,8 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { SidePanel } from './components/SidePanel';
 import { Sidebar } from './components/Sidebar';
 import { api } from './lib/api';
+import { notify } from './lib/notifications';
+import { useAppNotices } from './lib/useAppNotices';
 import { useRunStream } from './lib/useRunStream';
 
 const ACTIVE_KEY = 'friday.activeSession';
@@ -126,6 +128,41 @@ export function App() {
     [loadDetail, loadSessions],
   );
   const live = useRunStream(runId, onRunFinished);
+
+  // System notifications when Friday needs you (or finished a longer task) while you are looking
+  // at something else: another window, another app, or another conversation.
+  useAppNotices((n) => {
+    if (n.type === 'run_finished') void loadSessions();
+    const elsewhere = document.hidden || !document.hasFocus() || n.sessionId !== activeId;
+    if (!elsewhere) return;
+    const where = sessions.find((s) => s.id === n.sessionId)?.title;
+    const open = () => setActiveId(n.sessionId);
+    if (n.type === 'approval_requested') {
+      const risk = n.risk === 'high' || n.risk === 'critical' ? ` (${n.risk} risk)` : '';
+      notify({
+        title: 'Friday needs your approval',
+        body: `${n.title}${risk}${where ? `\nIn “${where}”` : ''}`,
+        tag: n.approvalId,
+        onClick: open,
+      });
+    } else if (
+      n.durationMs !== null &&
+      n.durationMs >= 15_000 &&
+      (n.status === 'completed' || n.status === 'failed' || n.status === 'blocked')
+    ) {
+      notify({
+        title:
+          n.status === 'completed'
+            ? 'Friday finished a task'
+            : n.status === 'failed'
+              ? 'A Friday task failed'
+              : 'A Friday task is paused',
+        body: where ? `“${where}”` : 'Open Friday to see the result.',
+        tag: n.runId,
+        onClick: open,
+      });
+    }
+  });
   const project = projects.find((p) => p.id === projectId) ?? null;
 
   // Persisted approvals, overlaid with live updates from the current run.
@@ -158,6 +195,7 @@ export function App() {
     decision: 'approve' | 'reject',
     note?: string,
     confirmation?: string,
+    allowSimilar?: boolean,
   ) => {
     try {
       await api.decideApproval(a.id, {
@@ -166,6 +204,7 @@ export function App() {
         sessionId: a.sessionId,
         ...(note ? { note } : {}),
         ...(confirmation ? { confirmation } : {}),
+        ...(allowSimilar ? { allowSimilar } : {}),
       });
     } catch (e) {
       report(e);
@@ -329,6 +368,9 @@ export function App() {
           ]}
           onRollback={rollback}
           onOpenMemory={() => setMemoryOpen(true)}
+          onRevokeTaskPermission={(id) =>
+            api.revokeTaskPermission(id).then(() => undefined, report)
+          }
         />
         {error && (
           <div

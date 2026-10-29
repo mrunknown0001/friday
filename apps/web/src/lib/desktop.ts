@@ -9,6 +9,8 @@ export interface DesktopBridge {
   restartServer(): Promise<void>;
   /** Reveal the config file in the system file manager, creating it from a template if missing. */
   showConfigFile(): Promise<void>;
+  /** Bring the app window to the front (after a notification is clicked). */
+  focusWindow(): Promise<void>;
 }
 
 export const desktop: DesktopBridge | null =

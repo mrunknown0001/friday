@@ -268,6 +268,38 @@ describe('provider routes', () => {
 });
 
 describe('chat over HTTP', () => {
+  it('streams app-wide notices and ends the stream on shutdown', async () => {
+    const { app: server } = await setup([(_c, sig) => sseResponse(textChunks(['ok']), {}, sig)]);
+    await server.listen({ host: '127.0.0.1', port: 0 });
+    const port = (server.server.address() as { port: number }).port;
+    const base = `http://127.0.0.1:${port}`;
+    const res = await fetch(`${base}/api/events`);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const reader = res.body!.getReader();
+    const created = await (
+      await fetch(`${base}/api/sessions`, { method: 'POST', headers: MUTATE, body: '{}' })
+    ).json();
+    await fetch(`${base}/api/sessions/${created.id}/messages`, {
+      method: 'POST',
+      headers: MUTATE,
+      body: JSON.stringify({ content: 'hi' }),
+    });
+    let text = '';
+    while (!text.includes('run_finished')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
+    expect(text).toContain('event: notice');
+    expect(text).toMatch(
+      /"type":"run_finished","sessionId":"[^"]+","runId":"[^"]+","status":"completed"/,
+    );
+    // Closing the app must not hang on the open stream.
+    app = null;
+    await server.close();
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('sends a message, streams the run over SSE, and persists the conversation', async () => {
     const { app, services } = await setup([
       (_c, s) => sseResponse(textChunks(['Use ', '`docker volume ls`.']), {}, s),

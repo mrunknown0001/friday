@@ -2,6 +2,7 @@ import type { ApprovalDto, ApprovalStatus, RiskLevel } from '@friday/shared';
 import {
   Check,
   FileDiff,
+  KeyRound,
   GitCommitHorizontal,
   Loader2,
   Server,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { displayArgv } from '../lib/format';
+import { canAllowSimilar } from '../lib/taskPermission';
 import { DiffView } from './DiffView';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
@@ -42,7 +44,60 @@ const CATEGORY_LABEL: Record<string, string> = {
   git: 'Git',
   remote: 'Remote server',
   deployment: 'Production change',
+  task_permission: 'Task permission',
 };
+
+function TaskPermissionDetails({
+  d,
+}: {
+  d: Extract<ApprovalDto['details'], { kind: 'task_permissions' }>;
+}) {
+  return (
+    <div className="space-y-2 text-xs">
+      <ol className="list-decimal space-y-0.5 pl-5 text-zinc-300">
+        {d.plan.map((step, i) => (
+          <li key={i}>{step}</li>
+        ))}
+      </ol>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+        <dt className="text-zinc-500">May create or edit</dt>
+        <dd>
+          <ul className="space-y-0.5 font-mono text-zinc-100">
+            {d.files.map((f) => (
+              <li key={f}>{f.endsWith('/') ? `${f} (anything in this folder)` : f}</li>
+            ))}
+          </ul>
+        </dd>
+        <dt className="text-zinc-500">May run</dt>
+        <dd>
+          {d.commands.length ? (
+            <ul className="space-y-0.5 font-mono text-zinc-100">
+              {d.commands.map((c) => (
+                <li key={c.join('\0')}>$ {displayArgv(c)}</li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-zinc-300">No commands</span>
+          )}
+          <span className="text-zinc-500">
+            {' '}
+            Exactly as written, in the project root, without a shell.
+          </span>
+        </dd>
+        <dt className="text-zinc-500">Limits</dt>
+        <dd className="text-zinc-300">
+          This task only, up to {d.maxActions} actions within {d.minutes} minutes. You can revoke it
+          at any time.
+        </dd>
+      </dl>
+      <p className="text-zinc-400">
+        Each change is still checked right before it runs, shown in the conversation and can be
+        undone. Deleting or moving files, git, remote servers, shell scripts and anything not listed
+        here still ask you.
+      </p>
+    </div>
+  );
+}
 
 function useCountdown(expiresAt: string, active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
@@ -122,6 +177,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   }
   if (d.kind === 'file_change') return <FileDiffs changes={d.changes} />;
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
+  if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   const shown = d.argv ? displayArgv(d.argv) : (d.shellCommand ?? '');
   return (
     <div className="space-y-2">
@@ -219,7 +275,12 @@ function RemoteDetails({ d }: { d: Extract<ApprovalDto['details'], { kind: 'remo
 
 export interface ApprovalCardProps {
   approval: ApprovalDto;
-  onDecide: (decision: 'approve' | 'reject', note?: string, confirmation?: string) => Promise<void>;
+  onDecide: (
+    decision: 'approve' | 'reject',
+    note?: string,
+    confirmation?: string,
+    allowSimilar?: boolean,
+  ) => Promise<void>;
   onCancelRun?: (() => void) | undefined;
   /** Compact read-only view (inside tool history). */
   compact?: boolean;
@@ -233,6 +294,8 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
   const [typed, setTyped] = useState('');
+  const similar = canAllowSimilar(approval);
+  const [allowSimilar, setAllowSimilar] = useState(false);
   const confirmed =
     !approval.confirmationRequired || typed.trim() === approval.confirmationRequired;
   const status = expired ? STATUS.expired : STATUS[approval.status];
@@ -241,7 +304,9 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
       ? SquareTerminal
       : approval.details.kind === 'git'
         ? GitCommitHorizontal
-        : ShieldAlert;
+        : approval.details.kind === 'task_permissions'
+          ? KeyRound
+          : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);
@@ -250,6 +315,7 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
         decision,
         decision === 'reject' && note.trim() ? note.trim() : undefined,
         decision === 'approve' && approval.confirmationRequired ? typed.trim() : undefined,
+        decision === 'approve' && similar !== null && allowSimilar ? true : undefined,
       );
     } finally {
       setBusy(null);
@@ -298,6 +364,25 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
 
       {pending && !compact && (
         <div className="space-y-2 border-t border-zinc-800 pt-3">
+          {similar && !rejecting && (
+            <label className="flex items-start gap-2 text-xs text-zinc-300">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-sky-500"
+                checked={allowSimilar}
+                onChange={(e) => setAllowSimilar(e.target.checked)}
+              />
+              <span>
+                {similar === 'files'
+                  ? 'Also allow further edits to these files for this task without asking.'
+                  : 'Also allow re-running this exact command for this task without asking.'}{' '}
+                <span className="text-zinc-500">
+                  Each one is still checked, shown and undoable; up to 20 actions within 30 minutes;
+                  you can revoke it.
+                </span>
+              </span>
+            </label>
+          )}
           {approval.confirmationRequired && !rejecting && (
             <div className="rounded-md border border-red-900/70 bg-red-950/30 p-2">
               <label htmlFor={`confirm-${approval.id}`} className="mb-1 block text-xs text-red-200">
@@ -368,7 +453,7 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
                   ) : (
                     <Check className="h-3.5 w-3.5" />
                   )}
-                  Approve once
+                  {similar && allowSimilar ? 'Approve' : 'Approve once'}
                 </Button>
                 <Button
                   size="sm"

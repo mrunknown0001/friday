@@ -137,6 +137,20 @@ model tool call ─▶ validateToolCall (policy, JSON, zod)
 The registry refuses to register a protected tool that has a direct `execute`, so there is no code path that runs
 one without `prepare` and approval.
 
+**Task permissions** (`approvals/taskPermission.ts`) add one branch before the wait: if the run holds an active
+permission and `covers(permission, tool, proposal)` matches the prepared proposal (files created/modified within the
+listed paths, or an exact listed argv in the project root without shell or network, never high risk or a typed
+confirmation), `ApprovalService.approveByPermission` moves the approval to `approved` with `granted_by` pointing at the
+user's grant, and execution continues through the same re-check and apply path. A permission is held in memory on the
+active run, so it can never outlive it. It is created by approving `request_task_permissions` (scope proposed by the
+model) or by approving an action with `allowSimilar` (scope = exactly that action, see `similarScope`), and ends on
+revoke, expiry, its action limit, replacement, or the end of the run. `task_permission` run events carry its state to
+the UI.
+
+**Notices** (`GET /api/events`): `RunManager.onNotice` broadcasts `approval_requested` (only for approvals waiting on
+the user) and `run_finished` for every conversation; the web app turns them into system notifications
+(`lib/notifications.ts`, `lib/useAppNotices.ts`).
+
 ## Coding agent (Phase 4)
 
 | Module                  | Responsibility                                                                                                                                        |
@@ -198,7 +212,7 @@ Electron main process                     utilityProcess                       R
 │ launch token, paths, menu;  │ ──────▶ │ server bundle (index.mjs) │ ◀────── │ same React UI as the │
 │ server reports its port     │         │ FRIDAY_LAUNCH_TOKEN set:  │  + SSE  │ web app; preload adds│
 │ webRequest adds x-friday-   │         │ every request must carry  │         │ fridayDesktop bridge │
-│ token to app requests only  │         │ the token                 │         │ (3 IPC calls)        │
+│ token to app requests only  │         │ the token                 │         │ (4 IPC calls)        │
 └─────────────────────────────┘         └───────────────────────────┘         └──────────────────────┘
 ```
 

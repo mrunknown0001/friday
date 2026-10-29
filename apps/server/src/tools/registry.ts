@@ -23,6 +23,7 @@ import {
 } from './gitTools.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
+import { requestTaskPermissions } from './taskPermissionTool.js';
 import { decide, type PolicyDecision } from './policy.js';
 import { toToolDefinition, type ToolContext, type ToolOutput, type ToolSpec } from './types.js';
 import {
@@ -71,6 +72,7 @@ export const DEFAULT_TOOLS = [
   searchCode,
   findFiles,
   updatePlan,
+  requestTaskPermissions,
   writeFile,
   editFile,
   editFiles,

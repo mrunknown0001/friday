@@ -118,6 +118,43 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     return { cancelled: s.runManager.cancel(id) };
   });
 
+  app.post('/api/runs/:id/task-permission/revoke', async (req) => {
+    const { id } = parseInput(idParams, req.params);
+    if (!s.runs.get(id)) throw new HttpError(404, 'run_not_found', 'Run not found.');
+    return { revoked: s.runManager.revokeTaskPermission(id) };
+  });
+
+  /** App-wide notices for every conversation (approvals waiting, finished runs). */
+  const noticeStreams = new Set<() => void>();
+  // These streams stay open for the app's lifetime; end them so shutdown is not held up.
+  app.addHook('preClose', async () => {
+    for (const end of [...noticeStreams]) end();
+  });
+  app.get('/api/events', async (req, reply) => {
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    raw.write(': connected\n\n');
+    const unsubscribe = s.runManager.onNotice((n) => {
+      raw.write(`event: notice\ndata: ${JSON.stringify(n)}\n\n`);
+    });
+    const heartbeat = setInterval(() => raw.write(': ping\n\n'), SSE_HEARTBEAT_MS);
+    const end = () => {
+      if (!noticeStreams.delete(end)) return;
+      clearInterval(heartbeat);
+      unsubscribe();
+      raw.end();
+    };
+    noticeStreams.add(end);
+    req.raw.on('close', end);
+  });
+
   app.get('/api/runs/:id/events', async (req, reply) => {
     const { id } = parseInput(idParams, req.params);
     const { after } = parseInput(

@@ -315,6 +315,15 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE runs ADD COLUMN suggestions TEXT;
     `,
   },
+  {
+    version: 8,
+    name: 'approval_granted_by',
+    up: `
+      -- Actions approved automatically under a task permission point to the approval that
+      -- granted it (the user's decision), so every automatic approval stays traceable.
+      ALTER TABLE approvals ADD COLUMN granted_by TEXT REFERENCES approvals(id);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

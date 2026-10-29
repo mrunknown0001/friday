@@ -19,7 +19,7 @@ import {
  * Friday desktop shell. The agent runs in the same local server as the web version, started here
  * as an Electron utility process on a random loopback port. Security model:
  * - The renderer is sandboxed with context isolation and no Node.js; it only talks HTTP to the
- *   server, like the browser version, plus three user-driven IPC calls (see preload.cts).
+ *   server, like the browser version, plus four user-driven IPC calls (see preload.cts).
  * - Every request to the server carries a per-launch token added at the network layer, so the
  *   page's JavaScript never sees it and other local programs or users cannot drive the agent.
  * - Navigation, new windows, webviews and permission prompts are locked down to the app itself.
@@ -258,6 +258,12 @@ function registerIpc(): void {
   ipcMain.handle('friday:restart-server', async (event) => {
     if (fromApp(event)) await restartServer();
   });
+  ipcMain.handle('friday:focus-window', (event) => {
+    if (!fromApp(event) || !mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
   ipcMain.handle('friday:show-config-file', (event) => {
     if (!fromApp(event)) return;
     ensureEnvFile();
@@ -292,9 +298,9 @@ function lockDownContents(): void {
     contents.on('will-attach-webview', (event) => event.preventDefault());
   });
 
-  // Only clipboard writes ("Copy code") are allowed, and only for the app itself.
+  // Only clipboard writes ("Copy code") and notifications are allowed, and only for the app itself.
   const allowed = (permission: string, requestingUrl: string | undefined) =>
-    permission === 'clipboard-sanitized-write' &&
+    (permission === 'clipboard-sanitized-write' || permission === 'notifications') &&
     !!requestingUrl &&
     new URL(requestingUrl).origin === origin;
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>

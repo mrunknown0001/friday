@@ -48,6 +48,7 @@ const props = (d: SessionDetailDto) => ({
   deploymentPlans: [],
   onRollback: async () => {},
   onOpenMemory: () => {},
+  onRevokeTaskPermission: async () => {},
 });
 
 // jsdom has no layout: give the conversation a fixed viewport and a tall content height.

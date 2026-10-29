@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  AppNotice,
   NextStep,
   AgentLimitsDto,
   MessageDto,
@@ -27,7 +28,14 @@ import { toRunDto, type RunRepo } from '../repositories/runs.js';
 import { DEFAULT_SESSION_TITLE, type SessionRepo } from '../repositories/sessions.js';
 import type { AuditRepo } from '../repositories/telemetry.js';
 import type { ToolCallRepo } from '../repositories/toolCalls.js';
-import type { ApprovalService } from '../approvals/service.js';
+import type { ApprovalOutcome, ApprovalService } from '../approvals/service.js';
+import {
+  covers,
+  similarScope,
+  TASK_PERMISSION_LIMITS,
+  toDto as taskPermissionDto,
+  type TaskPermission,
+} from '../approvals/taskPermission.js';
 import type { FileChangeRepo } from '../repositories/fileChanges.js';
 import type { ApprovalRepo } from '../repositories/approvals.js';
 import type { Redactor } from '../security/redact.js';
@@ -109,6 +117,8 @@ interface ActiveRun {
   toolCalls: number;
   /** Latest follow-ups the model proposed with suggest_next_steps. */
   modelSuggestions: Array<{ label: string; prompt: string }>;
+  /** Task permission the user approved for this run, if any (see request_task_permissions). */
+  permission: TaskPermission | null;
 }
 
 /** Tools that only annotate the final answer: a turn of just these ends the run, no extra model call. */
@@ -139,6 +149,7 @@ const MAX_STREAMED_OUTPUT = 256 * 1024;
 
 export class RunManager {
   private readonly runs = new Map<string, ActiveRun>();
+  private readonly noticeListeners = new Set<(notice: AppNotice) => void>();
   private readonly activeBySession = new Map<string, string>();
 
   constructor(private readonly deps: RunManagerDeps) {}
@@ -190,6 +201,72 @@ export class RunManager {
     const run = this.runs.get(runId);
     if (!run || run.done) return false;
     run.controller.abort();
+    return true;
+  }
+
+  /** App-wide notices (approvals waiting for the user, finished runs) for notifications. */
+  onNotice(listener: (notice: AppNotice) => void): () => void {
+    this.noticeListeners.add(listener);
+    return () => this.noticeListeners.delete(listener);
+  }
+
+  private notice(n: AppNotice): void {
+    for (const l of this.noticeListeners) {
+      try {
+        l(n);
+      } catch {
+        this.noticeListeners.delete(l);
+      }
+    }
+  }
+
+  /**
+   * The user approved an action with "allow similar for this task": extend the run's task
+   * permission (or start one) with exactly this action's files or command.
+   */
+  private allowSimilar(run: ActiveRun, approvalId: string, toolName: string, proposal: Proposal) {
+    const scope = similarScope(toolName, proposal);
+    if (!scope) return;
+    let p = run.permission;
+    if (p && taskPermissionDto(p).active) {
+      for (const f of scope.files) if (!p.files.includes(f)) p.files.push(f);
+      for (const c of scope.commands)
+        if (!p.commands.some((x) => x.join('\0') === c.join('\0'))) p.commands.push(c);
+    } else {
+      p = {
+        approvalId,
+        runId: run.id,
+        files: scope.files,
+        commands: scope.commands,
+        maxActions: TASK_PERMISSION_LIMITS.defaultActions,
+        used: 0,
+        expiresAt: Date.now() + TASK_PERMISSION_LIMITS.defaultMinutes * 60_000,
+        ended: null,
+      };
+      run.permission = p;
+    }
+    this.deps.audit.record({
+      sessionId: run.sessionId,
+      actor: 'user',
+      action: 'task_permission_extended',
+      details: { runId: run.id, approvalId, files: scope.files, commands: scope.commands },
+    });
+    this.emit(run, { type: 'task_permission', permission: taskPermissionDto(p) });
+  }
+
+  /** End a run's task permission early; later actions ask the user again. */
+  revokeTaskPermission(runId: string): boolean {
+    const run = this.runs.get(runId);
+    const p = run?.permission;
+    if (!run || run.done || !p || !taskPermissionDto(p).active) return false;
+    p.ended = 'revoked';
+    this.deps.audit.record({
+      sessionId: run.sessionId,
+      actor: 'user',
+      action: 'task_permission_revoked',
+      details: { runId, approvalId: p.approvalId, used: p.used },
+    });
+    this.emit(run, { type: 'task_permission', permission: taskPermissionDto(p) });
     return true;
   }
 
@@ -258,6 +335,7 @@ export class RunManager {
       iteration: 0,
       toolCalls: 0,
       modelSuggestions: [],
+      permission: null,
     };
     this.runs.set(id, active);
     this.activeBySession.set(sessionId, id);
@@ -844,16 +922,43 @@ export class RunManager {
         : {}),
       ...(proposal.approvalTtlMs ? { ttlMs: proposal.approvalTtlMs } : {}),
     });
-    this.deps.runs.setActiveStatus(run.id, 'awaiting_approval');
-    // Start waiting before announcing the request, so a decision can never arrive first.
-    const waiting = approvals.wait(approval, run.controller.signal);
-    this.emit(run, { type: 'approval_requested', approval });
-    this.phase(run, 'awaiting_approval', proposal.title);
-
-    const decision = await waiting;
-    this.deps.runs.setActiveStatus(run.id, 'running');
     const resolved = () => this.deps.approvalRepo.get(approval.id)!;
-    this.emit(run, { type: 'approval_resolved', approval: resolved() });
+    let decision: ApprovalOutcome;
+    const permission = run.permission;
+    const granted =
+      permission && covers(permission, spec.name, proposal)
+        ? approvals.approveByPermission(approval.id, permission.approvalId)
+        : null;
+    if (permission && granted) {
+      // Within the task permission the user approved: no prompt, but the request and its
+      // automatic approval are both shown and recorded like any other.
+      permission.used++;
+      this.emit(run, { type: 'approval_requested', approval });
+      this.emit(run, { type: 'approval_resolved', approval: granted });
+      this.emit(run, { type: 'task_permission', permission: taskPermissionDto(permission) });
+      decision = { outcome: 'approved', approval: granted };
+    } else {
+      this.deps.runs.setActiveStatus(run.id, 'awaiting_approval');
+      // Start waiting before announcing the request, so a decision can never arrive first.
+      const waiting = approvals.wait(approval, run.controller.signal);
+      this.emit(run, { type: 'approval_requested', approval });
+      this.notice({
+        type: 'approval_requested',
+        sessionId: run.sessionId,
+        runId: run.id,
+        approvalId: approval.id,
+        title: approval.title,
+        risk: approval.risk,
+      });
+      this.phase(run, 'awaiting_approval', proposal.title);
+
+      decision = await waiting;
+      this.deps.runs.setActiveStatus(run.id, 'running');
+      this.emit(run, { type: 'approval_resolved', approval: resolved() });
+      if (decision.outcome === 'approved' && decision.allowSimilar) {
+        this.allowSimilar(run, approval.id, spec.name, proposal);
+      }
+    }
 
     switch (decision.outcome) {
       case 'cancelled':
@@ -913,6 +1018,24 @@ export class RunManager {
 
     const execCtx: ToolContext = {
       ...ctx,
+      grantTaskPermission: (grant) => {
+        const previous = run.permission;
+        if (previous && taskPermissionDto(previous).active) {
+          previous.ended = 'replaced';
+          this.emit(run, { type: 'task_permission', permission: taskPermissionDto(previous) });
+        }
+        const p: TaskPermission = {
+          approvalId: approval.id,
+          runId: run.id,
+          ...grant,
+          used: 0,
+          expiresAt: Date.now() + grant.minutes * 60_000,
+          ended: null,
+        };
+        run.permission = p;
+        this.emit(run, { type: 'task_permission', permission: taskPermissionDto(p) });
+        return { expiresAt: new Date(p.expiresAt).toISOString() };
+      },
       recordFileChange: (change) =>
         this.deps.fileChanges.insert({
           approvalId: approval.id,
@@ -974,9 +1097,16 @@ export class RunManager {
         details: { runId: run.id, kind: err.kind, status: err.status ?? null },
       });
     }
-    this.emit(run, {
+    const final = toRunDto(this.deps.runs.get(record.id) ?? record);
+    this.emit(run, { type: 'run_finished', run: final });
+    this.notice({
       type: 'run_finished',
-      run: toRunDto(this.deps.runs.get(record.id) ?? record),
+      sessionId: run.sessionId,
+      runId: run.id,
+      status: final.status,
+      durationMs: final.finishedAt
+        ? Date.parse(final.finishedAt) - Date.parse(final.startedAt)
+        : null,
     });
   }
 

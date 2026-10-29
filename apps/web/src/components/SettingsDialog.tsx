@@ -9,10 +9,73 @@ import { CheckCircle2, KeyRound, Loader2, RefreshCw, XCircle } from 'lucide-reac
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../lib/api';
 import { desktop } from '../lib/desktop';
+import {
+  disableNotifications,
+  enableNotifications,
+  notificationState,
+  notify,
+  type NotificationState,
+} from '../lib/notifications';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
 import { DevopsSettings } from './DevopsSettings';
 import { Dialog } from './ui/dialog';
+
+function NotificationSettings() {
+  const [state, setState] = useState<NotificationState>(notificationState);
+  return (
+    <Section title="Notifications">
+      <p className="text-sm text-zinc-300">
+        A system notification when Friday needs your approval, or finishes a task that took a while,
+        while you are in another window or conversation. It shows the action’s title only.
+      </p>
+      {state === 'unsupported' && (
+        <p className="mt-2 text-xs text-zinc-400">Notifications are not available here.</p>
+      )}
+      {state === 'blocked' && (
+        <p className="mt-2 text-xs text-amber-300">
+          Notifications are blocked for this page. Allow them in your browser’s site settings, then
+          reload.
+        </p>
+      )}
+      {(state === 'on' || state === 'off') && (
+        <div className="mt-2 flex items-center gap-2">
+          <Badge tone={state === 'on' ? 'success' : 'neutral'}>{state}</Badge>
+          {state === 'on' ? (
+            <>
+              <Button
+                size="sm"
+                onClick={() => {
+                  disableNotifications();
+                  setState(notificationState());
+                }}
+              >
+                Turn off
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  notify({
+                    title: 'Friday',
+                    body: 'Notifications are working.',
+                    tag: 'friday-test',
+                  })
+                }
+              >
+                Send a test
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" onClick={() => void enableNotifications().then(setState)}>
+              Turn on
+            </Button>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
 
 const CAP_TONE: Record<string, Tone> = {
   supported: 'success',
@@ -397,6 +460,7 @@ export function SettingsDialog({
         <ErrorText error={capsError} />
       </Section>
 
+      <NotificationSettings />
       <DevopsSettings />
       <Section
         title="Recent provider calls"
