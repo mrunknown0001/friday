@@ -142,6 +142,13 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Exposing a sandboxed dev server            | Ports are published on `127.0.0.1` only, only for a sandbox with network, and are part of the approval fingerprint.                                                                                            |
 | The model stopping other programs          | `stop_process` (category `process_control`, no approval) only accepts ids of processes Friday started in the same project.                                                                                     |
 
+## Code map
+
+The index holds definition lines (signatures) from project source files, in the local database only. It applies
+the file tree's rules: `.gitignore` and dependency folders are excluded, credential files are never read, and
+symlinks are not followed. Its tools are read-only, confined to the project, and their output is redacted like
+other tool output. Signatures are untrusted text, like file contents.
+
 ## Images
 
 | Threat                                  | Mitigation                                                                                                                                                                                    |

@@ -173,6 +173,20 @@ never start a process. The server's `onClose` stops everything. Startup's `reapO
 carry the marker. `run_command` and `start_process` share `prepareCommand` (folder, risk, sandbox checks). The system
 prompt lists each process's current status, so the model does not trust stale history.
 
+### Code map (`codemap/`, `tools/codeMapTools.ts`)
+
+`codemap/extract.ts` finds definitions with per-language line patterns. A stack of open containers, tracked by
+indentation, attributes members to their class, impl or module, and skips everything inside function bodies.
+Multi-line signatures (`): T {`, `}> {`), Allman braces and block comments are handled. `CodeMap` (migration 11:
+`code_files`, `code_symbols`, cascading with the project) refreshes on demand. It walks like the file tree (one
+`stat` per file via `walk`), re-reads only files whose size or mtime changed, deletes removed ones, and writes in
+batched transactions. Limits are 30,000 files and 512 KB per file. A refresh is reused for 15 s. Any approved action
+(and an undo) invalidates it, so line numbers follow Friday's own edits. `renderOutline` picks the most detailed
+level that fits the output budget: signatures, then names per file, then a per-folder summary. `find` ranks exact,
+then case-insensitive, then prefix, then substring matches, exported definitions first. `find_symbol` references
+come from the existing search (ripgrep or built-in), filtered to whole words, with definition lines excluded.
+Routes: `GET /api/projects/:id/codemap` and `POST /api/projects/:id/codemap/rebuild`.
+
 ### Images (`attachments/`, `routes/attachments.ts`, `tools/imageTools.ts`)
 
 `POST /api/attachments` takes a raw image body. `attachments/image.ts` derives the type and size from the bytes and

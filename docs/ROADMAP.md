@@ -174,4 +174,9 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
   Verified live on 2026-10-30 with `claude-sonnet-4.6`: a pasted 2560×1440 checkout screenshot (stored as 1430×804)
   was described from what was visible, `view_image` read a mockup's button label, colour and error text correctly,
   the probe reported image input as supported, an existing database migrated, and axe found 0 violations
-- ⬜ Code map for large repos (see the suggestion list)
+- ✅ Code map: symbol index (built-in patterns for 9 languages, on demand, cached in SQLite, incremental by size
+  and mtime) with `code_map` (outline that fits the budget) and `find_symbol` (definitions plus whole-word
+  references); status and Rebuild in Project settings. Measured on 10,097 source files: 5.5 s first index, 1.5 s
+  no-change check, 11 ms lookups. Verified live on 2026-10-30 with `claude-sonnet-4.6` on Friday's own repository:
+  a structure question was answered from `code_map` alone, and a "who calls X" question started with
+  `find_symbol`, which returned the exact definition and call sites

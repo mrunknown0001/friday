@@ -103,6 +103,10 @@ export function toolLabel(name: string, argsJson: string): string {
       return '';
     case 'view_image':
       return str(a.path);
+    case 'code_map':
+      return str(a.path ?? '.');
+    case 'find_symbol':
+      return `${str(a.name)}${a.references ? ' +refs' : ''}`;
     default:
       return Object.values(a).map(str).join(' ').slice(0, 80);
   }

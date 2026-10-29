@@ -21,6 +21,7 @@ import {
   gitShow,
   gitStatus,
 } from './gitTools.js';
+import { codeMapTool, findSymbol } from './codeMapTools.js';
 import { viewImage } from './imageTools.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
@@ -74,6 +75,8 @@ export class ToolRegistry {
 
 export const DEFAULT_TOOLS = [
   inspectProject,
+  codeMapTool,
+  findSymbol,
   listDirectory,
   readFile,
   fileInfo,

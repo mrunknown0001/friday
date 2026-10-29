@@ -355,6 +355,33 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE model_capabilities ADD COLUMN image_input TEXT NOT NULL DEFAULT 'unknown';
     `,
   },
+  {
+    version: 11,
+    name: 'code_map',
+    up: `
+      -- Code map: symbol definitions per project file, refreshed on demand by size and mtime.
+      CREATE TABLE code_files (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        mtime_ms INTEGER NOT NULL,
+        symbol_count INTEGER NOT NULL,
+        PRIMARY KEY (project_id, path)
+      );
+      CREATE TABLE code_symbols (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        line INTEGER NOT NULL,
+        container TEXT,
+        signature TEXT NOT NULL,
+        exported INTEGER NOT NULL
+      );
+      CREATE INDEX code_symbols_name ON code_symbols(project_id, name COLLATE NOCASE);
+      CREATE INDEX code_symbols_path ON code_symbols(project_id, path);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

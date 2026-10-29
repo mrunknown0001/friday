@@ -2,6 +2,7 @@ import type {
   ApiErrorBody,
   ApprovalDto,
   AttachmentDto,
+  CodeMapStatusDto,
   FileChangeDto,
   HostEnvironment,
   LogSourceDto,
@@ -117,6 +118,9 @@ export const api = {
     request<ProjectDto>('PUT', `/api/projects/${id}/sandbox`, settings),
   pullSandboxImage: (id: string, image: string) =>
     request<SandboxStatusDto>('POST', `/api/projects/${id}/sandbox/pull`, { image }),
+  projectCodeMap: (id: string) => request<CodeMapStatusDto>('GET', `/api/projects/${id}/codemap`),
+  rebuildCodeMap: (id: string) =>
+    request<CodeMapStatusDto>('POST', `/api/projects/${id}/codemap/rebuild`),
   projectProcesses: (id: string) =>
     request<{ processes: ProcessDto[] }>('GET', `/api/projects/${id}/processes`),
   processOutput: (id: string, since?: number) =>

@@ -227,6 +227,8 @@ describe('tool executor', () => {
         'read_process_output',
         'stop_process',
         'view_image',
+        'code_map',
+        'find_symbol',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;

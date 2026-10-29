@@ -1,5 +1,5 @@
-import type { ProjectDto, SandboxStatusDto } from '@friday/shared';
-import { Box, Download, Loader2, RefreshCw } from 'lucide-react';
+import type { CodeMapStatusDto, ProjectDto, SandboxStatusDto } from '@friday/shared';
+import { Box, Download, Loader2, Network, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Badge } from './ui/badge';
@@ -9,7 +9,78 @@ import { Dialog } from './ui/dialog';
 const input =
   'w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm outline-none focus:border-sky-500';
 
-/** Per-project settings. Today: where the project's commands run (this machine or a container). */
+/** The project's code map: what is indexed, and a rebuild for when it looks wrong. */
+function CodeMapSection({ projectId }: { projectId: string }) {
+  const [status, setStatus] = useState<CodeMapStatusDto | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .projectCodeMap(projectId)
+      .then((s) => !cancelled && setStatus(s))
+      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const rebuild = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await api.rebuildCodeMap(projectId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="codemap-heading" className="space-y-2 border-t border-zinc-800 pt-4">
+      <h3 id="codemap-heading" className="flex items-center gap-2 text-sm font-semibold">
+        <Network className="h-4 w-4 text-sky-400" aria-hidden /> Code map
+      </h3>
+      <p className="text-sm text-zinc-300">
+        An index of the classes, functions and methods defined in the project, so Friday can find
+        code without reading files blindly. It is built the first time Friday needs it and only
+        re-reads files that changed. It is kept on this machine.
+      </p>
+      <div className="flex flex-wrap items-center gap-2 text-xs" role="status">
+        {status === null && !error ? (
+          <span className="text-zinc-400">Loading…</span>
+        ) : status && status.files > 0 ? (
+          <span className="text-zinc-300">
+            {status.files.toLocaleString()} source files, {status.symbols.toLocaleString()}{' '}
+            definitions
+            {status.lastRefresh &&
+              ` · checked ${new Date(status.lastRefresh.at).toLocaleTimeString()}`}
+            {status.lastRefresh?.truncated && ' · project larger than the index limit'}
+          </span>
+        ) : status ? (
+          <span className="text-zinc-400">Not built yet.</span>
+        ) : null}
+        <Button size="sm" variant="ghost" onClick={() => void rebuild()} disabled={busy}>
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          )}{' '}
+          Rebuild
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-red-400">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Per-project settings: where commands run (this machine or a container) and the code map. */
 export function ProjectSettingsDialog({
   project,
   onClose,
@@ -204,6 +275,8 @@ export function ProjectSettingsDialog({
             </select>
           </div>
         </section>
+
+        <CodeMapSection projectId={project.id} />
 
         {error && (
           <p role="alert" className="text-sm text-red-400">
