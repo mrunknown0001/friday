@@ -47,6 +47,7 @@ const envSchema = z.object({
   FRIDAY_AGENT_MAX_TOOL_CALLS: intFromEnv(40, 1, 300),
   FRIDAY_TOOL_TIMEOUT_MS: intFromEnv(30_000, 1_000, 300_000),
   FRIDAY_TOOL_OUTPUT_CHARS: intFromEnv(20_000, 2_000, 200_000),
+  FRIDAY_APPROVAL_TTL_MS: intFromEnv(15 * 60_000, 10_000, 24 * 60 * 60_000),
 });
 
 export interface AppConfig {
@@ -65,6 +66,8 @@ export interface AppConfig {
   };
   dataDir: string;
   agent: AgentLimitsDto;
+  /** How long a pending approval stays valid. */
+  approvalTtlMs: number;
 }
 
 export class ConfigError extends Error {}
@@ -101,5 +104,6 @@ export function loadConfig(env: NodeJS.ProcessEnv, repoRoot: string): AppConfig 
       toolTimeoutMs: e.FRIDAY_TOOL_TIMEOUT_MS,
       maxConsecutiveToolFailures: 4,
     },
+    approvalTtlMs: e.FRIDAY_APPROVAL_TTL_MS,
   };
 }

@@ -1,4 +1,4 @@
-import type { MessageDto, ProjectDto, RunDto, SessionDetailDto } from '@friday/shared';
+import type { ApprovalDto, MessageDto, ProjectDto, RunDto, SessionDetailDto } from '@friday/shared';
 import {
   AlertTriangle,
   ArrowUp,
@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { LiveRun } from '../lib/useRunStream';
+import { ApprovalCard } from './ApprovalCard';
+import { RunRecord } from './RunRecord';
 import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
 import { ToolActivity, type ToolItem } from './ToolActivity';
@@ -30,6 +32,9 @@ interface Props {
   onStop: () => void;
   onRetry: () => void;
   onOpenSettings: () => void;
+  /** All approvals for the session, with live updates applied. */
+  approvals: ApprovalDto[];
+  onDecide: (approval: ApprovalDto, decision: 'approve' | 'reject', note?: string) => Promise<void>;
 }
 
 const Avatar = () => (
@@ -66,10 +71,11 @@ function AssistantRow({ content, footer }: { content: string; footer?: ReactNode
 type Row =
   | { kind: 'user'; m: MessageDto }
   | { kind: 'assistant'; m: MessageDto }
-  | { kind: 'tools'; items: ToolItem[]; key: string };
+  | { kind: 'tools'; items: ToolItem[]; key: string }
+  | { kind: 'record'; runId: string; approvals: ApprovalDto[] };
 
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
-function toRows(messages: MessageDto[]): Row[] {
+function toRows(messages: MessageDto[], approvals: Map<string, ApprovalDto>): Row[] {
   const rows: Row[] = [];
   for (const m of messages) {
     if (m.role === 'user') rows.push({ kind: 'user', m });
@@ -85,13 +91,38 @@ function toRows(messages: MessageDto[]): Row[] {
         durationMs: m.tool?.durationMs ?? null,
         output: m.content,
         truncated: m.tool?.truncated,
+        approval: m.tool?.approvalId ? approvals.get(m.tool.approvalId) : undefined,
       };
       const last = rows.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
       else rows.push({ kind: 'tools', items: [item], key: `t${m.id}` });
     }
   }
-  return rows;
+  return withRunRecords(rows, messages, approvals);
+}
+
+/** After each run's last message, add the factual record of its protected actions. */
+function withRunRecords(
+  rows: Row[],
+  messages: MessageDto[],
+  approvals: Map<string, ApprovalDto>,
+): Row[] {
+  const byRun = new Map<string, ApprovalDto[]>();
+  for (const a of approvals.values()) byRun.set(a.runId, [...(byRun.get(a.runId) ?? []), a]);
+  if (byRun.size === 0) return rows;
+  const lastMessageOfRun = new Map<string, number>();
+  for (const m of messages) if (m.runId) lastMessageOfRun.set(m.runId, m.id);
+  const out: Row[] = [];
+  for (const r of rows) {
+    out.push(r);
+    const lastId =
+      r.kind === 'tools' ? Number(r.items.at(-1)!.key) : r.kind === 'record' ? -1 : r.m.id;
+    for (const [runId, last] of lastMessageOfRun) {
+      if (last === lastId && byRun.has(runId))
+        out.push({ kind: 'record', runId, approvals: byRun.get(runId)! });
+    }
+  }
+  return out;
 }
 
 function MessageFooter({ m }: { m: MessageDto }) {
@@ -149,7 +180,7 @@ function RunProblem({
   );
 }
 
-function LiveOutput({ live }: { live: LiveRun }) {
+function LiveOutput({ live, byCall }: { live: LiveRun; byCall: Map<string, ApprovalDto> }) {
   const groups: Array<{ kind: 'text'; text: string } | { kind: 'tools'; items: ToolItem[] }> = [];
   for (const b of live.blocks) {
     if (b.kind === 'text') groups.push({ kind: 'text', text: b.text });
@@ -161,6 +192,8 @@ function LiveOutput({ live }: { live: LiveRun }) {
         status: b.status,
         summary: b.summary,
         durationMs: b.durationMs,
+        terminal: b.output || undefined,
+        approval: byCall.get(b.callId),
       };
       const last = groups.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -196,6 +229,7 @@ function LiveOutput({ live }: { live: LiveRun }) {
 export function ChatView(props: Props) {
   const { detail, project, live, canSend, blockedReason, onSend, onStop, onRetry, onOpenSettings } =
     props;
+  const { approvals, onDecide } = props;
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -205,7 +239,7 @@ export function ChatView(props: Props) {
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [detail?.messages.length, live?.blocks]);
+  }, [detail?.messages.length, live?.blocks, approvals.length]);
 
   const submit = async () => {
     const text = draft.trim();
@@ -226,7 +260,10 @@ export function ChatView(props: Props) {
 
   // While a run streams, its persisted messages are shown through the live view instead.
   const messages = (detail?.messages ?? []).filter((m) => !(running && m.runId === live?.runId));
-  const rows = toRows(messages);
+  const byId = new Map(approvals.map((a) => [a.id, a]));
+  const byCall = new Map(approvals.map((a) => [a.toolCallId, a]));
+  const rows = toRows(messages, byId);
+  const pending = approvals.filter((a) => a.status === 'pending');
   const latest = detail?.latestRun;
   const showProblem =
     !running && latest && ['failed', 'cancelled', 'interrupted', 'blocked'].includes(latest.status);
@@ -283,11 +320,21 @@ export function ChatView(props: Props) {
               <UserRow key={r.m.id} m={r.m} />
             ) : r.kind === 'assistant' ? (
               <AssistantRow key={r.m.id} content={r.m.content} footer={<MessageFooter m={r.m} />} />
+            ) : r.kind === 'record' ? (
+              <RunRecord key={`rec-${r.runId}`} approvals={r.approvals} />
             ) : (
               <ToolActivity key={r.key} items={r.items} />
             ),
           )}
-          {running && <LiveOutput live={live} />}
+          {running && <LiveOutput live={live} byCall={byCall} />}
+          {pending.map((a) => (
+            <ApprovalCard
+              key={a.id}
+              approval={a}
+              onDecide={(decision, note) => onDecide(a, decision, note)}
+              onCancelRun={running ? onStop : undefined}
+            />
+          ))}
           {showProblem && <RunProblem run={latest} onRetry={onRetry} disabled={!canSend} />}
         </div>
       </div>

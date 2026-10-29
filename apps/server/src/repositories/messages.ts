@@ -20,11 +20,13 @@ interface MessageRow {
   tc_summary: string | null;
   tc_duration_ms: number | null;
   tc_truncated: number | null;
+  tc_approval_id: string | null;
 }
 
 const SELECT = `
   SELECT m.*, tc.name AS tc_name, tc.arguments AS tc_arguments, tc.status AS tc_status,
-         tc.summary AS tc_summary, tc.duration_ms AS tc_duration_ms, tc.truncated AS tc_truncated
+         tc.summary AS tc_summary, tc.duration_ms AS tc_duration_ms, tc.truncated AS tc_truncated,
+         tc.approval_id AS tc_approval_id
   FROM messages m
   LEFT JOIN tool_calls tc ON tc.result_message_id = m.id`;
 
@@ -73,6 +75,7 @@ function toStored(r: MessageRow): StoredMessage {
       summary: r.tc_summary ?? '',
       durationMs: r.tc_duration_ms ?? 0,
       truncated: r.tc_truncated === 1,
+      approvalId: r.tc_approval_id,
     };
   }
   return dto;

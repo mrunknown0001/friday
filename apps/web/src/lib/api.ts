@@ -1,5 +1,7 @@
 import type {
   ApiErrorBody,
+  ApprovalDto,
+  FileChangeDto,
   ConnectionTestResult,
   FileViewDto,
   ProjectDto,
@@ -117,6 +119,13 @@ export const api = {
     request<{ run: RunDto; userMessage: MessageDto }>('POST', `/api/sessions/${id}/messages`, {
       content,
     }),
+  decideApproval: (
+    id: string,
+    body: { decision: 'approve' | 'reject'; actionHash: string; sessionId: string; note?: string },
+  ) => request<ApprovalDto>('POST', `/api/approvals/${id}/decision`, body),
+  sessionChanges: (id: string) =>
+    request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
+  revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
   retry: (id: string) => request<{ run: RunDto }>('POST', `/api/sessions/${id}/retry`),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>('POST', `/api/runs/${runId}/cancel`),

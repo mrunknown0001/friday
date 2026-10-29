@@ -1,6 +1,13 @@
-import type { FileViewDto, PlanStep, ProjectDto, TreeEntryDto } from '@friday/shared';
+import type {
+  FileChangeDto,
+  FileViewDto,
+  PlanStep,
+  ProjectDto,
+  TreeEntryDto,
+} from '@friday/shared';
 import hljs from 'highlight.js/lib/common';
 import {
+  Undo2,
   CheckCircle2,
   ChevronRight,
   Circle,
@@ -202,12 +209,75 @@ function FileViewer({
   );
 }
 
+const CHANGE_LABEL: Record<FileChangeDto['change'], string> = {
+  create: 'created',
+  modify: 'modified',
+  delete: 'deleted',
+  move: 'moved',
+};
+
+function Changes({
+  changes,
+  onRevert,
+}: {
+  changes: FileChangeDto[];
+  onRevert: (c: FileChangeDto) => void;
+}) {
+  if (changes.length === 0) {
+    return <p className="px-3 text-xs text-zinc-500">No files changed in this conversation.</p>;
+  }
+  return (
+    <ul className="space-y-1 px-2">
+      {[...changes].reverse().map((c) => (
+        <li key={c.id} className="flex items-center gap-2 rounded px-1 py-0.5 text-[13px]">
+          <span
+            className={cn(
+              'w-16 shrink-0 text-[11px]',
+              c.revertedAt
+                ? 'text-zinc-600'
+                : c.change === 'delete'
+                  ? 'text-red-400'
+                  : 'text-emerald-400',
+            )}
+          >
+            {c.revertedAt ? 'undone' : CHANGE_LABEL[c.change]}
+          </span>
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate font-mono text-zinc-300',
+              c.revertedAt && 'text-zinc-600 line-through',
+            )}
+            title={c.fromPath ? `${c.fromPath} → ${c.path}` : c.path}
+          >
+            {c.fromPath ? `${c.fromPath} → ${c.path}` : c.path}
+          </span>
+          {!c.revertedAt && (
+            <button
+              type="button"
+              onClick={() => onRevert(c)}
+              aria-label={`Undo change to ${c.path}`}
+              title="Undo this change"
+              className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function SidePanel({
   project,
   plan,
+  changes,
+  onRevert,
 }: {
   project: ProjectDto | null;
   plan: PlanStep[] | null;
+  changes: FileChangeDto[];
+  onRevert: (c: FileChangeDto) => void;
 }) {
   const [root, setRoot] = useState<TreeEntryDto[] | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -230,7 +300,8 @@ export function SidePanel({
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+    // Re-list when files change so the tree reflects applied and undone changes.
+  }, [projectId, changes]);
 
   return (
     <aside
@@ -242,6 +313,12 @@ export function SidePanel({
           Plan
         </h2>
         <Plan plan={plan} />
+      </section>
+      <section className="border-b border-zinc-800 py-3">
+        <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          Changes
+        </h2>
+        <Changes changes={changes} onRevert={onRevert} />
       </section>
       <section className="flex min-h-0 flex-1 flex-col py-3">
         <h2 className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">

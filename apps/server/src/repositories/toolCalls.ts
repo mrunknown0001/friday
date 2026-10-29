@@ -13,6 +13,7 @@ export interface NewToolCallRecord {
   summary: string;
   truncated: boolean;
   durationMs: number;
+  approvalId?: string | null;
 }
 
 /** Display arguments are capped; the full arguments live in the assistant message. */
@@ -25,8 +26,8 @@ export class ToolCallRepo {
     this.db
       .prepare(
         `INSERT INTO tool_calls (session_id, run_id, call_id, result_message_id, name, arguments, category,
-                                 status, summary, truncated, duration_ms, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                 status, summary, truncated, duration_ms, created_at, approval_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         r.sessionId,
@@ -41,6 +42,7 @@ export class ToolCallRepo {
         r.truncated ? 1 : 0,
         r.durationMs,
         new Date().toISOString(),
+        r.approvalId ?? null,
       );
   }
 

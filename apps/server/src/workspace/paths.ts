@@ -220,3 +220,68 @@ export async function assertRootAvailable(root: string): Promise<void> {
     );
   }
 }
+
+export interface WritePath extends ResolvedPath {
+  exists: boolean;
+}
+
+/**
+ * Resolve a path the agent wants to create, modify, delete, or move, which may not exist yet.
+ * The nearest existing ancestor must resolve inside the root (no writing through a symlinked
+ * directory that points elsewhere). Existing targets are resolved to their real path, so a
+ * symlink is never replaced. Credential files and .git internals are never written.
+ */
+export async function resolveForWrite(root: string, input: string): Promise<WritePath> {
+  if (typeof input !== 'string' || input.includes('\0') || input.length > 4096 || !input.trim()) {
+    throw new WorkspaceError('invalid_path', 'Invalid path.');
+  }
+  const trimmed = input.trim();
+  const lexical = path.isAbsolute(trimmed) ? path.normalize(trimmed) : path.resolve(root, trimmed);
+  if (!isWithin(root, lexical) || lexical === root) {
+    throw new WorkspaceError('outside_root', `Path "${input}" is outside the project root.`);
+  }
+  const check = (rel: string) => {
+    if (isSecretPath(rel)) {
+      throw new WorkspaceError(
+        'secret_file',
+        `"${rel}" looks like a credentials file; Friday does not write credential files. Ask the user to edit it.`,
+      );
+    }
+    if (isGitInternal(rel))
+      throw new WorkspaceError('forbidden_path', 'Writing .git internals is not allowed.');
+  };
+  check(toRel(root, lexical));
+
+  let probe = lexical;
+  for (;;) {
+    try {
+      await fs.lstat(probe);
+      break;
+    } catch {
+      probe = path.dirname(probe);
+    }
+  }
+  const realProbe = await fs.realpath(probe);
+  if (!isWithin(root, realProbe)) {
+    throw new WorkspaceError(
+      'outside_root',
+      `Path "${toRel(root, lexical)}" resolves (via a symlink) to a location outside the project root.`,
+    );
+  }
+
+  if (probe === lexical) {
+    const stat = await fs.stat(realProbe);
+    if (!stat.isFile())
+      throw new WorkspaceError('not_a_file', `"${toRel(root, lexical)}" is not a regular file.`);
+    const rel = toRel(root, realProbe);
+    check(rel);
+    return { abs: realProbe, rel, exists: true };
+  }
+  if (!(await fs.stat(realProbe)).isDirectory()) {
+    throw new WorkspaceError('not_a_directory', `"${toRel(root, probe)}" is a file, not a folder.`);
+  }
+  const abs = path.join(realProbe, path.relative(probe, lexical));
+  const rel = toRel(root, abs);
+  check(rel);
+  return { abs, rel, exists: false };
+}

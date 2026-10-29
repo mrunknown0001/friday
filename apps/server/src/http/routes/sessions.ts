@@ -65,6 +65,7 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
       latestRun: latest ? toRunDto(latest) : null,
       hasSummary: session.summary !== null,
       plan: session.plan,
+      approvals: s.approvalRepo.listBySession(id),
     };
   });
 

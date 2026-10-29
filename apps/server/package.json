@@ -16,6 +16,7 @@
   "dependencies": {
     "@fastify/static": "^10.1.8",
     "better-sqlite3": "^13.0.3",
+    "diff": "^9.0.0",
     "fastify": "^5.12.7",
     "ignore": "7.0.12",
     "openai": "^7.45.1",

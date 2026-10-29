@@ -142,6 +142,75 @@ export type RiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
 
 export type ToolCallStatus = 'completed' | 'error' | 'denied' | 'skipped';
 
+// ------------------------------------------------------------------ approvals (Phase 3)
+
+export type ApprovalStatus =
+  'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled' | 'executed' | 'failed' | 'stale';
+
+export interface FileChangePreview {
+  path: string;
+  change: 'create' | 'modify' | 'delete' | 'move';
+  fromPath?: string;
+  /** Unified diff (empty for binary files). */
+  diff: string;
+  added: number;
+  removed: number;
+}
+
+export type ApprovalDetails =
+  | { kind: 'file_change'; changes: FileChangePreview[] }
+  | {
+      kind: 'command';
+      /** Exact argument vector when no shell is involved. */
+      argv: string[] | null;
+      /** Exact shell script when shell interpretation is requested. */
+      shellCommand: string | null;
+      shell: boolean;
+      cwd: string;
+      host: 'local';
+      timeoutSeconds: number;
+      /** Names of environment variables passed to the process (values are not shown). */
+      env: string[];
+      network: boolean;
+      riskReasons: string[];
+    };
+
+export interface ApprovalDto {
+  id: string;
+  sessionId: string;
+  runId: string;
+  projectId: string | null;
+  toolCallId: string;
+  toolName: string;
+  category: PermissionCategory;
+  risk: RiskLevel;
+  title: string;
+  /** What will happen, in one or two sentences. */
+  summary: string;
+  /** Why the agent says the action is needed. Model-written: treat as a claim, not a fact. */
+  reason: string;
+  details: ApprovalDetails;
+  /** The client must echo this when approving, proving which exact action was reviewed. */
+  actionHash: string;
+  status: ApprovalStatus;
+  decisionNote: string | null;
+  resultSummary: string | null;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+}
+
+export interface FileChangeDto {
+  id: number;
+  approvalId: string | null;
+  sessionId: string | null;
+  path: string;
+  fromPath: string | null;
+  change: 'create' | 'modify' | 'delete' | 'move';
+  createdAt: string;
+  revertedAt: string | null;
+}
+
 export interface PlanStep {
   title: string;
   status: 'pending' | 'in_progress' | 'completed' | 'blocked';
@@ -157,6 +226,7 @@ export interface ToolExecutionDto {
   summary: string;
   durationMs: number;
   truncated: boolean;
+  approvalId: string | null;
 }
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
@@ -179,11 +249,21 @@ export interface MessageDto {
 }
 
 export type RunStatus =
-  'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'blocked';
+  | 'running'
+  | 'awaiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted'
+  | 'blocked';
 
 /** Why a run stopped without completing. Provider errors plus agent-loop safeguards. */
 export type RunErrorKind =
-  ProviderErrorKind | 'limit_reached' | 'repeated_failures' | 'context_overflow';
+  | ProviderErrorKind
+  | 'limit_reached'
+  | 'repeated_failures'
+  | 'context_overflow'
+  | 'approval_expired';
 
 export interface RunDto {
   id: string;
@@ -211,6 +291,7 @@ export interface SessionDetailDto extends SessionSummaryDto {
   latestRun: RunDto | null;
   hasSummary: boolean;
   plan: PlanStep[] | null;
+  approvals: ApprovalDto[];
 }
 
 export type RunPhase =
@@ -219,7 +300,8 @@ export type RunPhase =
   | 'waiting_for_model'
   | 'streaming'
   | 'running_tool'
-  | 'reading_results';
+  | 'reading_results'
+  | 'awaiting_approval';
 
 /** Server-Sent Event payloads for a run. `seq` is also sent as the SSE `id`. */
 export type RunEvent =
@@ -237,6 +319,9 @@ export type RunEvent =
       durationMs: number;
     }
   | { seq: number; type: 'plan_updated'; plan: PlanStep[] }
+  | { seq: number; type: 'approval_requested'; approval: ApprovalDto }
+  | { seq: number; type: 'approval_resolved'; approval: ApprovalDto }
+  | { seq: number; type: 'command_output'; callId: string; chunk: string }
   | { seq: number; type: 'message_saved'; message: MessageDto }
   | {
       seq: number;

@@ -1,4 +1,4 @@
-import type { PermissionCategory, PlanStep, RiskLevel } from '@friday/shared';
+import type { ApprovalDetails, PermissionCategory, PlanStep, RiskLevel } from '@friday/shared';
 import { z } from 'zod';
 import type { ToolDefinition } from '../providers/types.js';
 import type { ProjectRecord } from '../repositories/projects.js';
@@ -15,6 +15,36 @@ export interface ToolContext {
   env: ToolEnvironment;
   maxOutputChars: number;
   setPlan: (plan: PlanStep[]) => void;
+  /** Stream live output (e.g. a running command) to the UI. */
+  emitOutput?: (chunk: string) => void;
+  /** Record an applied file change for the change list and undo. */
+  recordFileChange?: (change: AppliedFileChange) => void;
+}
+
+export interface AppliedFileChange {
+  path: string;
+  fromPath: string | null;
+  change: 'create' | 'modify' | 'delete' | 'move';
+  beforeContent: Buffer | null;
+  beforeHash: string | null;
+  afterHash: string | null;
+}
+
+/**
+ * A fully computed, side-effect-free description of a protected action. `apply` performs exactly
+ * this action and may only be called after the user approved it and the fingerprint was re-checked.
+ */
+export interface Proposal {
+  title: string;
+  summary: string;
+  category: PermissionCategory;
+  risk: RiskLevel;
+  details: ApprovalDetails;
+  /** Preconditions observed now (e.g. file hashes). Must be identical when re-checked. */
+  fingerprint: string;
+  /** Per-call execution timeout override (commands set their own). */
+  timeoutMs?: number;
+  apply: (ctx: ToolContext) => Promise<ToolOutput>;
 }
 
 export interface ToolOutput {
@@ -34,7 +64,10 @@ export interface ToolSpec<A = unknown> {
   schema: z.ZodType<A>;
   /** Short label for the UI, e.g. "src/app.ts:1-120". */
   describeCall: (args: A) => string;
-  execute: (args: A, ctx: ToolContext) => Promise<ToolOutput>;
+  /** Read-only and agent-state tools run directly. */
+  execute?: (args: A, ctx: ToolContext) => Promise<ToolOutput>;
+  /** Protected tools describe their action first; it runs only after approval. */
+  prepare?: (args: A, ctx: ToolContext) => Promise<Proposal>;
 }
 
 export function defineTool<A>(spec: ToolSpec<A>): ToolSpec<A> {

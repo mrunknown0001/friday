@@ -21,6 +21,15 @@ async function main() {
   const services = createServices(config, db, { toolEnv });
 
   const interrupted = services.runs.markInterrupted();
+  // Approvals cannot survive a restart: the run that would execute them is gone.
+  const orphanedApprovals = services.approvalRepo.cancelOrphans();
+  if (orphanedApprovals > 0) {
+    services.audit.record({
+      actor: 'system',
+      action: 'approvals_cancelled_on_startup',
+      details: { count: orphanedApprovals },
+    });
+  }
   if (interrupted > 0) {
     services.audit.record({
       actor: 'system',

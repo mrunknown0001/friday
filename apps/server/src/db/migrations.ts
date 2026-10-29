@@ -155,6 +155,58 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX tool_calls_message ON tool_calls(result_message_id);
     `,
   },
+  {
+    version: 3,
+    name: 'approvals_and_file_changes',
+    up: `
+      -- Every protected action the agent proposes. Status transitions are enforced in code
+      -- (approvals/stateMachine.ts) with compare-and-set updates, so a decision cannot be replayed.
+      CREATE TABLE approvals (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        project_id TEXT,
+        tool_call_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        risk TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        details TEXT NOT NULL,
+        action_hash TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN
+          ('pending','approved','rejected','expired','cancelled','executed','failed','stale')),
+        decision_note TEXT,
+        result_summary TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        decided_at TEXT,
+        completed_at TEXT
+      );
+      CREATE INDEX approvals_session ON approvals(session_id, created_at);
+      CREATE INDEX approvals_status ON approvals(status);
+
+      -- Applied file changes with the previous content, for undo.
+      CREATE TABLE file_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        approval_id TEXT REFERENCES approvals(id) ON DELETE SET NULL,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        project_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        from_path TEXT,
+        change TEXT NOT NULL CHECK (change IN ('create','modify','delete','move')),
+        before_content BLOB,
+        before_hash TEXT,
+        after_hash TEXT,
+        created_at TEXT NOT NULL,
+        reverted_at TEXT
+      );
+      CREATE INDEX file_changes_session ON file_changes(session_id, id);
+
+      ALTER TABLE tool_calls ADD COLUMN approval_id TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: Database.Database, migrations: Migration[] = MIGRATIONS): number[] {

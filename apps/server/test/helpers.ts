@@ -36,6 +36,7 @@ export function testConfig(overrides: Partial<AppConfig['provider']> = {}): AppC
       toolTimeoutMs: 5_000,
       maxConsecutiveToolFailures: 3,
     },
+    approvalTtlMs: 60_000,
   };
 }
 

@@ -5,6 +5,9 @@ import { RunManager } from './chat/runManager.js';
 import { NoTokenLimitProvider } from './providers/notokenlimit.js';
 import type { LLMProvider, ModelInfo } from './providers/types.js';
 import { CapabilityRepo } from './repositories/capabilities.js';
+import { ApprovalService } from './approvals/service.js';
+import { ApprovalRepo } from './repositories/approvals.js';
+import { FileChangeRepo } from './repositories/fileChanges.js';
 import { MessageRepo } from './repositories/messages.js';
 import { ProjectRepo } from './repositories/projects.js';
 import { RunRepo } from './repositories/runs.js';
@@ -69,6 +72,9 @@ export interface Services {
   runs: RunRepo;
   projects: ProjectRepo;
   toolCalls: ToolCallRepo;
+  approvalRepo: ApprovalRepo;
+  approvals: ApprovalService;
+  fileChanges: FileChangeRepo;
   registry: ToolRegistry;
   toolEnv: ToolEnvironment;
   capabilities: CapabilityRepo;
@@ -120,11 +126,14 @@ export function createServices(
   const runs = new RunRepo(db);
   const projects = new ProjectRepo(db);
   const toolCalls = new ToolCallRepo(db);
+  const approvalRepo = new ApprovalRepo(db);
+  const fileChanges = new FileChangeRepo(db);
   const registry = overrides.registry ?? new ToolRegistry();
   const toolEnv = overrides.toolEnv ?? { ripgrep: null, ripgrepVersion: null };
   const capabilities = new CapabilityRepo(db);
   const audit = new AuditRepo(db);
   const modelSettings = new ModelSettings(settings, config.provider.envModel);
+  const approvals = new ApprovalService(approvalRepo, audit, config.approvalTtlMs);
 
   const runManager = new RunManager({
     provider,
@@ -133,6 +142,9 @@ export function createServices(
     runs,
     projects,
     toolCalls,
+    approvals,
+    approvalRepo,
+    fileChanges,
     capabilities,
     audit,
     redactor,
@@ -154,6 +166,9 @@ export function createServices(
     runs,
     projects,
     toolCalls,
+    approvalRepo,
+    approvals,
+    fileChanges,
     registry,
     toolEnv,
     capabilities,

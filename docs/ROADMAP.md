@@ -2,7 +2,7 @@
 
 Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
-**Current phase: 3 (approval engine).**
+**Current phase: 4 (coding agent).**
 
 ## Phase 1: Foundation
 
@@ -52,12 +52,24 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
 ## Phase 3: Approval engine
 
-- ⬜ Approval state machine (pending → approved, rejected, expired, or cancelled → executed) bound to an action hash,
-  session, and project
-- ⬜ Diff generation, approval cards (file edits, commands), backend enforcement, audit trail
-- ⬜ File create/modify/delete/move with external-change detection and backups
-- ⬜ Command execution: argv-first, explicit shell mode, timeouts, output caps, cancellation, environment scrubbing
-- ⬜ Frontend tests for approval flows
+- ✅ Permission policy: read-only and plan tools run directly; file create/modify/delete/move and commands require
+  per-action approval; git, network, remote, database, and deployment are denied; unknown tools are denied
+- ✅ Approval state machine (pending → approved | rejected | expired | cancelled; approved → executed | failed |
+  stale) with compare-and-set transitions, so decisions cannot be replayed
+- ✅ Approvals bound to a SHA-256 action hash (approval id, session, project root, tool, canonical args, observed
+  preconditions); the client must echo the reviewed hash; preconditions re-checked before execution (stale detection)
+- ✅ Expiry, cancellation, and server-restart handling (orphaned approvals cancelled at startup)
+- ✅ File tools: `edit_file` (exact replacement), `write_file`, `delete_file`, `move_file`; atomic writes; credential
+  files and symlink escapes refused; previous content kept; user-initiated **Undo** that refuses to clobber later edits
+- ✅ `run_command`: argv-first, explicit `/bin/sh` mode, closed stdin, allowlisted environment, per-command timeout,
+  process-group kill on timeout or cancel, head+tail output capture, live output streaming, risk assessment
+- ✅ Approval UI: line-numbered diff viewer, command card, countdown, approve once / reject with note / cancel run;
+  pending approvals survive a page reload; changes panel with Undo; run record built from logs
+- ✅ Audit trail: requested, approved, rejected, expired, executed, failed, stale, reverted
+- ✅ Tests: 124 server (19 new approval tests plus HTTP approval/undo tests) and 11 frontend (approval card, diff
+  parser, live event reducer, run record)
+- ✅ Verified live on 2026-10-29 with `claude-haiku-4.5` in a browser: edit approved and applied, `npm test`
+  approved (real exit 1), corrected test command approved (exit 0), a deletion rejected with a note, edit undone
 
 ## Phase 4: Coding agent
 

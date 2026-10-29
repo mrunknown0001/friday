@@ -102,11 +102,46 @@ loop.
 
 The UI's file explorer (`/api/projects/:id/tree` and `/file`) uses the same `resolveInside` confinement as the agent.
 
+## Approval flow (Phase 3)
+
+```
+model tool call ─▶ validateToolCall (policy, JSON, zod)
+                    │ allow ──────────────▶ runGuarded(execute) ─▶ result
+                    │ require_approval
+                    ▼
+               spec.prepare(args)  (no side effects: computes diff / command, fingerprint, apply())
+                    ▼
+               ApprovalService.request ─▶ approvals row (pending, action_hash, expires_at)
+               run status = awaiting_approval, SSE approval_requested
+                    ▼
+               wait: user decision (HTTP, CSRF header, echoed hash) | expiry | run cancel
+                    │ rejected/expired/cancelled ─▶ result for the model (not executed)
+                    ▼ approved
+               spec.prepare(args) again ─▶ recompute hash ─▶ mismatch: stale, not executed
+                    ▼ match
+               runGuarded(apply) ─▶ approvals: executed | failed; file_changes row (backup); audit
+```
+
+| Module                        | Responsibility                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `approvals/stateMachine.ts`   | Allowed transitions and `computeActionHash`.                                                       |
+| `approvals/service.ts`        | Creates requests, parks runs until a decision, enforces session/hash/expiry, records outcomes.     |
+| `approvals/revert.ts`         | Undo of a recorded file change, refused if the file changed since.                                 |
+| `repositories/approvals.ts`   | Compare-and-set transitions (`UPDATE … WHERE status = ?`); startup cancellation of orphans.        |
+| `repositories/fileChanges.ts` | Applied changes with previous content, for undo.                                                   |
+| `tools/fileTools.ts`          | `edit_file`, `write_file`, `delete_file`, `move_file` (prepare/apply, atomic writes, diffs).       |
+| `tools/commandTool.ts`        | `run_command` proposal and result formatting.                                                      |
+| `commands/runner.ts`          | Process execution: no shell unless requested, allowlisted env, process-group kill, output capture. |
+| `commands/risk.ts`            | Informational risk notes shown on command approvals.                                               |
+
+The registry refuses to register a protected tool that has a direct `execute`, so there is no code path that runs
+one without `prepare` and approval.
+
 ## Web (`apps/web/src`)
 
 - `lib/api.ts` is a typed fetch client. It adds the `x-friday-client` header on mutating requests.
 - `lib/useRunStream.ts` wraps `EventSource` with automatic reconnect and de-duplication by `seq`.
-- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, error/retry/continue card, composer), SidePanel (plan and file explorer), AddProjectDialog, SettingsDialog, and
+- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, AddProjectDialog, SettingsDialog, and
   small shadcn-style primitives (`ui/`) built on native elements such as `<dialog>`.
 - Markdown is rendered with react-markdown, GFM, and highlight.js. Raw HTML in model output is not rendered.
 
@@ -115,4 +150,6 @@ The UI's file explorer (`/api/projects/:id/tree` and `/file`) uses the same `res
 - `apps/server/test/*.test.ts` covers provider behaviour through the **real OpenAI SDK** with an injected `fetch` that
   serves canned JSON and SSE responses, the run manager with a scripted provider, migrations and recovery against real
   SQLite files, and HTTP routes through `fastify.inject`.
+- `apps/web/src/**/*.test.tsx` covers the approval card, diff parsing, the live event reducer, and run records
+  with Testing Library in jsdom.
 - `apps/server/test/integration/` holds the opt-in live NoTokenLimit test. It is excluded unless `NTL_INTEGRATION=1`.

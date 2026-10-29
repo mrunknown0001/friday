@@ -67,13 +67,13 @@ export class RunRepo {
 
   finish(
     id: string,
-    status: Exclude<RunStatus, 'running'>,
+    status: Exclude<RunStatus, 'running' | 'awaiting_approval'>,
     error?: { kind: RunErrorKind; message: string; retryable: boolean },
   ): RunRecord {
     this.db
       .prepare(
         `UPDATE runs SET status = ?, error_kind = ?, error_message = ?, retryable = ?, finished_at = ?
-         WHERE id = ? AND status = 'running'`,
+         WHERE id = ? AND status IN ('running', 'awaiting_approval')`,
       )
       .run(
         status,
@@ -84,6 +84,15 @@ export class RunRepo {
         id,
       );
     return this.get(id)!;
+  }
+
+  /** Toggle between running and awaiting_approval while the run is active. */
+  setActiveStatus(id: string, status: 'running' | 'awaiting_approval'): void {
+    this.db
+      .prepare(
+        `UPDATE runs SET status = ? WHERE id = ? AND status IN ('running', 'awaiting_approval')`,
+      )
+      .run(status, id);
   }
 
   recordProgress(id: string, iterations: number, toolCallCount: number): void {
@@ -98,7 +107,7 @@ export class RunRepo {
       .prepare(
         `UPDATE runs SET status = 'interrupted', retryable = 1, finished_at = ?,
            error_message = 'The server stopped while this run was in progress.'
-         WHERE status = 'running'`,
+         WHERE status IN ('running', 'awaiting_approval')`,
       )
       .run(new Date().toISOString()).changes;
   }

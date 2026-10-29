@@ -1,4 +1,6 @@
 import type {
+  ApprovalDto,
+  FileChangeDto,
   ProjectDto,
   RunDto,
   SessionDetailDto,
@@ -45,6 +47,7 @@ export function App() {
   const [sidePanelOpen, setSidePanelOpen] = useState(() => readStored(PANEL_KEY) !== '0');
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [detail, setDetail] = useState<SessionDetailDto | null>(null);
+  const [changes, setChanges] = useState<{ sessionId: string; list: FileChangeDto[] } | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +83,13 @@ export function App() {
       // Keep the project switcher in sync with the conversation being shown.
       setProjectId(d.projectId);
       // Reattach to a run that is still in progress (e.g. after a page reload).
-      setRunId(d.latestRun?.status === 'running' ? d.latestRun.id : null);
+      const active =
+        d.latestRun?.status === 'running' || d.latestRun?.status === 'awaiting_approval';
+      setRunId(active ? d.latestRun!.id : null);
+      api
+        .sessionChanges(id)
+        .then((r) => setChanges({ sessionId: id, list: r.changes }))
+        .catch(() => setChanges({ sessionId: id, list: [] }));
     } catch (e) {
       setDetail(null);
       setActiveId(null);
@@ -116,6 +125,60 @@ export function App() {
   );
   const live = useRunStream(runId, onRunFinished);
   const project = projects.find((p) => p.id === projectId) ?? null;
+
+  // Persisted approvals, overlaid with live updates from the current run.
+  const approvals: ApprovalDto[] = (() => {
+    const byId = new Map((shownDetail?.approvals ?? []).map((a) => [a.id, a]));
+    if (live && live.runId === runId)
+      for (const a of Object.values(live.approvals)) byId.set(a.id, a);
+    return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  })();
+  const sessionChanges = changes && changes.sessionId === activeId ? changes.list : [];
+
+  // Refresh the change list as soon as an approved file change has been applied.
+  const appliedCount = Object.values(live?.approvals ?? {}).filter(
+    (a) => a.status === 'executed' && a.details.kind === 'file_change',
+  ).length;
+  useEffect(() => {
+    if (!activeId || appliedCount === 0) return;
+    let cancelled = false;
+    api
+      .sessionChanges(activeId)
+      .then((r) => !cancelled && setChanges({ sessionId: activeId, list: r.changes }))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, appliedCount]);
+
+  const decide = async (a: ApprovalDto, decision: 'approve' | 'reject', note?: string) => {
+    try {
+      await api.decideApproval(a.id, {
+        decision,
+        actionHash: a.actionHash,
+        sessionId: a.sessionId,
+        ...(note ? { note } : {}),
+      });
+    } catch (e) {
+      report(e);
+      // The approval may have expired or changed; show its current state.
+      if (activeId) void loadDetail(activeId);
+    }
+  };
+
+  const revert = async (c: FileChangeDto) => {
+    const what =
+      c.change === 'create'
+        ? `delete ${c.path} (it was created by Friday)`
+        : `restore ${c.fromPath ?? c.path} to its previous state`;
+    if (!window.confirm(`Undo this change? This will ${what}.`)) return;
+    try {
+      await api.revertChange(c.id);
+    } catch (e) {
+      report(e);
+    }
+    if (activeId) void loadDetail(activeId);
+  };
 
   const selectProject = (id: string | null) => {
     if (id === projectId) return;
@@ -232,6 +295,8 @@ export function App() {
           onStop={stop}
           onRetry={() => void retry()}
           onOpenSettings={() => setSettingsOpen(true)}
+          approvals={approvals}
+          onDecide={decide}
         />
         {error && (
           <div
@@ -251,7 +316,12 @@ export function App() {
         )}
       </div>
       {sidePanelOpen && (
-        <SidePanel project={project} plan={live?.plan ?? shownDetail?.plan ?? null} />
+        <SidePanel
+          project={project}
+          plan={live?.plan ?? shownDetail?.plan ?? null}
+          changes={sessionChanges}
+          onRevert={(c) => void revert(c)}
+        />
       )}
       {addProjectOpen && (
         <AddProjectDialog

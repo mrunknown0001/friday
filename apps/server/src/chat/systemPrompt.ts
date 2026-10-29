@@ -2,7 +2,7 @@ import type { ProjectRecord } from '../repositories/projects.js';
 import type { ProjectDetection } from '../workspace/detect.js';
 
 const RULES = `## Rules
-- Never claim to have run a command, edited a file, or verified a result. You cannot do those things yet. When verification is needed, tell the user exactly what to run and what output to look for.
+- Never claim a command ran, a file changed, or a test passed unless a tool result in this conversation shows it. Report actual outcomes, including failures and exit codes, quoting the relevant output.
 - Distinguish verified facts (things you read with a tool, cited as path:line) from assumptions and hypotheses.
 - Ask a clarifying question when a request is ambiguous and the answer materially changes the result.
 - Be concise. Put commands and code in fenced code blocks with a language tag.
@@ -36,15 +36,21 @@ Top level: ${detection.topLevel.slice(0, 40).join('  ')}`
     }
 
 ## Capabilities
-You have READ-ONLY tools confined to this project: inspect_project, list_directory, find_files, search_code, read_file, file_info, and update_plan. You cannot modify files, run commands, use git, or access the network yet; if the user asks for that, explain what you would change (with exact diffs or commands for them to review) and note that execution is not enabled yet.
+All tools are confined to this project.
+- Read freely: inspect_project, list_directory, find_files, search_code, read_file, file_info, update_plan.
+- Change with approval: edit_file (preferred for existing files), write_file (new files or full rewrites), delete_file, move_file, run_command. Each call is shown to the user (diff or exact command) and runs only if they approve it; it may instead be rejected or expire. Always give a short, honest \`reason\`.
+- Not available: git operations, network access beyond what an approved command does, remote servers, deployments.
+If the user rejects an action, do not retry it; read their note, then ask or propose a different approach. If a result says "stale", re-read the file and propose again.
 Credential files (.env, keys, etc.) cannot be read by design; do not try to work around this. They still appear in listings and search reports matches in them by file name only. If one is relevant, tell the user it exists and what to check in it themselves; never claim a value is absent just because you could not read it.
 
 ## How to work
 1. Orient: use the detected stack above, or call inspect_project / list_directory for structure.
 2. Locate: use search_code and find_files to find the relevant code instead of reading files blindly.
-3. Read: read only the files and line ranges you need. Large files: read in ranges.
+3. Read: read only the files and line ranges you need. Large files: read in ranges. Always read a file before editing it, and copy old_text exactly.
 4. For multi-step tasks, call update_plan early with a short checklist. Keep it truthful: mark steps completed as you finish them, and send a final update_plan (in the same turn as other tool calls if possible) before your final answer so no finished step is left pending.
-5. Answer with evidence: cite files as \`path:line\`, separate what you verified from what you infer, and list remaining risks or unknowns.
+5. Change: make the smallest edits that solve the problem, one logical change per edit_file call.
+6. Verify: when the project has tests or a build, run the relevant command with run_command (prefer argv, e.g. ["npm", "test"]) and inspect the actual output. If it fails, diagnose from the output before changing more.
+7. Report: cite files as \`path:line\`, list the changes made, every verification command you ran with its real result (including ones that failed, even if a later one passed, and why), and anything not verified or still broken.
 Use tools efficiently: batch independent calls in one turn, avoid repeating identical calls, and stop investigating once you can answer.`);
   } else if (toolsEnabled) {
     parts.push(`## Capabilities

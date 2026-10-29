@@ -1,4 +1,11 @@
-import type { PlanStep, RunDto, RunEvent, RunPhase, ToolCallStatus } from '@friday/shared';
+import type {
+  ApprovalDto,
+  PlanStep,
+  RunDto,
+  RunEvent,
+  RunPhase,
+  ToolCallStatus,
+} from '@friday/shared';
 import { useEffect, useState } from 'react';
 
 export type LiveBlock =
@@ -11,6 +18,8 @@ export type LiveBlock =
       status: ToolCallStatus | 'running';
       summary: string;
       durationMs: number | null;
+      /** Live terminal output for commands. */
+      output: string;
     };
 
 export interface LiveRun {
@@ -20,6 +29,8 @@ export interface LiveRun {
   phase: RunPhase | null;
   phaseDetail: string | null;
   plan: PlanStep[] | null;
+  /** Approvals requested during this run, latest state by id. */
+  approvals: Record<string, ApprovalDto>;
   finished: RunDto | null;
   connectionLost: boolean;
 }
@@ -31,21 +42,27 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'tool_started',
   'tool_finished',
   'plan_updated',
+  'approval_requested',
+  'approval_resolved',
+  'command_output',
   'message_saved',
   'run_finished',
 ];
 
-const initial = (runId: string): LiveRun => ({
+export const initial = (runId: string): LiveRun => ({
   runId,
   blocks: [],
   phase: null,
   phaseDetail: null,
   plan: null,
+  approvals: {},
   finished: null,
   connectionLost: false,
 });
 
-function apply(prev: LiveRun, event: RunEvent): LiveRun {
+const MAX_LIVE_OUTPUT = 200_000;
+
+export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
   const next = { ...prev, connectionLost: false };
   switch (event.type) {
     case 'text_delta': {
@@ -67,8 +84,20 @@ function apply(prev: LiveRun, event: RunEvent): LiveRun {
           status: 'running',
           summary: '',
           durationMs: null,
+          output: '',
         },
       ];
+      break;
+    case 'command_output':
+      next.blocks = prev.blocks.map((b) =>
+        b.kind === 'tool' && b.callId === event.callId && b.output.length < MAX_LIVE_OUTPUT
+          ? { ...b, output: b.output + event.chunk }
+          : b,
+      );
+      break;
+    case 'approval_requested':
+    case 'approval_resolved':
+      next.approvals = { ...prev.approvals, [event.approval.id]: event.approval };
       break;
     case 'tool_finished':
       next.blocks = prev.blocks.map((b) =>
@@ -86,6 +115,7 @@ function apply(prev: LiveRun, event: RunEvent): LiveRun {
           status: event.status,
           summary: event.summary,
           durationMs: event.durationMs,
+          output: '',
         });
       }
       break;
@@ -124,7 +154,7 @@ export function useRunStream(
       const event = JSON.parse(raw.data) as RunEvent;
       if (event.seq !== 0 && event.seq <= lastSeq) return;
       lastSeq = event.seq;
-      setLive((prev) => apply(prev?.runId === runId ? prev : initial(runId), event));
+      setLive((prev) => applyEvent(prev?.runId === runId ? prev : initial(runId), event));
       if (event.type === 'run_finished') {
         source.close();
         onFinished(event.run);

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { RunEvent } from '@friday/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -40,28 +42,44 @@ const run = (root: string | null, name: string, args: unknown, over: Partial<Too
   executeToolCall(registry, call(name, args), ctx(root, over), { timeoutMs: 5_000 });
 
 describe('tool executor', () => {
-  it('denies unknown tools and tools outside the allowed categories', async () => {
+  it('denies unknown tools and tools in disabled categories', async () => {
     expect(await run(null, 'rm_rf', {})).toMatchObject({ status: 'denied' });
-    const writer = defineTool({
-      name: 'write_file',
-      description: 'w',
-      category: 'file_modify',
-      risk: 'medium',
+    const deployer = defineTool({
+      name: 'deploy',
+      description: 'd',
+      category: 'deployment',
+      risk: 'critical',
       requiresProject: true,
       schema: z.object({}),
       describeCall: () => '',
-      execute: async () => {
+      prepare: async () => {
         throw new Error('must never run');
       },
     });
-    const reg = new ToolRegistry([...DEFAULT_TOOLS, writer as unknown as ToolSpec<never>]);
-    const res = await executeToolCall(reg, call('write_file', {}), ctx('/tmp'), {
-      timeoutMs: 1000,
-    });
+    const reg = new ToolRegistry([...DEFAULT_TOOLS, deployer as unknown as ToolSpec<never>]);
+    const res = await executeToolCall(reg, call('deploy', {}), ctx('/tmp'), { timeoutMs: 1000 });
     expect(res.status).toBe('denied');
-    expect(res.content).toMatch(/not enabled yet/);
+    expect(res.content).toMatch(/not enabled/);
     // Denied tools are not even advertised to the model.
-    expect(reg.definitions(true).map((d) => d.name)).not.toContain('write_file');
+    expect(reg.definitions(true).map((d) => d.name)).not.toContain('deploy');
+  });
+
+  it('never runs protected tools directly, and refuses to register them with execute()', async () => {
+    const root = makeProject({ 'a.txt': 'x' });
+    const res = await run(root, 'write_file', { path: 'a.txt', content: 'y', reason: 'test it' });
+    expect(res).toMatchObject({ status: 'denied', summary: 'Requires approval' });
+    expect(fs.readFileSync(path.join(root, 'a.txt'), 'utf8')).toBe('x');
+    const sneaky = defineTool({
+      name: 'sneaky',
+      description: 's',
+      category: 'shell',
+      risk: 'high',
+      requiresProject: false,
+      schema: z.object({}),
+      describeCall: () => '',
+      execute: async () => ({ content: 'ran', summary: 'ran' }),
+    });
+    expect(() => new ToolRegistry([sneaky as unknown as ToolSpec<never>])).toThrow(/prepare/);
   });
 
   it('rejects malformed and schema-invalid arguments without executing', async () => {
@@ -172,13 +190,18 @@ describe('tool executor', () => {
     const withProject = registry.definitions(true);
     expect(withProject.map((d) => d.name).sort()).toEqual(
       [
+        'delete_file',
+        'edit_file',
         'file_info',
         'find_files',
         'inspect_project',
         'list_directory',
+        'move_file',
         'read_file',
+        'run_command',
         'search_code',
         'update_plan',
+        'write_file',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;
@@ -267,7 +290,7 @@ describe('agent loop', () => {
     const system = provider.requests[0]!.messages[0]!;
     expect(system.role === 'system' && system.content).toContain(`Root: ${root}`);
     expect(system.role === 'system' && system.content).toContain('React');
-    expect(system.role === 'system' && system.content).toContain('READ-ONLY tools');
+    expect(system.role === 'system' && system.content).toContain('Change with approval');
   });
 
   it('stops with a blocked status when the iteration limit is reached', async () => {

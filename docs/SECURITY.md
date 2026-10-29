@@ -33,7 +33,26 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Runaway agent                            | Iteration, tool-call, duplicate-call, consecutive-failure, output-size, and per-tool timeout limits; cancellation between and during tools.                                                                          |
 | Prompt injection via file contents       | The system prompt labels file contents, search results, and file names as data. Tools are read-only, so injected instructions cannot cause changes.                                                                  |
 
+## Threats addressed in Phase 3 (approvals and execution)
+
+| Threat                                   | Mitigation                                                                                                                                                                                                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Model performing changes without consent | Policy maps file and shell categories to `require_approval`. The registry rejects protected tools with a direct `execute`; only `apply()` after approval performs side effects.                                                                                                |
+| Model approving its own action           | Decisions only arrive through `POST /api/approvals/:id/decision` (browser client header required). No tool can reach it.                                                                                                                                                       |
+| Approving one thing, executing another   | The approval stores a hash over the approval id, session, project root, tool, canonical args, and observed preconditions. The client must echo the reviewed hash, and the hash is recomputed from fresh state right before execution; any difference marks the approval stale. |
+| Replay or double execution               | Compare-and-set status transitions; `approved` can only move to a terminal state. Approval ids are part of the hash.                                                                                                                                                           |
+| Stale or abandoned approvals             | Expiry (default 15 min), run cancellation, and server restart all close pending approvals; none can execute later.                                                                                                                                                             |
+| Overwriting user edits                   | Edits fingerprint the file; changes made after review make the action stale. Undo refuses if the file differs from what Friday wrote, or if later changes exist.                                                                                                               |
+| Secret leakage via commands              | Child processes get an allowlisted environment (PATH, HOME, USER, locale, …) plus `CI=1`; API keys and tokens in the server environment are not inherited. Output is redacted before reaching the model.                                                                       |
+| Hidden shell semantics                   | argv runs without a shell. Shell mode is explicit, the script is shown verbatim, and the card lists the shell features used (pipes, redirection, chaining, substitution).                                                                                                      |
+| Runaway processes                        | Per-command timeout (max 600 s), closed stdin, and process-group SIGTERM then SIGKILL on timeout or cancel.                                                                                                                                                                    |
+| Misleading success reports               | The UI shows a run record built from approval outcomes (exit codes, stale and rejected actions) next to the model's answer.                                                                                                                                                    |
+
 ## Known limitations
+
+- `run_command` is **not sandboxed**: an approved command runs as the current user with full filesystem and network
+  access. The approval card says so. Container isolation for untrusted code is still to come.
+- Risk notes on commands are heuristics for the reviewer; they never relax the approval requirement.
 
 - Any process running as the same OS user can call the API. A per-launch bearer token (for Electron, passed through the
   preload bridge) is planned for Phase 7.

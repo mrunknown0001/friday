@@ -2,9 +2,13 @@ import type { RunEvent } from '@friday/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
+  call,
   cleanupProjects,
   makeProject,
+  ScriptedProvider,
   jsonResponse,
   mockFetch,
   sseResponse,
@@ -499,5 +503,151 @@ describe('project routes', () => {
     });
     expect(res.statusCode).toBe(204);
     expect(services.sessions.get(session.id)?.projectId).toBeNull();
+  });
+});
+
+describe('approval and undo routes', () => {
+  afterEach(cleanupProjects);
+
+  async function approvalSetup() {
+    const provider = new ScriptedProvider([
+      {
+        toolCalls: [
+          call(
+            'write_file',
+            { path: 'notes/todo.md', content: '- ship it\n', reason: 'Track work' },
+            'w1',
+          ),
+        ],
+      },
+      { chunks: ['Created.'] },
+    ]);
+    const services = testServices({ provider });
+    app = await buildApp(services);
+    const root = makeProject({ 'README.md': '# demo\n' });
+    const project = services.projects.create('demo', root);
+    const session = services.sessions.create(undefined, project.id);
+    return { app, services, root, session };
+  }
+
+  async function pendingApproval(services: ReturnType<typeof testServices>, sessionId: string) {
+    for (let i = 0; i < 100; i++) {
+      const pending = services.approvalRepo
+        .listBySession(sessionId)
+        .find((a) => a.status === 'pending');
+      if (pending) return pending;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error('no approval requested');
+  }
+
+  it('applies a change only via an approved decision, then undoes it', async () => {
+    const { app, services, root, session } = await approvalSetup();
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${session.id}/messages`,
+      headers: MUTATE,
+      payload: { content: 'add a todo' },
+    });
+    const { run } = sent.json();
+    const a = await pendingApproval(services, session.id);
+
+    // Session detail exposes the pending approval for the UI (survives a page reload).
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/sessions/${session.id}`, headers: LOCAL })
+    ).json();
+    expect(detail.approvals).toMatchObject([
+      { id: a.id, status: 'pending', category: 'file_create' },
+    ]);
+    expect(detail.latestRun.status).toBe('awaiting_approval');
+
+    // CSRF header and a well-formed hash are required.
+    const noHeader = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: { ...LOCAL, 'content-type': 'application/json' },
+      payload: { decision: 'approve', actionHash: a.actionHash, sessionId: session.id },
+    });
+    expect(noHeader.statusCode).toBe(403);
+    const badHash = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: MUTATE,
+      payload: { decision: 'approve', actionHash: 'x', sessionId: session.id },
+    });
+    expect(badHash.statusCode).toBe(400);
+    expect(fs.existsSync(path.join(root, 'notes/todo.md'))).toBe(false);
+
+    const ok = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: MUTATE,
+      payload: { decision: 'approve', actionHash: a.actionHash, sessionId: session.id },
+    });
+    expect(ok.json().status).toBe('approved');
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: MUTATE,
+      payload: { decision: 'approve', actionHash: a.actionHash, sessionId: session.id },
+    });
+    expect(replay.statusCode).toBe(409);
+    await services.runManager.waitFor(run.id);
+    expect(fs.readFileSync(path.join(root, 'notes/todo.md'), 'utf8')).toBe('- ship it\n');
+
+    const changes = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${session.id}/changes`,
+        headers: LOCAL,
+      })
+    ).json().changes;
+    expect(changes).toMatchObject([{ path: 'notes/todo.md', change: 'create', revertedAt: null }]);
+    expect(JSON.stringify(changes)).not.toContain('before'); // backups are not exposed
+
+    const undo = await app.inject({
+      method: 'POST',
+      url: `/api/file-changes/${changes[0].id}/revert`,
+      headers: MUTATE_NO_BODY,
+    });
+    expect(undo.statusCode).toBe(200);
+    expect(undo.json().revertedAt).not.toBeNull();
+    expect(fs.existsSync(path.join(root, 'notes/todo.md'))).toBe(false);
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/file-changes/${changes[0].id}/revert`,
+      headers: MUTATE_NO_BODY,
+    });
+    expect(again.statusCode).toBe(409);
+    expect(services.audit.list().map((e) => e.action)).toContain('file_change_reverted');
+  });
+
+  it('refuses to undo a change the user edited afterwards', async () => {
+    const { app, services, root, session } = await approvalSetup();
+    const { run } = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/sessions/${session.id}/messages`,
+        headers: MUTATE,
+        payload: { content: 'add a todo' },
+      })
+    ).json();
+    const a = await pendingApproval(services, session.id);
+    services.approvals.decide(a.id, {
+      decision: 'approve',
+      actionHash: a.actionHash,
+      sessionId: session.id,
+    });
+    await services.runManager.waitFor(run.id);
+    fs.writeFileSync(path.join(root, 'notes/todo.md'), '- ship it\n- my own line\n');
+    const [change] = services.fileChanges.listBySession(session.id);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/file-changes/${change!.id}/revert`,
+      headers: MUTATE_NO_BODY,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('changed_since');
+    expect(fs.readFileSync(path.join(root, 'notes/todo.md'), 'utf8')).toContain('my own line');
   });
 });

@@ -4,6 +4,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ProviderError } from './providers/errors.js';
 import { HttpError } from './http/errors.js';
+import { registerApprovalRoutes } from './http/routes/approvals.js';
 import { registerProjectRoutes } from './http/routes/projects.js';
 import { registerProviderRoutes } from './http/routes/provider.js';
 import { registerSessionRoutes } from './http/routes/sessions.js';
@@ -92,6 +93,7 @@ export async function buildApp(
   registerProviderRoutes(app, services);
   registerSessionRoutes(app, services);
   registerProjectRoutes(app, services);
+  registerApprovalRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {
