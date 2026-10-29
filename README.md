@@ -59,8 +59,9 @@ version. Only one Friday server can use a data folder at a time.
 
 The window is a sandboxed Chromium page with no Node.js access. It talks to the same local server as the web version,
 which the app starts on a random loopback port. Every request carries a secret generated at launch, added outside the
-page, so other programs and users on the machine cannot drive the agent. The page can ask the app for exactly three
-things: a native folder picker, a server restart, and showing the config file. Links to other sites open in your
+page, so other programs and users on the machine cannot drive the agent. The page can ask the app for exactly four
+things: a native folder picker, a server restart, showing the config file, and bringing the window to the front when
+you click a notification. Links to other sites open in your
 browser. Details: [docs/SECURITY.md](docs/SECURITY.md#threats-addressed-in-phase-7-desktop-app-and-hardening).
 
 ## Setup (web app from source)
@@ -115,7 +116,8 @@ npm start
 
 ## Approvals
 
-Reading is automatic. These always need your approval, one action at a time:
+Reading is automatic. These need your approval, one action at a time, unless they fall within a
+[task permission](#task-permissions) you approved:
 
 | Tool                | What you review                                                                                                                                                          |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -129,7 +131,7 @@ Reading is automatic. These always need your approval, one action at a time:
 | `run_command`       | Exact command (argv, or `/bin/sh -c` script when shell features are needed), working directory, timeout, network expectation, environment variable names, and risk notes |
 
 - **Approve once**, **Reject** (optionally with a note telling Friday what to do instead), or **Cancel run**.
-  There is no "always allow".
+  There is no "always allow": the widest approval is a task permission, which ends with the task.
 - Requests expire after 15 minutes (`FRIDAY_APPROVAL_TTL_MS`). An expired request never runs.
 - Each approval is bound to a hash of the exact action and the file state you reviewed. If the file changes before
   the action runs, it is **not** executed (marked _stale_) and Friday must re-read and propose again.
@@ -138,6 +140,34 @@ Reading is automatic. These always need your approval, one action at a time:
 - **Undo** restores a file only if it is still exactly as Friday left it; it never overwrites your later edits.
   **Roll back this run** on a verification report undoes all of a task's file changes, newest first, and does nothing
   if any of them was edited since.
+
+### Task permissions
+
+A fix usually means edit, test, edit again, test again. Instead of approving each step, you can approve a bounded
+permission for the current task:
+
+- **Friday asks for one.** For a multi-step task it may propose a _task permission_: its plan, the exact files it may
+  create or edit (a folder written as `src/` covers what is inside), and the exact commands it may run (argv, project
+  root, no shell). You approve or reject it like any other action.
+- **You grant one while approving.** On an edit or a command, tick _Also allow further edits to these files_ (or
+  _re-running this exact command_) before **Approve**. That action's files or command are added to the task's
+  permission.
+
+While a permission is active, matching actions are approved automatically and shown as such. They still go through
+everything else: the re-check right before running (a changed file makes the action stale), the diff in the
+conversation, the change list with **Undo**, the verification report, and the audit log. A banner above the message
+box shows how much of it is used and has **Revoke**.
+
+Limits: the current task only (it ends when the run ends), at most 40 actions and 60 minutes (20 and 30 by default).
+Never covered: deleting or moving files, credential files, git commits and branches, remote/SSH commands,
+production confirmations, shell scripts, commands Friday rates high-risk or network-using, and anything not listed.
+
+### Notifications
+
+Friday shows a system notification when it needs your approval, or when a task that took 15 seconds or longer
+finishes, while you are in another window, another app, or another conversation. Clicking it opens that conversation.
+It is on by default in the desktop app; in a browser, turn it on in **Settings › Notifications** (the browser asks
+for permission). Notifications contain the action's title only (e.g. "Run: npm test").
 
 ## Verification reports and resuming
 

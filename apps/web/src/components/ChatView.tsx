@@ -25,6 +25,7 @@ import { ApprovalCard } from './ApprovalCard';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
 import { SuggestionChips } from './SuggestionChips';
+import { TaskPermissionBanner } from './TaskPermissionBanner';
 import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
 import { ToolActivity, type ToolItem } from './ToolActivity';
@@ -51,11 +52,13 @@ interface Props {
     decision: 'approve' | 'reject',
     note?: string,
     confirmation?: string,
+    allowSimilar?: boolean,
   ) => Promise<void>;
   /** Persisted and live deployment plans, matched to tool calls by id. */
   deploymentPlans: DeploymentPlanDto[];
   onRollback: (runId: string) => Promise<void>;
   onOpenMemory: () => void;
+  onRevokeTaskPermission: (runId: string) => Promise<void>;
 }
 
 const Avatar = () => (
@@ -452,8 +455,8 @@ export function ChatView(props: Props) {
               <ApprovalCard
                 key={a.id}
                 approval={a}
-                onDecide={(decision, note, confirmation) =>
-                  onDecide(a, decision, note, confirmation)
+                onDecide={(decision, note, confirmation, allowSimilar) =>
+                  onDecide(a, decision, note, confirmation, allowSimilar)
                 }
                 onCancelRun={running ? onStop : undefined}
               />
@@ -497,6 +500,12 @@ export function ChatView(props: Props) {
 
       <div className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-5 py-3">
         <div className="mx-auto max-w-3xl">
+          {running && live.taskPermission && (
+            <TaskPermissionBanner
+              permission={live.taskPermission}
+              onRevoke={() => props.onRevokeTaskPermission(live.runId)}
+            />
+          )}
           {blockedReason && (
             <div className="mb-2 flex items-center justify-between gap-3 rounded-md border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
               <span>{blockedReason}</span>

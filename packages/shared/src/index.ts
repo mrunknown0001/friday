@@ -138,7 +138,8 @@ export type PermissionCategory =
   | 'git'
   | 'remote'
   | 'database'
-  | 'deployment';
+  | 'deployment'
+  | 'task_permission';
 
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
 
@@ -208,6 +209,17 @@ export type ApprovalDetails =
       verification: string;
       riskReasons: string[];
       timeoutSeconds: number;
+    }
+  | {
+      kind: 'task_permissions';
+      /** The task, step by step, as the agent describes it. */
+      plan: string[];
+      /** Project files that may be created or modified; entries ending in "/" cover a folder. */
+      files: string[];
+      /** Exact commands (argv, no shell) that may run in the project root. */
+      commands: string[][];
+      maxActions: number;
+      minutes: number;
     };
 
 export type HostEnvironment = 'development' | 'staging' | 'production';
@@ -350,6 +362,47 @@ export interface ApprovalDto {
    * Enforced by the server, not just the UI.
    */
   confirmationRequired: string | null;
+  /**
+   * Set when this action was approved automatically because it fell within a task permission
+   * the user approved: the id of that task-permission approval.
+   */
+  grantedBy: string | null;
+}
+
+/**
+ * App-wide notices streamed from GET /api/events, for every conversation: only what is needed to
+ * notify the user (titles are the same text the approval card shows).
+ */
+export type AppNotice =
+  | {
+      type: 'approval_requested';
+      sessionId: string;
+      runId: string;
+      approvalId: string;
+      title: string;
+      risk: RiskLevel;
+    }
+  | {
+      type: 'run_finished';
+      sessionId: string;
+      runId: string;
+      status: RunStatus;
+      durationMs: number | null;
+    };
+
+/** State of the task permission active in a run (see request_task_permissions). */
+export interface TaskPermissionDto {
+  /** The approval in which the user granted it. */
+  approvalId: string;
+  runId: string;
+  files: string[];
+  commands: string[][];
+  maxActions: number;
+  used: number;
+  expiresAt: string;
+  active: boolean;
+  /** Why it is no longer active. */
+  ended: 'revoked' | 'expired' | 'used_up' | 'replaced' | null;
 }
 
 export interface FileChangeDto {
@@ -526,6 +579,7 @@ export type RunEvent =
   | { seq: number; type: 'plan_updated'; plan: PlanStep[] }
   | { seq: number; type: 'approval_requested'; approval: ApprovalDto }
   | { seq: number; type: 'approval_resolved'; approval: ApprovalDto }
+  | { seq: number; type: 'task_permission'; permission: TaskPermissionDto }
   | { seq: number; type: 'command_output'; callId: string; chunk: string }
   | { seq: number; type: 'deployment_plan'; plan: DeploymentPlanDto }
   | { seq: number; type: 'memories_used'; memories: MemoryRef[] }

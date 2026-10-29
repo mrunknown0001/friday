@@ -7,6 +7,7 @@ import type {
   RunDto,
   RunEvent,
   RunPhase,
+  TaskPermissionDto,
   ToolCallStatus,
 } from '@friday/shared';
 import { useEffect, useState } from 'react';
@@ -40,6 +41,8 @@ export interface LiveRun {
   memoriesUsed: MemoryRef[];
   /** Memories the agent saved or proposed during this run. */
   memoriesSaved: MemoryDto[];
+  /** Latest state of the task permission granted in this run, if any. */
+  taskPermission: TaskPermissionDto | null;
   finished: RunDto | null;
   connectionLost: boolean;
 }
@@ -53,6 +56,7 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'plan_updated',
   'approval_requested',
   'approval_resolved',
+  'task_permission',
   'command_output',
   'deployment_plan',
   'memories_used',
@@ -71,6 +75,7 @@ export const initial = (runId: string): LiveRun => ({
   deploymentPlans: [],
   memoriesUsed: [],
   memoriesSaved: [],
+  taskPermission: null,
   finished: null,
   connectionLost: false,
 });
@@ -148,6 +153,9 @@ export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
           output: '',
         });
       }
+      break;
+    case 'task_permission':
+      next.taskPermission = event.permission;
       break;
     case 'phase':
       next.phase = event.phase;

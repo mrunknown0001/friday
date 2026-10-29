@@ -45,6 +45,7 @@ const remote = (over: Partial<ApprovalDto> = {}): ApprovalDto => ({
   expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
   decidedAt: null,
   confirmationRequired: 'web-prod',
+  grantedBy: null,
   ...over,
 });
 
@@ -79,7 +80,7 @@ describe('production approvals', () => {
     await userEvent.type(box, 'd');
     expect(approve.disabled).toBe(false);
     await userEvent.click(approve);
-    expect(onDecide).toHaveBeenCalledWith('approve', undefined, 'web-prod');
+    expect(onDecide).toHaveBeenCalledWith('approve', undefined, 'web-prod', undefined);
   });
 
   it('does not ask for confirmation on non-production approvals', () => {

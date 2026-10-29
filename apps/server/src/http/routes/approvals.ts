@@ -22,6 +22,7 @@ export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
         sessionId: z.uuid(),
         note: z.string().max(2_000).optional(),
         confirmation: z.string().max(200).optional(),
+        allowSimilar: z.boolean().optional(),
       }),
       req.body,
     );

@@ -134,6 +134,7 @@ export const api = {
       sessionId: string;
       note?: string;
       confirmation?: string;
+      allowSimilar?: boolean;
     },
   ) => request<ApprovalDto>('POST', `/api/approvals/${id}/decision`, body),
   sessionChanges: (id: string) =>
@@ -200,4 +201,6 @@ export const api = {
   retry: (id: string) => request<{ run: RunDto }>('POST', `/api/sessions/${id}/retry`),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>('POST', `/api/runs/${runId}/cancel`),
+  revokeTaskPermission: (runId: string) =>
+    request<{ revoked: boolean }>('POST', `/api/runs/${runId}/task-permission/revoke`),
 };

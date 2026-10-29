@@ -41,6 +41,16 @@ export interface ToolContext {
   devops?: DevopsContext;
   /** Record an applied file change for the change list and undo. */
   recordFileChange?: (change: AppliedFileChange) => void;
+  /**
+   * Activate the task permission the user just approved (only available while applying an
+   * approved request_task_permissions call). Returns its expiry.
+   */
+  grantTaskPermission?: (grant: {
+    files: string[];
+    commands: string[][];
+    maxActions: number;
+    minutes: number;
+  }) => { expiresAt: string };
 }
 
 export interface MemoryContext {

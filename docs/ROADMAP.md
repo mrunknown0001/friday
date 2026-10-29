@@ -146,3 +146,16 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 - ✅ Docs: desktop install and configuration, backup and restore, recovery table
 - ✅ Verified live on 2026-10-29: packaged app and AppImage launch with fuses on; key setup → restart → real
   connection test from the desktop app; end-to-end test passed with `claude-sonnet-4.6`
+
+## After the MVP
+
+- ✅ Scroll-to-latest button in the conversation (with a "new activity" hint)
+- ✅ Task permissions: approve a bounded scope (exact files, exact commands, action and time limits) once per task,
+  requested by Friday or granted by the user while approving an action; covered actions are still re-checked,
+  recorded, undoable and revocable
+- ✅ System notifications for approvals waiting and longer tasks finishing, across conversations, via an app-wide
+  notice stream; on by default in the desktop app
+- ✅ Verified live on 2026-10-30 with `claude-sonnet-4.6`: one approval for the task permission, then the edit and the
+  test run were approved automatically and the report was verified; notification raised for a conversation in the
+  background and opened it on click; notifications granted and the notice stream connected in the desktop app
+- ⬜ Run commands in a container (sandbox), long-running processes, code map for large repos (see the suggestion list)

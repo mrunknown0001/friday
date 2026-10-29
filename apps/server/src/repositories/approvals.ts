@@ -29,6 +29,7 @@ interface ApprovalRow {
   expires_at: string;
   decided_at: string | null;
   confirmation_required: string | null;
+  granted_by: string | null;
 }
 
 const toDto = (r: ApprovalRow): ApprovalDto => ({
@@ -52,11 +53,18 @@ const toDto = (r: ApprovalRow): ApprovalDto => ({
   expiresAt: r.expires_at,
   decidedAt: r.decided_at,
   confirmationRequired: r.confirmation_required,
+  grantedBy: r.granted_by,
 });
 
 export type NewApproval = Omit<
   ApprovalDto,
-  'status' | 'decisionNote' | 'resultSummary' | 'createdAt' | 'decidedAt' | 'confirmationRequired'
+  | 'status'
+  | 'decisionNote'
+  | 'resultSummary'
+  | 'createdAt'
+  | 'decidedAt'
+  | 'confirmationRequired'
+  | 'grantedBy'
 > & { confirmationRequired?: string | null };
 
 export class ApprovalRepo {
@@ -120,7 +128,11 @@ export class ApprovalRepo {
     id: string,
     from: ApprovalStatus,
     to: ApprovalStatus,
-    fields: { decisionNote?: string | null; resultSummary?: string | null } = {},
+    fields: {
+      decisionNote?: string | null;
+      resultSummary?: string | null;
+      grantedBy?: string | null;
+    } = {},
   ): ApprovalDto | null {
     if (!canTransition(from, to)) throw new Error(`Illegal approval transition ${from} -> ${to}`);
     const now = new Date().toISOString();
@@ -131,6 +143,7 @@ export class ApprovalRepo {
         `UPDATE approvals SET status = ?,
            decision_note = COALESCE(?, decision_note),
            result_summary = COALESCE(?, result_summary),
+           granted_by = COALESCE(?, granted_by),
            decided_at = CASE WHEN ? THEN ? ELSE decided_at END,
            completed_at = CASE WHEN ? THEN ? ELSE completed_at END
          WHERE id = ? AND status = ?`,
@@ -139,6 +152,7 @@ export class ApprovalRepo {
         to,
         fields.decisionNote ?? null,
         fields.resultSummary ?? null,
+        fields.grantedBy ?? null,
         decided ? 1 : 0,
         now,
         terminal ? 1 : 0,

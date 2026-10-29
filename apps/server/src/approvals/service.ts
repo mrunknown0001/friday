@@ -6,7 +6,7 @@ import type { AuditRepo } from '../repositories/telemetry.js';
 import { computeActionHash } from './stateMachine.js';
 
 export type ApprovalOutcome =
-  | { outcome: 'approved'; approval: ApprovalDto }
+  | { outcome: 'approved'; approval: ApprovalDto; allowSimilar?: boolean }
   | { outcome: 'rejected'; approval: ApprovalDto; note: string | null }
   | { outcome: 'expired'; approval: ApprovalDto | null }
   | { outcome: 'cancelled'; approval: ApprovalDto | null };
@@ -34,6 +34,11 @@ export interface DecisionInput {
   note?: string | undefined;
   /** Typed confirmation, required when the approval sets `confirmationRequired`. */
   confirmation?: string | undefined;
+  /**
+   * Also allow further actions of the same kind for this task (same files, or the same exact
+   * command). Honoured only for eligible actions; see similarScope.
+   */
+  allowSimilar?: boolean | undefined;
 }
 
 /**
@@ -200,13 +205,40 @@ export class ApprovalService {
         tool: approval.toolName,
         actionHash: approval.actionHash,
         note,
+        ...(input.decision === 'approve' && input.allowSimilar ? { allowSimilar: true } : {}),
       },
     });
     waiter.resolve(
       input.decision === 'approve'
-        ? { outcome: 'approved', approval: updated }
+        ? { outcome: 'approved', approval: updated, allowSimilar: input.allowSimilar === true }
         : { outcome: 'rejected', approval: updated, note },
     );
+    return updated;
+  }
+
+  /**
+   * Approve an action because it falls within a task permission the user approved earlier
+   * (`grantedBy` is that approval). Only the run manager calls this, after `covers` matched the
+   * prepared proposal; the action is still re-checked before it runs.
+   */
+  approveByPermission(id: string, grantedBy: string): ApprovalDto | null {
+    const updated = this.repo.transition(id, 'pending', 'approved', {
+      decisionNote: 'Approved automatically: covered by the task permission you approved.',
+      grantedBy,
+    });
+    if (updated) {
+      this.audit.record({
+        sessionId: updated.sessionId,
+        actor: 'system',
+        action: 'approval_approved_by_task_permission',
+        details: {
+          approvalId: id,
+          grantedBy,
+          tool: updated.toolName,
+          actionHash: updated.actionHash,
+        },
+      });
+    }
     return updated;
   }
 

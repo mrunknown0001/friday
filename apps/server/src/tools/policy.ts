@@ -27,6 +27,7 @@ export function decide(category: PermissionCategory | undefined): PolicyDecision
     case 'git':
     case 'remote':
     case 'deployment':
+    case 'task_permission':
       return { action: 'require_approval' };
     case undefined:
       return { action: 'deny', reason: 'Unknown tool.' };
