@@ -1,4 +1,11 @@
-import type { RunCheckpoint, RunDto, RunErrorKind, RunReport, RunStatus } from '@friday/shared';
+import type {
+  NextStep,
+  RunCheckpoint,
+  RunDto,
+  RunErrorKind,
+  RunReport,
+  RunStatus,
+} from '@friday/shared';
 import type { Db } from '../db/database.js';
 
 interface RunRow {
@@ -14,6 +21,7 @@ interface RunRow {
   finished_at: string | null;
   checkpoint: string | null;
   report: string | null;
+  suggestions: string | null;
 }
 
 function parseJson<T>(json: string | null): T | null {
@@ -43,6 +51,7 @@ function toRecord(r: RunRow): RunRecord {
     finishedAt: r.finished_at,
     checkpoint: parseJson<RunCheckpoint>(r.checkpoint),
     report: parseJson<RunReport>(r.report),
+    suggestions: parseJson<NextStep[]>(r.suggestions),
   };
 }
 
@@ -103,6 +112,12 @@ export class RunRepo {
     this.db
       .prepare('UPDATE runs SET checkpoint = ? WHERE id = ?')
       .run(JSON.stringify(checkpoint), id);
+  }
+
+  setSuggestions(id: string, suggestions: NextStep[]): void {
+    this.db
+      .prepare('UPDATE runs SET suggestions = ? WHERE id = ?')
+      .run(JSON.stringify(suggestions), id);
   }
 
   setReport(id: string, report: RunReport): void {

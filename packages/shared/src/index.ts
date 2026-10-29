@@ -450,6 +450,16 @@ export interface RunReport {
   commits: string[];
 }
 
+/** A suggested follow-up shown as a chip after a run. */
+export interface NextStep {
+  label: string;
+  /** For action "prompt": the exact message sent when the chip is clicked. */
+  prompt: string;
+  action: 'prompt' | 'open_memory';
+  /** records: derived by Friday from what actually happened; model: proposed by the model. */
+  source: 'records' | 'model';
+}
+
 export interface RunDto {
   id: string;
   sessionId: string;
@@ -462,6 +472,7 @@ export interface RunDto {
   finishedAt: string | null;
   checkpoint: RunCheckpoint | null;
   report: RunReport | null;
+  suggestions: NextStep[] | null;
 }
 
 export interface SessionSummaryDto {

@@ -45,6 +45,7 @@ const run = (r: RunReport | null): RunDto => ({
   startedAt: '',
   finishedAt: '',
   checkpoint: null,
+  suggestions: null,
   report: r,
 });
 

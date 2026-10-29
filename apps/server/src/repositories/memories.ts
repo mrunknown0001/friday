@@ -245,6 +245,16 @@ export class MemoryRepo {
     ).map(toDto);
   }
 
+  countPendingFromRun(runId: string): number {
+    return (
+      this.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM memories WHERE source_run_id = ? AND status = 'pending'",
+        )
+        .get(runId) as { n: number }
+    ).n;
+  }
+
   countActive(scope: MemoryScope, projectId: string | null): number {
     return (
       this.db

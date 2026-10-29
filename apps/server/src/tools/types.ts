@@ -33,6 +33,8 @@ export interface ToolContext {
   emitOutput?: (chunk: string) => void;
   /** Memory access scoped to this session (absent when memory is unavailable). */
   memory?: MemoryContext;
+  /** Store follow-up suggestions for the end of the run. */
+  setNextSteps?: (steps: Array<{ label: string; prompt: string }>) => void;
   /** Show a recorded deployment plan to the user immediately. */
   emitDeploymentPlan?: (plan: DeploymentPlanDto) => void;
   /** DevOps configuration (SSH hosts, authorized log sources, deployment plans). */

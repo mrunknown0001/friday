@@ -219,6 +219,7 @@ describe('tool executor', () => {
         'write_file',
         'remember',
         'search_memory',
+        'suggest_next_steps',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;
@@ -240,6 +241,7 @@ describe('tool executor', () => {
         'remote_diagnose',
         'search_logs',
         'search_memory',
+        'suggest_next_steps',
         'update_plan',
       ].sort(),
     );

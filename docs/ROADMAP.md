@@ -122,9 +122,12 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 - ✅ Memory manager: search, filter, edit, pin, delete, approve/reject, add, global and per-project disable, export to
   `.friday/memory.md`; repository guidance files read as untrusted context
 - ✅ Session recovery (from Phases 1–4): persisted history, summaries, checkpoints and resume context
-- ✅ Tests: 181 server (14 new in `memory.test.ts`) and 23 frontend
+- ✅ Tests: 190 server (14 in `memory.test.ts`, 9 in `suggestions.test.ts`) and 26 frontend
 - ✅ Verified live on 2026-10-29 with `claude-sonnet-4.6` across two projects: memory saved, preference approved,
   reused and disclosed in a new conversation, and not visible in the other project
+- ✅ Suggested next steps: record-based chips (failing check, unverified changes, drifted files, uncommitted work,
+  next plan step, pending memories) plus up to three model chips via `suggest_next_steps`, redacted and deduplicated
+  by intent; no extra model call. Verified live on 2026-10-29: the "Review & commit" chip led to an approved commit
 
 ## Phase 7: Polish and hardening
 

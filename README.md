@@ -100,6 +100,20 @@ Reading is automatic. These always need your approval, one action at a time:
   with its checkpoint. **Resume** gives the model a summary of what was already done (files changed, commands and their
   results, plan) so it continues instead of starting over. Approvals that were pending at the time are cancelled.
 
+### Suggested next steps
+
+After a completed task Friday shows up to five one-click follow-ups under the answer:
+
+- **From Friday's records** (clipboard icon, listed first): fix the failing check (pointing at the first project
+  location in its output), run the detected test command when changes were not verified, re-check files edited
+  outside Friday, review and commit uncommitted changes, continue with the next plan step, or review proposed memories.
+  These come from what actually happened, so they stay correct even when the model's summary is not.
+- **From the model** (sparkle icon): up to three ideas it offers with `suggest_next_steps` alongside its final answer.
+  They are redacted, and dropped if they repeat a record-based chip. Offering them costs no extra model call.
+
+Clicking a chip just sends its prompt as your next message; anything it leads to still goes through approvals.
+Cancelled, failed and blocked runs get no chips.
+
 ## DevOps
 
 Read-only, no approval needed:

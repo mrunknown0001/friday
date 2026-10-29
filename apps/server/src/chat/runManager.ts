@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  NextStep,
   AgentLimitsDto,
   MessageDto,
   ModelCapabilities,
@@ -49,6 +50,8 @@ import {
   summarizeHistory,
 } from './context.js';
 import { buildSystemPrompt } from './systemPrompt.js';
+import { buildSuggestions } from '../reports/suggestions.js';
+import { assertRepoRoot, repoStatus } from '../git/git.js';
 import { MemoryError, memoryPromptSection, type MemoryService } from '../memory/service.js';
 import type { MemoryRepo } from '../repositories/memories.js';
 import { readGuidance } from '../workspace/guidance.js';
@@ -104,7 +107,12 @@ interface ActiveRun {
   /** Progress counters for checkpoints. */
   iteration: number;
   toolCalls: number;
+  /** Latest follow-ups the model proposed with suggest_next_steps. */
+  modelSuggestions: Array<{ label: string; prompt: string }>;
 }
+
+/** Tools that only annotate the final answer: a turn of just these ends the run, no extra model call. */
+const FINAL_TOOLS = new Set(['suggest_next_steps']);
 
 /** Stops the loop without being an error from the provider. */
 class RunBlocked extends Error {
@@ -249,6 +257,7 @@ export class RunManager {
       finished: Promise.resolve(),
       iteration: 0,
       toolCalls: 0,
+      modelSuggestions: [],
     };
     this.runs.set(id, active);
     this.activeBySession.set(sessionId, id);
@@ -585,7 +594,16 @@ export class RunManager {
         this.deps.runs.recordProgress(run.id, iterations, toolCallsUsed);
 
         if (turn.toolCalls.length === 0) {
-          this.finish(run, 'completed');
+          await this.finish(run, 'completed');
+          return;
+        }
+        if (turn.toolCalls.every((c) => FINAL_TOOLS.has(c.name))) {
+          // The answer is complete; record the annotation calls and stop without another model turn.
+          for (const call of turn.toolCalls) {
+            const { exec } = await this.runToolCall(run, project, call);
+            this.recordToolResult(run, call, exec);
+          }
+          await this.finish(run, 'completed');
           return;
         }
 
@@ -679,7 +697,11 @@ export class RunManager {
       }
     } catch (raw) {
       if (raw instanceof RunBlocked) {
-        this.finish(run, 'blocked', { kind: raw.kind, message: raw.message, retryable: true });
+        await this.finish(run, 'blocked', {
+          kind: raw.kind,
+          message: raw.message,
+          retryable: true,
+        });
         return;
       }
       const err =
@@ -691,9 +713,9 @@ export class RunManager {
                 'unknown',
                 this.deps.redactor.redact(raw instanceof Error ? raw.message : String(raw)),
               );
-      if (err.kind === 'cancelled') this.finish(run, 'cancelled');
+      if (err.kind === 'cancelled') await this.finish(run, 'cancelled');
       else {
-        this.finish(run, 'failed', {
+        await this.finish(run, 'failed', {
           kind: raw instanceof ContextOverflowError ? 'context_overflow' : err.kind,
           message: err.message,
           retryable: err.retryable || err.kind === 'unknown',
@@ -729,6 +751,9 @@ export class RunManager {
         this.emit(run, { type: 'plan_updated', plan });
       },
       emitDeploymentPlan: (plan) => this.emit(run, { type: 'deployment_plan', plan }),
+      setNextSteps: (steps) => {
+        run.modelSuggestions = steps;
+      },
       ...(this.deps.memory && this.deps.memoryRepo
         ? { memory: this.memoryContext(run, project) }
         : {}),
@@ -915,11 +940,11 @@ export class RunManager {
     return { exec, approvalId: approval.id, outcome: 'none' };
   }
 
-  private finish(
+  private async finish(
     run: ActiveRun,
     status: 'completed' | 'cancelled' | 'failed' | 'blocked',
     err?: { kind: RunErrorKind; message: string; retryable: boolean; status?: number | null },
-  ) {
+  ): Promise<void> {
     const record = this.deps.runs.finish(
       run.id,
       status,
@@ -934,6 +959,13 @@ export class RunManager {
     ) {
       this.deps.runs.setReport(run.id, buildRunReport(run.id, this.deps));
     }
+    if (status === 'completed') {
+      try {
+        this.deps.runs.setSuggestions(run.id, await this.suggestionsFor(run));
+      } catch {
+        // Suggestions are a convenience; never let them break the end of a run.
+      }
+    }
     if (err) {
       this.deps.audit.record({
         sessionId: run.sessionId,
@@ -946,6 +978,46 @@ export class RunManager {
       type: 'run_finished',
       run: toRunDto(this.deps.runs.get(record.id) ?? record),
     });
+  }
+
+  /** Follow-up chips from records (report, git, plan, memories) plus the model's proposals. */
+  private async suggestionsFor(run: ActiveRun): Promise<NextStep[]> {
+    const record = this.deps.runs.get(run.id);
+    const session = this.deps.sessions.get(run.sessionId);
+    const project = session?.projectId ? this.deps.projects.get(session.projectId) : null;
+    const report = record?.report ?? null;
+    let testCommand: string | null = null;
+    let uncommitted: string[] | null = null;
+    let failureLocation: string | null = null;
+    if (project && report?.status === 'unverified') {
+      testCommand = await detectTestCommand(project.rootPath).catch(() => null);
+    }
+    if (project && report && report.commits.length === 0 && report.files.some((f) => !f.reverted)) {
+      uncommitted = await assertRepoRoot(project.rootPath)
+        .then(() => repoStatus(project.rootPath))
+        .then((st) => st.entries.map((e) => e.path))
+        .catch(() => null);
+    }
+    if (report?.status === 'failed') {
+      const marker = '--- project locations referenced in the output ---\n';
+      const out = this.deps.messages
+        .listBySession(run.sessionId)
+        .filter((m) => m.runId === run.id && m.role === 'tool' && m.content.includes(marker))
+        .at(-1)?.content;
+      failureLocation = out ? (out.split(marker)[1]?.split('\n')[0]?.trim() ?? null) : null;
+    }
+    return buildSuggestions(
+      {
+        report,
+        plan: session?.plan ?? null,
+        pendingMemories: this.deps.memoryRepo?.countPendingFromRun(run.id) ?? 0,
+        testCommand,
+        uncommitted,
+        failureLocation,
+        modelSteps: run.modelSuggestions,
+      },
+      this.deps.redactor,
+    );
   }
 
   /** Memory operations for tools, scoped to this session's project and session. */
@@ -1022,4 +1094,19 @@ function canonicalArgs(json: string): string {
   } catch {
     return json;
   }
+}
+
+/** The project's test command, from manifests (npm/pnpm/yarn script, composer script, artisan). */
+async function detectTestCommand(root: string): Promise<string | null> {
+  const d = await detectProject(root);
+  if (d.scripts['package.json']?.test) {
+    const pm = d.packageManagers.find((p) => ['pnpm', 'yarn', 'bun'].includes(p)) ?? 'npm';
+    return `${pm} test`;
+  }
+  if (d.stack.includes('Laravel')) return 'php artisan test';
+  if (d.scripts['composer.json']?.test) return 'composer test';
+  if (d.stack.includes('Python')) return 'pytest';
+  if (d.stack.includes('Go')) return 'go test ./...';
+  if (d.stack.includes('Rust')) return 'cargo test';
+  return null;
 }

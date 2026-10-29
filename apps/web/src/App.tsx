@@ -328,6 +328,7 @@ export function App() {
             ),
           ]}
           onRollback={rollback}
+          onOpenMemory={() => setMemoryOpen(true)}
         />
         {error && (
           <div

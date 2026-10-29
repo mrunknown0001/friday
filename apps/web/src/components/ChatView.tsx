@@ -23,6 +23,7 @@ import type { LiveRun } from '../lib/useRunStream';
 import { ApprovalCard } from './ApprovalCard';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
+import { SuggestionChips } from './SuggestionChips';
 import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
 import { ToolActivity, type ToolItem } from './ToolActivity';
@@ -52,6 +53,7 @@ interface Props {
   /** Persisted and live deployment plans, matched to tool calls by id. */
   deploymentPlans: DeploymentPlanDto[];
   onRollback: (runId: string) => Promise<void>;
+  onOpenMemory: () => void;
 }
 
 const Avatar = () => (
@@ -92,7 +94,12 @@ type Row =
   | { kind: 'record'; runId: string; approvals: ApprovalDto[]; memories: MemoryRef[] };
 
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
-function toRows(
+/** Tool results shown elsewhere (suggest_next_steps becomes chips) rather than as tool rows. */
+function isHiddenMessage(m: MessageDto): boolean {
+  return m.role === 'tool' && m.tool?.name === 'suggest_next_steps';
+}
+
+export function toRows(
   messages: MessageDto[],
   approvals: Map<string, ApprovalDto>,
   plans: Map<string, DeploymentPlanDto>,
@@ -103,6 +110,9 @@ function toRows(
     if (m.role === 'user') rows.push({ kind: 'user', m });
     else if (m.role === 'assistant') {
       if (m.content.trim() || m.status !== 'complete') rows.push({ kind: 'assistant', m });
+    } else if (isHiddenMessage(m)) {
+      // Shown as suggestion chips instead of a tool row.
+      continue;
     } else if (m.role === 'tool') {
       const item: ToolItem = {
         key: String(m.id),
@@ -136,7 +146,8 @@ function withRunRecords(
   for (const runId of Object.keys(memoryUsage)) if (!byRun.has(runId)) byRun.set(runId, []);
   if (byRun.size === 0) return rows;
   const lastMessageOfRun = new Map<string, number>();
-  for (const m of messages) if (m.runId) lastMessageOfRun.set(m.runId, m.id);
+  // Only messages that are actually rendered can anchor the record (hidden tool rows cannot).
+  for (const m of messages) if (m.runId && !isHiddenMessage(m)) lastMessageOfRun.set(m.runId, m.id);
   const out: Row[] = [];
   for (const r of rows) {
     out.push(r);
@@ -243,6 +254,7 @@ function LiveOutput({
 }) {
   const groups: Array<{ kind: 'text'; text: string } | { kind: 'tools'; items: ToolItem[] }> = [];
   for (const b of live.blocks) {
+    if (b.kind === 'tool' && b.name === 'suggest_next_steps') continue;
     if (b.kind === 'text') groups.push({ kind: 'text', text: b.text });
     else {
       const item: ToolItem = {
@@ -409,6 +421,18 @@ export function ChatView(props: Props) {
             />
           ))}
           {showProblem && <RunProblem run={latest} onRetry={onRetry} disabled={!canSend} />}
+          {!running && latest?.status === 'completed' && latest.suggestions && (
+            <SuggestionChips
+              steps={latest.suggestions}
+              disabled={submitting || !canSend}
+              onPrompt={(prompt) => {
+                stickToBottom.current = true;
+                setSubmitting(true);
+                void onSend(prompt).finally(() => setSubmitting(false));
+              }}
+              onOpenMemory={props.onOpenMemory}
+            />
+          )}
         </div>
       </div>
 

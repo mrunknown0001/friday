@@ -307,6 +307,14 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 7,
+    name: 'run_suggestions',
+    up: `
+      -- Follow-up chips computed when a run ends (from records and from the model).
+      ALTER TABLE runs ADD COLUMN suggestions TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: Database.Database, migrations: Migration[] = MIGRATIONS): number[] {

@@ -22,7 +22,7 @@ import {
   gitStatus,
 } from './gitTools.js';
 import { remember, searchMemory } from './memoryTools.js';
-import { updatePlan } from './planTool.js';
+import { suggestNextSteps, updatePlan } from './planTool.js';
 import { decide, type PolicyDecision } from './policy.js';
 import { toToolDefinition, type ToolContext, type ToolOutput, type ToolSpec } from './types.js';
 import {
@@ -93,6 +93,7 @@ export const DEFAULT_TOOLS = [
   remoteCommand,
   remember,
   searchMemory,
+  suggestNextSteps,
 ] as unknown as Array<ToolSpec<never>>;
 
 export interface ToolExecution {
