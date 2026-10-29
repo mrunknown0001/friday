@@ -1,6 +1,7 @@
 import type {
   ApprovalDto,
   DeploymentPlanDto,
+  MemoryRef,
   MessageDto,
   ProjectDto,
   RunDto,
@@ -20,6 +21,7 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { LiveRun } from '../lib/useRunStream';
 import { ApprovalCard } from './ApprovalCard';
+import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
 import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
@@ -87,13 +89,14 @@ type Row =
   | { kind: 'user'; m: MessageDto }
   | { kind: 'assistant'; m: MessageDto }
   | { kind: 'tools'; items: ToolItem[]; key: string }
-  | { kind: 'record'; runId: string; approvals: ApprovalDto[] };
+  | { kind: 'record'; runId: string; approvals: ApprovalDto[]; memories: MemoryRef[] };
 
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
 function toRows(
   messages: MessageDto[],
   approvals: Map<string, ApprovalDto>,
   plans: Map<string, DeploymentPlanDto>,
+  memoryUsage: Record<string, MemoryRef[]>,
 ): Row[] {
   const rows: Row[] = [];
   for (const m of messages) {
@@ -118,7 +121,7 @@ function toRows(
       else rows.push({ kind: 'tools', items: [item], key: `t${m.id}` });
     }
   }
-  return withRunRecords(rows, messages, approvals);
+  return withRunRecords(rows, messages, approvals, memoryUsage);
 }
 
 /** After each run's last message, add the factual record of its protected actions. */
@@ -126,9 +129,11 @@ function withRunRecords(
   rows: Row[],
   messages: MessageDto[],
   approvals: Map<string, ApprovalDto>,
+  memoryUsage: Record<string, MemoryRef[]>,
 ): Row[] {
   const byRun = new Map<string, ApprovalDto[]>();
   for (const a of approvals.values()) byRun.set(a.runId, [...(byRun.get(a.runId) ?? []), a]);
+  for (const runId of Object.keys(memoryUsage)) if (!byRun.has(runId)) byRun.set(runId, []);
   if (byRun.size === 0) return rows;
   const lastMessageOfRun = new Map<string, number>();
   for (const m of messages) if (m.runId) lastMessageOfRun.set(m.runId, m.id);
@@ -139,7 +144,12 @@ function withRunRecords(
       r.kind === 'tools' ? Number(r.items.at(-1)!.key) : r.kind === 'record' ? -1 : r.m.id;
     for (const [runId, last] of lastMessageOfRun) {
       if (last === lastId && byRun.has(runId))
-        out.push({ kind: 'record', runId, approvals: byRun.get(runId)! });
+        out.push({
+          kind: 'record',
+          runId,
+          approvals: byRun.get(runId)!,
+          memories: memoryUsage[runId] ?? [],
+        });
     }
   }
   return out;
@@ -315,7 +325,7 @@ export function ChatView(props: Props) {
   const byId = new Map(approvals.map((a) => [a.id, a]));
   const byCall = new Map(approvals.map((a) => [a.toolCallId, a]));
   const plansByCall = new Map(props.deploymentPlans.map((p) => [p.toolCallId, p]));
-  const rows = toRows(messages, byId, plansByCall);
+  const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {});
   const pending = approvals.filter((a) => a.status === 'pending');
   const latest = detail?.latestRun;
   const showProblem =
@@ -374,16 +384,21 @@ export function ChatView(props: Props) {
             ) : r.kind === 'assistant' ? (
               <AssistantRow key={r.m.id} content={r.m.content} footer={<MessageFooter m={r.m} />} />
             ) : r.kind === 'record' ? (
-              <RunSummary
-                key={`rec-${r.runId}`}
-                run={runsById.get(r.runId)}
-                approvals={r.approvals}
-                onRollback={onRollback}
-              />
+              <div key={`rec-${r.runId}`} className="space-y-2">
+                <MemoriesUsed refs={r.memories} />
+                {r.approvals.length > 0 && (
+                  <RunSummary
+                    run={runsById.get(r.runId)}
+                    approvals={r.approvals}
+                    onRollback={onRollback}
+                  />
+                )}
+              </div>
             ) : (
               <ToolActivity key={r.key} items={r.items} />
             ),
           )}
+          {running && <MemoriesUsed refs={live.memoriesUsed} />}
           {running && <LiveOutput live={live} byCall={byCall} plans={plansByCall} />}
           {pending.map((a) => (
             <ApprovalCard

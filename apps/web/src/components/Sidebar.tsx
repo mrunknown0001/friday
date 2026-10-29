@@ -1,5 +1,13 @@
 import type { ProjectDto, SessionSummaryDto } from '@friday/shared';
-import { FolderPlus, FolderX, MessageSquarePlus, Pencil, Settings, Trash2 } from 'lucide-react';
+import {
+  Brain,
+  FolderPlus,
+  FolderX,
+  MessageSquarePlus,
+  Pencil,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn';
 import { Badge } from './ui/badge';
@@ -19,6 +27,7 @@ interface Props {
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
+  onOpenMemory: () => void;
   settingsWarning: boolean;
 }
 
@@ -35,6 +44,7 @@ export function Sidebar({
   onRename,
   onDelete,
   onOpenSettings,
+  onOpenMemory,
   settingsWarning,
 }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
@@ -206,6 +216,10 @@ export function Sidebar({
       </nav>
 
       <div className="border-t border-zinc-800 p-2">
+        <Button variant="ghost" className="w-full justify-start" onClick={onOpenMemory}>
+          <Brain className="h-4 w-4" />
+          Memory
+        </Button>
         <Button variant="ghost" className="w-full justify-start" onClick={onOpenSettings}>
           <Settings className="h-4 w-4" />
           Settings

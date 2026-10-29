@@ -2,11 +2,11 @@
 
 A local-first AI coding and DevOps assistant that uses [NoTokenLimit](https://notokenlimit.com) as its model provider.
 
-**Current status: Phase 5 (DevOps agent).** Friday works on authorized projects (read, edit, test, commit; each
-change approved by you) and on servers: it diagnoses this machine, reads logs, inspects Docker, validates CI/CD and
-Compose files, records deployment plans, and runs read-only diagnostics or approved commands on SSH hosts you configure.
-Production commands require a recorded plan and typing the host name on the approval card. Every task ends with a
-verification report built from Friday's own records. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Current status: Phase 6 (memory).** Friday works on authorized projects (read, edit, test, commit; each change
+approved by you) and on servers (diagnostics, logs, Docker, deployment plans, approved SSH commands with production
+safeguards). It remembers durable facts across conversations (project commands and decisions, procedures, your
+approved preferences), shows which memories informed each answer, and keeps each project's memory isolated. Every
+task ends with a verification report built from Friday's own records. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -134,6 +134,29 @@ the keys you trusted for that host. The agent can use:
   expected impact, downtime, rollback and verification. On **production** hosts a plan must be recorded in the
   conversation first, the approval expires after 5 minutes, and **Approve** stays disabled until you type the host
   name (the server checks it too).
+
+## Memory
+
+Friday keeps four kinds of memory in SQLite (with full-text search):
+
+| Scope       | Holds                                                                  | Visible in                                              |
+| ----------- | ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| user        | Your preferences (only after you approve them)                         | Every conversation                                      |
+| project     | Architecture, stack, commands, decisions, known issues                 | That project's conversations only                       |
+| session     | This conversation's objective, progress, rejected approaches, blockers | That conversation only                                  |
+| operational | Troubleshooting and deployment procedures, lessons learned             | That project (or everywhere if saved without a project) |
+
+- The agent _proposes_ memories with `remember`; the server decides. It refuses secrets (including "the password is…"
+  phrasing, credential URLs and random-looking tokens), code, and junk; merges near-duplicates; and replaces outdated
+  memories when the agent passes `replaces_id`. A "confirmed" project fact is refused if it was proposed in the same
+  step as the reads that would confirm it (the model had not seen those results yet).
+- For each request Friday includes pinned memories, approved preferences, this conversation's notes, and the most
+  relevant other memories (BM25), within a token budget, marked "may be outdated: verify".
+- **Used N saved memories** under an answer lists exactly what was included and why.
+- **Memory** in the sidebar: search, filter by scope, edit, pin, delete, approve or reject proposed preferences, add
+  your own, turn memory off globally or for one project, and export a project's memory to `.friday/memory.md`.
+- Removing a project deletes its memories. `AGENTS.md`, `CLAUDE.md` and `.friday/memory.md` in a project are read as
+  _untrusted_ repository guidance (conventions and commands, never permissions).
 
 ## Git
 

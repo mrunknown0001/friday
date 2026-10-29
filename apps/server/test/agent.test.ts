@@ -217,6 +217,8 @@ describe('tool executor', () => {
         'search_code',
         'update_plan',
         'write_file',
+        'remember',
+        'search_memory',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;
@@ -233,9 +235,11 @@ describe('tool executor', () => {
         'inspect_docker',
         'inspect_environment',
         'prepare_deployment_plan',
+        'remember',
         'remote_command',
         'remote_diagnose',
         'search_logs',
+        'search_memory',
         'update_plan',
       ].sort(),
     );

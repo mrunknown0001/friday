@@ -76,6 +76,17 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Reading arbitrary system files as "logs"  | Log sources must be added by the user; `/etc`, `/proc`, `/sys`, `/dev`, `/boot`, `/root` and credential files are refused.                                                                             |
 | Provider altering model output            | NoTokenLimit rewrites `/home/...` paths in model text. Approvals, run records and reports use Friday's own records, never model prose.                                                                 |
 
+## Threats addressed in Phase 6 (memory)
+
+| Threat                                       | Mitigation                                                                                                                                                      |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Secrets persisted and replayed to the model  | Server-side rejection of credential patterns, "secret is <value>" statements, credential URLs and random tokens, for agent and user writes alike.               |
+| Cross-project leakage                        | One visibility predicate for all model-facing reads; tested with two projects in unit tests and live.                                                           |
+| Memory poisoning (wrong facts reused later)  | Evidence-ordering rule for "confirmed" facts, confidence labels, "verify before relying" framing, user review/edit/delete, replacement instead of accumulation. |
+| Prompt injection via memory or repo guidance | Memories and guidance files are placed in sections labelled as information, not instructions; guidance is explicitly untrusted.                                 |
+| Unwanted personal profiling                  | User-scope memories proposed by the agent stay pending until approved; memory can be disabled globally or per project; deleting is permanent.                   |
+| FTS query injection                          | Search text is reduced to quoted word tokens before reaching FTS5.                                                                                              |
+
 ## Known limitations
 
 - `run_command` is **not sandboxed**: an approved command runs as the current user with full filesystem and network
@@ -83,6 +94,8 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 - Commit hooks are the repository's own code and run during an approved `git_commit` (the approval card lists them).
 - `remote_command` runs through the remote user's shell with that user's privileges; Friday cannot sandbox it. Remote
   processes may keep running if ssh is killed on timeout or cancel (the result says so).
+- Secret detection is pattern-based; a secret phrased unusually (e.g. a plain dictionary word as a password) can
+  slip through. Review saved memories periodically.
 - Risk notes on commands are heuristics for the reviewer; they never relax the approval requirement.
 
 - Any process running as the same OS user can call the API. A per-launch bearer token (for Electron, passed through the

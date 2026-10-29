@@ -1,6 +1,7 @@
 import type {
   ApprovalDetails,
   DeploymentPlanDto,
+  MemoryDto,
   PermissionCategory,
   PlanStep,
   RiskLevel,
@@ -8,6 +9,7 @@ import type {
 import { z } from 'zod';
 import type { ToolDefinition } from '../providers/types.js';
 import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
+import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
 import type { ProjectRecord } from '../repositories/projects.js';
 import type { SshService } from '../ssh/ssh.js';
 import type { Redactor } from '../security/redact.js';
@@ -20,6 +22,8 @@ export interface ToolContext {
   runId: string;
   /** Id of the tool call being executed. */
   callId?: string;
+  /** Names of tool calls issued earlier in the same model turn (their results were unseen). */
+  earlierCallsThisTurn?: string[];
   signal: AbortSignal;
   redactor: Redactor;
   env: ToolEnvironment;
@@ -27,12 +31,21 @@ export interface ToolContext {
   setPlan: (plan: PlanStep[]) => void;
   /** Stream live output (e.g. a running command) to the UI. */
   emitOutput?: (chunk: string) => void;
+  /** Memory access scoped to this session (absent when memory is unavailable). */
+  memory?: MemoryContext;
   /** Show a recorded deployment plan to the user immediately. */
   emitDeploymentPlan?: (plan: DeploymentPlanDto) => void;
   /** DevOps configuration (SSH hosts, authorized log sources, deployment plans). */
   devops?: DevopsContext;
   /** Record an applied file change for the change list and undo. */
   recordFileChange?: (change: AppliedFileChange) => void;
+}
+
+export interface MemoryContext {
+  propose: (input: ProposeInput) => { memory: MemoryDto; outcome: ProposeOutcome };
+  search: (query: string) => MemoryDto[];
+  /** Expand an id prefix (as shown in the prompt) to a full id visible in this session. */
+  resolveId: (prefix: string) => string;
 }
 
 export interface DevopsContext {

@@ -49,6 +49,9 @@ import {
   summarizeHistory,
 } from './context.js';
 import { buildSystemPrompt } from './systemPrompt.js';
+import { MemoryError, memoryPromptSection, type MemoryService } from '../memory/service.js';
+import type { MemoryRepo } from '../repositories/memories.js';
+import { readGuidance } from '../workspace/guidance.js';
 import {
   buildCheckpoint,
   buildRunReport,
@@ -67,6 +70,8 @@ export interface RunManagerDeps {
   approvalRepo: ApprovalRepo;
   fileChanges: FileChangeRepo;
   devops?: ToolContext['devops'];
+  memory?: MemoryService;
+  memoryRepo?: MemoryRepo;
   capabilities: CapabilityRepo;
   audit: AuditRepo;
   redactor: Redactor;
@@ -531,11 +536,23 @@ export class RunManager {
       const caps = this.deps.capabilities.get(model);
       const tools: ToolDefinition[] =
         caps.toolCalling === 'unsupported' ? [] : registry.definitions(!!project);
+      // Memory: pinned, session notes, and the most relevant others for this request.
+      const memoryRefs =
+        this.deps.memory?.retrieve(
+          { projectId: project?.id ?? null, sessionId: run.sessionId },
+          this.deps.messages.lastUserMessage(run.sessionId)?.content ?? '',
+        ) ?? [];
+      if (memoryRefs.length) {
+        this.deps.memoryRepo?.recordUsage(run.id, memoryRefs);
+        this.emit(run, { type: 'memories_used', memories: memoryRefs });
+      }
       const systemPrompt = buildSystemPrompt({
         project,
         detection: project ? await this.detect(project) : null,
         toolsEnabled: tools.length > 0,
         resume: this.resumeFor(run, session.plan),
+        memory: memoryPromptSection(memoryRefs),
+        guidance: project ? await readGuidance(project.rootPath).catch(() => null) : null,
       });
 
       for (;;) {
@@ -574,6 +591,9 @@ export class RunManager {
 
         let blocked: RunBlocked | null = null;
         let rejected = false;
+        // Calls made earlier in this same model turn: their results were not visible to the model
+        // when it wrote the later calls (used to stop "confirmed" memories based on unseen results).
+        const earlierThisTurn: string[] = [];
         for (const call of turn.toolCalls) {
           if (run.controller.signal.aborted) {
             this.recordToolResult(run, call, this.skipped(call, 'the run was cancelled'));
@@ -627,7 +647,8 @@ export class RunManager {
                   approvalId: null,
                   outcome: 'none' as const,
                 }
-              : await this.runToolCall(run, project, call);
+              : await this.runToolCall(run, project, call, [...earlierThisTurn]);
+          earlierThisTurn.push(call.name);
           const exec = result.exec;
           this.recordToolResult(run, call, exec, result.approvalId);
           if (result.outcome === 'rejected') rejected = true;
@@ -708,6 +729,9 @@ export class RunManager {
         this.emit(run, { type: 'plan_updated', plan });
       },
       emitDeploymentPlan: (plan) => this.emit(run, { type: 'deployment_plan', plan }),
+      ...(this.deps.memory && this.deps.memoryRepo
+        ? { memory: this.memoryContext(run, project) }
+        : {}),
       emitOutput: (chunk: string) => {
         // Live terminal view only; the persisted result has its own limits.
         if (streamed > MAX_STREAMED_OUTPUT) return;
@@ -726,13 +750,17 @@ export class RunManager {
     run: ActiveRun,
     project: ProjectRecord | null,
     call: ToolCall,
+    earlierThisTurn: string[] = [],
   ): Promise<{
     exec: ToolExecution;
     approvalId: string | null;
     outcome: 'none' | 'rejected' | 'expired';
   }> {
     const { registry, limits, approvals } = this.deps;
-    const ctx = this.toolContext(run, project, call.id);
+    const ctx = {
+      ...this.toolContext(run, project, call.id),
+      earlierCallsThisTurn: earlierThisTurn,
+    };
     const v = validateToolCall(registry, call, ctx);
     if (!v.ok) return { exec: v.execution, approvalId: null, outcome: 'none' };
     const { spec, args, label } = v;
@@ -918,6 +946,36 @@ export class RunManager {
       type: 'run_finished',
       run: toRunDto(this.deps.runs.get(record.id) ?? record),
     });
+  }
+
+  /** Memory operations for tools, scoped to this session's project and session. */
+  private memoryContext(
+    run: ActiveRun,
+    project: ProjectRecord | null,
+  ): NonNullable<ToolContext['memory']> {
+    const memory = this.deps.memory!;
+    const repo = this.deps.memoryRepo!;
+    const vis = { projectId: project?.id ?? null, sessionId: run.sessionId };
+    return {
+      propose: (input) => {
+        const result = memory.propose(input, { ...vis, runId: run.id, source: 'agent' });
+        this.emit(run, { type: 'memory_saved', memory: result.memory });
+        return result;
+      },
+      search: (query) =>
+        memory.activeFor(vis.projectId) ? repo.searchVisible(vis, query, 15) : [],
+      resolveId: (prefix) => {
+        const matches = repo.visible(vis, 'all').filter((m) => m.id.startsWith(prefix));
+        if (matches.length !== 1) {
+          throw new MemoryError(
+            matches.length
+              ? `Memory id "${prefix}" is ambiguous.`
+              : `No memory "${prefix}" is visible here.`,
+          );
+        }
+        return matches[0]!.id;
+      },
+    };
   }
 
   private saveCheckpoint(run: ActiveRun): void {

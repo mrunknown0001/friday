@@ -11,6 +11,7 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AddProjectDialog } from './components/AddProjectDialog';
 import { ChatView } from './components/ChatView';
+import { MemoryDialog } from './components/MemoryDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { SidePanel } from './components/SidePanel';
 import { Sidebar } from './components/Sidebar';
@@ -46,6 +47,7 @@ export function App() {
   const [projectId, setProjectId] = useState<string | null>(() => readStored(PROJECT_KEY));
   const [sidePanelOpen, setSidePanelOpen] = useState(() => readStored(PANEL_KEY) !== '0');
   const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [detail, setDetail] = useState<SessionDetailDto | null>(null);
   const [changes, setChanges] = useState<{ sessionId: string; list: FileChangeDto[] } | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
@@ -298,6 +300,7 @@ export function App() {
             .catch(report)
         }
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenMemory={() => setMemoryOpen(true)}
         settingsWarning={!!blockedReason}
       />
       <div className="relative flex min-w-0 flex-1">
@@ -361,6 +364,7 @@ export function App() {
           }}
         />
       )}
+      {memoryOpen && <MemoryDialog project={project} onClose={() => setMemoryOpen(false)} />}
       {/* Mounted only while open so each opening starts from fresh state. */}
       {settingsOpen && (
         <SettingsDialog

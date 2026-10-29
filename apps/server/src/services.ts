@@ -12,6 +12,8 @@ import { ApprovalRepo } from './repositories/approvals.js';
 import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
 import { MessageRepo } from './repositories/messages.js';
+import { MemoryRepo } from './repositories/memories.js';
+import { MemoryService } from './memory/service.js';
 import { SshService } from './ssh/ssh.js';
 import { ProjectRepo } from './repositories/projects.js';
 import { RunRepo } from './repositories/runs.js';
@@ -83,6 +85,8 @@ export interface Services {
   ssh: SshService;
   logSources: LogSourceRepo;
   deploymentPlans: DeploymentPlanRepo;
+  memoryRepo: MemoryRepo;
+  memory: MemoryService;
   registry: ToolRegistry;
   toolEnv: ToolEnvironment;
   capabilities: CapabilityRepo;
@@ -143,12 +147,14 @@ export function createServices(
   );
   const logSources = new LogSourceRepo(db);
   const deploymentPlans = new DeploymentPlanRepo(db);
+  const memoryRepo = new MemoryRepo(db);
   const registry = overrides.registry ?? new ToolRegistry();
   const toolEnv = overrides.toolEnv ?? { ripgrep: null, ripgrepVersion: null };
   const capabilities = new CapabilityRepo(db);
   const audit = new AuditRepo(db);
   const modelSettings = new ModelSettings(settings, config.provider.envModel);
   const approvals = new ApprovalService(approvalRepo, audit, config.approvalTtlMs);
+  const memory = new MemoryService(memoryRepo, settings, redactor);
 
   const runManager = new RunManager({
     provider,
@@ -161,6 +167,8 @@ export function createServices(
     approvalRepo,
     fileChanges,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
+    memory,
+    memoryRepo,
     capabilities,
     audit,
     redactor,
@@ -189,6 +197,8 @@ export function createServices(
     ssh,
     logSources,
     deploymentPlans,
+    memoryRepo,
+    memory,
     registry,
     toolEnv,
     capabilities,

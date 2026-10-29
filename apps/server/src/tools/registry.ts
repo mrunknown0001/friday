@@ -21,6 +21,7 @@ import {
   gitShow,
   gitStatus,
 } from './gitTools.js';
+import { remember, searchMemory } from './memoryTools.js';
 import { updatePlan } from './planTool.js';
 import { decide, type PolicyDecision } from './policy.js';
 import { toToolDefinition, type ToolContext, type ToolOutput, type ToolSpec } from './types.js';
@@ -90,6 +91,8 @@ export const DEFAULT_TOOLS = [
   prepareDeploymentPlan,
   remoteDiagnose,
   remoteCommand,
+  remember,
+  searchMemory,
 ] as unknown as Array<ToolSpec<never>>;
 
 export interface ToolExecution {

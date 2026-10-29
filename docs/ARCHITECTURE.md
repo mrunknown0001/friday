@@ -165,11 +165,25 @@ Production safeguards live in three places: `remote_command.prepare` (plan requi
 floor, `confirmationRequired`, short TTL), `ApprovalService.decide` (rejects approval without the exact typed text),
 and the approval card (Approve disabled until it matches). Tool schemas are counted against the context budget.
 
+## Memory (Phase 6)
+
+| Module                     | Responsibility                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `repositories/memories.ts` | Memories table, FTS5 index (kept in sync by triggers), visibility filter, usage records.                     |
+| `memory/service.ts`        | Write policy (`rejectReason`, dedup, replacement, pending preferences), settings, retrieval, prompt section. |
+| `tools/memoryTools.ts`     | `remember` (with the evidence-ordering rule) and `search_memory`.                                            |
+| `workspace/guidance.ts`    | Reads AGENTS.md / CLAUDE.md / .friday/memory.md through `resolveInside` for an untrusted prompt section.     |
+| `http/routes/memory.ts`    | Browse/search/create/edit/pin/approve/delete, settings, export.                                              |
+
+Visibility is a single SQL predicate (`VISIBLE` in `memories.ts`) used by every read path the model can reach, so a
+session can only ever see user memories, its own project's, its own session notes, and operational notes for its
+project or with no project.
+
 ## Web (`apps/web/src`)
 
 - `lib/api.ts` is a typed fetch client. It adds the `x-friday-client` header on mutating requests.
 - `lib/useRunStream.ts` wraps `EventSource` with automatic reconnect and de-duplication by `seq`.
-- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, RunSummary (verification report and rollback), DeploymentPlanCard, DevopsSettings (SSH hosts, log sources), AddProjectDialog, SettingsDialog, and
+- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, RunSummary (verification report and rollback), DeploymentPlanCard, DevopsSettings (SSH hosts, log sources), MemoryDialog, MemoriesUsed, AddProjectDialog, SettingsDialog, and
   small shadcn-style primitives (`ui/`) built on native elements such as `<dialog>`.
 - Markdown is rendered with react-markdown, GFM, and highlight.js. Raw HTML in model output is not rendered.
 

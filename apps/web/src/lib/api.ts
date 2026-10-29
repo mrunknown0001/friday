@@ -4,6 +4,10 @@ import type {
   FileChangeDto,
   HostEnvironment,
   LogSourceDto,
+  MemoryCategory,
+  MemoryDto,
+  MemoryScope,
+  MemorySettingsDto,
   SshHostDto,
   ConnectionTestResult,
   FileViewDto,
@@ -156,6 +160,41 @@ export const api = {
   addLogSource: (label: string, path: string) =>
     request<LogSourceDto>('POST', '/api/log-sources', { label, path }),
   removeLogSource: (id: string) => request<void>('DELETE', `/api/log-sources/${id}`),
+  memories: (
+    filter: { scope?: MemoryScope; projectId?: string | 'none'; status?: string; q?: string } = {},
+  ) => {
+    const params = new URLSearchParams(
+      Object.entries(filter).filter(
+        (e): e is [string, string] => typeof e[1] === 'string' && e[1] !== '',
+      ),
+    );
+    return request<{ memories: MemoryDto[] }>(
+      'GET',
+      `/api/memories${params.size ? `?${params}` : ''}`,
+    );
+  },
+  createMemory: (m: {
+    scope: 'user' | 'project' | 'operational';
+    category: MemoryCategory;
+    content: string;
+    projectId: string | null;
+  }) => request<MemoryDto>('POST', '/api/memories', m),
+  updateMemory: (
+    id: string,
+    changes: Partial<{
+      content: string;
+      category: MemoryCategory;
+      pinned: boolean;
+      confidence: 'confirmed' | 'assumed';
+      status: 'active' | 'rejected';
+    }>,
+  ) => request<MemoryDto>('PATCH', `/api/memories/${id}`, changes),
+  deleteMemory: (id: string) => request<void>('DELETE', `/api/memories/${id}`),
+  memorySettings: () => request<MemorySettingsDto>('GET', '/api/memory/settings'),
+  setMemorySettings: (s: MemorySettingsDto) =>
+    request<MemorySettingsDto>('PUT', '/api/memory/settings', s),
+  exportMemory: (projectId: string) =>
+    request<{ path: string; count: number }>('POST', `/api/projects/${projectId}/memory/export`),
   rollbackRun: (runId: string) =>
     request<{ reverted: string[]; run: RunDto }>('POST', `/api/runs/${runId}/rollback`),
   retry: (id: string) => request<{ run: RunDto }>('POST', `/api/sessions/${id}/retry`),

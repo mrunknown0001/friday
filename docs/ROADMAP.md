@@ -2,7 +2,7 @@
 
 Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
-**Current phase: 6 (memory).**
+**Current phase: 7 (polish and hardening).**
 
 ## Phase 1: Foundation
 
@@ -111,8 +111,20 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
 ## Phase 6: Memory
 
-- ⬜ User, project, session, and operational memory with a write policy, secret filtering, deduplication, pinning,
-  editing, deletion, search, and "memories used" disclosure
+- ✅ User, project, session and operational memory in SQLite with an FTS5 index (BM25 ranking)
+- ✅ Backend write policy: secrets (patterns, natural-language "password is…", credential URLs, random tokens), code
+  and junk refused; deduplication with confidence upgrade; explicit replacement (`replaces_id`); user preferences
+  pending until approved; per-scope caps; evidence ordering (no "confirmed" facts from unseen results)
+- ✅ Retrieval: pinned, approved preferences, session notes, and relevant memories within a token budget, marked as
+  possibly outdated; usage recorded per run and disclosed in the UI ("Used N saved memories")
+- ✅ Isolation: project memories only in that project's sessions, session notes only in that session; project removal
+  deletes its memories
+- ✅ Memory manager: search, filter, edit, pin, delete, approve/reject, add, global and per-project disable, export to
+  `.friday/memory.md`; repository guidance files read as untrusted context
+- ✅ Session recovery (from Phases 1–4): persisted history, summaries, checkpoints and resume context
+- ✅ Tests: 181 server (14 new in `memory.test.ts`) and 23 frontend
+- ✅ Verified live on 2026-10-29 with `claude-sonnet-4.6` across two projects: memory saved, preference approved,
+  reused and disclosed in a new conversation, and not visible in the other project
 
 ## Phase 7: Polish and hardening
 

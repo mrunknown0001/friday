@@ -258,6 +258,55 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE approvals ADD COLUMN confirmation_required TEXT;
     `,
   },
+  {
+    version: 6,
+    name: 'memory',
+    up: `
+      CREATE TABLE memories (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL CHECK (scope IN ('user','project','session','operational')),
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        -- Deleting a project or session deletes the memories that belong to it.
+        project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK (status IN ('active','pending','superseded','rejected')),
+        confidence TEXT NOT NULL CHECK (confidence IN ('confirmed','assumed')),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL CHECK (source IN ('agent','user')),
+        source_run_id TEXT,
+        supersedes_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_used_at TEXT,
+        use_count INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX memories_scope ON memories(scope, project_id, status);
+      CREATE INDEX memories_session ON memories(session_id);
+
+      -- Full-text index (BM25 ranking) kept in sync by triggers.
+      CREATE VIRTUAL TABLE memories_fts USING fts5(content, category, content='memories', content_rowid='rowid');
+      CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, content, category) VALUES (new.rowid, new.content, new.category);
+      END;
+      CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content, category) VALUES ('delete', old.rowid, old.content, old.category);
+      END;
+      CREATE TRIGGER memories_au AFTER UPDATE OF content, category ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content, category) VALUES ('delete', old.rowid, old.content, old.category);
+        INSERT INTO memories_fts(rowid, content, category) VALUES (new.rowid, new.content, new.category);
+      END;
+
+      -- Which memories were shown to the model in which run (for "memories used" disclosure).
+      CREATE TABLE run_memories (
+        run_id TEXT NOT NULL,
+        memory_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        snapshot TEXT NOT NULL,
+        PRIMARY KEY (run_id, memory_id)
+      );
+    `,
+  },
 ];
 
 export function migrate(db: Database.Database, migrations: Migration[] = MIGRATIONS): number[] {

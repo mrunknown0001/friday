@@ -231,6 +231,65 @@ export interface LogSourceDto {
   createdAt: string;
 }
 
+// ------------------------------------------------------------------ memory (Phase 6)
+
+export type MemoryScope = 'user' | 'project' | 'session' | 'operational';
+
+export type MemoryCategory =
+  | 'preference'
+  | 'architecture'
+  | 'stack'
+  | 'command'
+  | 'environment'
+  | 'deployment'
+  | 'known_issue'
+  | 'decision'
+  | 'objective'
+  | 'progress'
+  | 'discovery'
+  | 'rejected_approach'
+  | 'blocker'
+  | 'procedure'
+  | 'lesson';
+
+/** pending: proposed by the agent, waiting for the user (user-scope memories only). */
+export type MemoryStatus = 'active' | 'pending' | 'superseded' | 'rejected';
+
+export interface MemoryDto {
+  id: string;
+  scope: MemoryScope;
+  category: MemoryCategory;
+  content: string;
+  projectId: string | null;
+  sessionId: string | null;
+  status: MemoryStatus;
+  /** confirmed: verified by a tool result or stated by the user; assumed: inferred. */
+  confidence: 'confirmed' | 'assumed';
+  pinned: boolean;
+  source: 'agent' | 'user';
+  sourceRunId: string | null;
+  supersedesId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  useCount: number;
+}
+
+export interface MemorySettingsDto {
+  enabled: boolean;
+  disabledProjectIds: string[];
+}
+
+/** A memory as it was shown to the model for one run. */
+export interface MemoryRef {
+  id: string;
+  scope: MemoryScope;
+  category: MemoryCategory;
+  content: string;
+  /** Why it was included: pinned, an approved user preference, session context, or relevance. */
+  reason: 'pinned' | 'preference' | 'session' | 'relevant';
+}
+
 export interface DeploymentStep {
   title: string;
   /** Exact command, if the step is a command. */
@@ -423,6 +482,8 @@ export interface SessionDetailDto extends SessionSummaryDto {
   /** Every run in the session, oldest first (for per-run reports). */
   runs: RunDto[];
   deploymentPlans: DeploymentPlanDto[];
+  /** Memories shown to the model, per run id. */
+  memoryUsage: Record<string, MemoryRef[]>;
 }
 
 export type RunPhase =
@@ -454,6 +515,8 @@ export type RunEvent =
   | { seq: number; type: 'approval_resolved'; approval: ApprovalDto }
   | { seq: number; type: 'command_output'; callId: string; chunk: string }
   | { seq: number; type: 'deployment_plan'; plan: DeploymentPlanDto }
+  | { seq: number; type: 'memories_used'; memories: MemoryRef[] }
+  | { seq: number; type: 'memory_saved'; memory: MemoryDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }
   | {
       seq: number;
