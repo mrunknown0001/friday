@@ -9,9 +9,17 @@ export interface ToolCall {
   argumentsJson: string;
 }
 
+/** An image sent with a user message (the provider receives it as a data URL). */
+export interface ImageInput {
+  mime: string;
+  base64: string;
+  width: number;
+  height: number;
+}
+
 export type ChatMessage =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string; images?: ImageInput[] }
   | { role: 'assistant'; content: string | null; toolCalls?: ToolCall[] }
   | { role: 'tool'; toolCallId: string; content: string };
 

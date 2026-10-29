@@ -21,12 +21,19 @@ import {
   gitShow,
   gitStatus,
 } from './gitTools.js';
+import { viewImage } from './imageTools.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
 import { listProcesses, readProcessOutput, startProcess, stopProcess } from './processTools.js';
 import { requestTaskPermissions } from './taskPermissionTool.js';
 import { decide, type PolicyDecision } from './policy.js';
-import { toToolDefinition, type ToolContext, type ToolOutput, type ToolSpec } from './types.js';
+import {
+  toToolDefinition,
+  type ToolContext,
+  type ToolImage,
+  type ToolOutput,
+  type ToolSpec,
+} from './types.js';
 import {
   fileInfo,
   findFiles,
@@ -72,6 +79,7 @@ export const DEFAULT_TOOLS = [
   fileInfo,
   searchCode,
   findFiles,
+  viewImage,
   updatePlan,
   requestTaskPermissions,
   writeFile,
@@ -112,6 +120,8 @@ export interface ToolExecution {
   truncated: boolean;
   durationMs: number;
   category: ToolSpec['category'] | null;
+  /** Images for the model (view_image); stored as attachments of the tool result. */
+  images?: ToolImage[];
 }
 
 function truncate(text: string, max: number): { text: string; truncated: boolean } {
@@ -131,10 +141,11 @@ export function makeExecution(
   status: ToolCallStatus,
   content: string,
   summary: string,
-  extra: { truncated?: boolean; label?: string } = {},
+  extra: { truncated?: boolean; label?: string; images?: ToolImage[] } = {},
 ): ToolExecution {
   const { text, truncated } = truncate(ctx.redactor.redact(content), ctx.maxOutputChars);
   return {
+    ...(extra.images?.length ? { images: extra.images } : {}),
     status,
     content: text,
     summary: ctx.redactor.redact(summary),
@@ -220,10 +231,17 @@ export async function runGuarded(
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), timeoutMs);
   const signal = AbortSignal.any([ctx.signal, timeout.signal]);
-  const done = (status: ToolCallStatus, content: string, summary: string, truncated = false) =>
+  const done = (
+    status: ToolCallStatus,
+    content: string,
+    summary: string,
+    truncated = false,
+    images?: ToolImage[],
+  ) =>
     makeExecution(ctx, call, started, spec.category, status, content, summary, {
       truncated,
       label,
+      ...(images ? { images } : {}),
     });
   try {
     const result = await Promise.race([
@@ -232,7 +250,7 @@ export async function runGuarded(
         signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
       ),
     ]);
-    return done('completed', result.content, result.summary, !!result.truncated);
+    return done('completed', result.content, result.summary, !!result.truncated, result.images);
   } catch (err) {
     if (ctx.signal.aborted) return done('skipped', 'Tool execution was cancelled.', 'Cancelled');
     if (timeout.signal.aborted)

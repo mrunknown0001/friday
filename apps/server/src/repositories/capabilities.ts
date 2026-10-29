@@ -6,6 +6,7 @@ interface CapRow {
   model: string;
   streaming: CapabilityState;
   tool_calling: CapabilityState;
+  image_input: CapabilityState;
   context_window: number | null;
   notes: string | null;
   probed_at: string | null;
@@ -22,6 +23,7 @@ export class CapabilityRepo {
       model,
       streaming: row?.streaming ?? 'unknown',
       toolCalling: row?.tool_calling ?? 'unknown',
+      imageInput: row?.image_input ?? 'unknown',
       contextWindow: row?.context_window ?? assumedContextWindow(model),
       contextWindowSource: row?.context_window ? 'configured' : 'assumed',
       probedAt: row?.probed_at ?? null,
@@ -31,16 +33,38 @@ export class CapabilityRepo {
 
   saveProbe(
     model: string,
-    result: { streaming: CapabilityState; toolCalling: CapabilityState; notes: string | null },
+    result: {
+      streaming: CapabilityState;
+      toolCalling: CapabilityState;
+      imageInput: CapabilityState;
+      notes: string | null;
+    },
   ): void {
     this.db
       .prepare(
-        `INSERT INTO model_capabilities (model, streaming, tool_calling, notes, probed_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO model_capabilities (model, streaming, tool_calling, image_input, notes, probed_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(model) DO UPDATE SET streaming = excluded.streaming, tool_calling = excluded.tool_calling,
-           notes = excluded.notes, probed_at = excluded.probed_at`,
+           image_input = excluded.image_input, notes = excluded.notes, probed_at = excluded.probed_at`,
       )
-      .run(model, result.streaming, result.toolCalling, result.notes, new Date().toISOString());
+      .run(
+        model,
+        result.streaming,
+        result.toolCalling,
+        result.imageInput,
+        result.notes,
+        new Date().toISOString(),
+      );
+  }
+
+  /** Learned from a real request: the provider refused images for this model. */
+  setImageInput(model: string, state: CapabilityState): void {
+    this.db
+      .prepare(
+        `INSERT INTO model_capabilities (model, image_input) VALUES (?, ?)
+         ON CONFLICT(model) DO UPDATE SET image_input = excluded.image_input`,
+      )
+      .run(model, state);
   }
 
   setContextWindow(model: string, tokens: number | null): void {

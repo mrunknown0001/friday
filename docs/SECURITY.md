@@ -142,6 +142,16 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Exposing a sandboxed dev server            | Ports are published on `127.0.0.1` only, only for a sandbox with network, and are part of the approval fingerprint.                                                                                            |
 | The model stopping other programs          | `stop_process` (category `process_control`, no approval) only accepts ids of processes Friday started in the same project.                                                                                     |
 
+## Images
+
+| Threat                                  | Mitigation                                                                                                                                                                                    |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Malicious files posing as images        | The type comes from the bytes (PNG, JPEG, WebP, GIF signatures), never the name or Content-Type; SVG is never accepted. Images are served with their real type, `nosniff`, and the app's CSP. |
+| Oversized uploads                       | 5 MB and 8000 px per side, enforced by the server; 4 images per message. The app downsizes before uploading.                                                                                  |
+| Secrets visible in screenshots          | Cannot be redacted. The composer warns that images go to the provider. `view_image` uses the same path checks as `read_file`, so credential files cannot be opened.                           |
+| Prompt injection through text in images | The system prompt treats text inside images as data, like file contents.                                                                                                                      |
+| Reusing another conversation's upload   | An upload can be sent once, only while unsent, and only in its own conversation (if it has one). Unsent uploads are deleted after 24 hours.                                                   |
+
 ## Known limitations
 
 - Without the per-project **command sandbox**, an approved `run_command` runs as the current user with full

@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { ProviderError } from './providers/errors.js';
 import { HttpError } from './http/errors.js';
 import { registerApprovalRoutes } from './http/routes/approvals.js';
+import { registerAttachmentRoutes } from './http/routes/attachments.js';
 import { registerDevopsRoutes } from './http/routes/devops.js';
 import { registerMemoryRoutes } from './http/routes/memory.js';
 import { registerProcessRoutes } from './http/routes/processes.js';
@@ -99,6 +100,7 @@ export async function buildApp(
   registerProjectRoutes(app, services);
   registerProcessRoutes(app, services);
   registerApprovalRoutes(app, services);
+  registerAttachmentRoutes(app, services);
   registerDevopsRoutes(app, services);
   registerMemoryRoutes(app, services);
 

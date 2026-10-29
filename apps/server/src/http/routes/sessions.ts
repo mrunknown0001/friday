@@ -1,6 +1,7 @@
 import type { AppNotice, RunEvent, SessionDetailDto } from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { IMAGE_LIMITS } from '../../attachments/image.js';
 import { MAX_USER_MESSAGE_CHARS } from '../../chat/runManager.js';
 import { toMessageDto } from '../../repositories/messages.js';
 import { toRunDto } from '../../repositories/runs.js';
@@ -98,8 +99,14 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     { bodyLimit: MAX_USER_MESSAGE_CHARS * 4 + 1024 },
     async (req, reply) => {
       const { id } = parseInput(idParams, req.params);
-      const body = parseInput(z.object({ content: z.string() }), req.body);
-      const result = s.runManager.startMessage(id, body.content);
+      const body = parseInput(
+        z.object({
+          content: z.string(),
+          attachmentIds: z.array(z.uuid()).max(IMAGE_LIMITS.perMessage).optional(),
+        }),
+        req.body,
+      );
+      const result = s.runManager.startMessage(id, body.content, body.attachmentIds);
       reply.code(202);
       return result;
     },

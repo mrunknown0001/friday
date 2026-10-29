@@ -12,6 +12,7 @@ import {
   ArrowDown,
   ArrowUp,
   FolderOpen,
+  ImagePlus,
   Loader2,
   PanelRight,
   RotateCcw,
@@ -21,7 +22,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { LiveRun } from '../lib/useRunStream';
+import { api } from '../lib/api';
+import { ACCEPTED, imageFiles, prepareImage } from '../lib/images';
 import { ApprovalCard } from './ApprovalCard';
+import { AttachmentThumbs, DraftImages, type DraftImage } from './Attachments';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
 import { SuggestionChips } from './SuggestionChips';
@@ -41,7 +45,7 @@ interface Props {
   blockedReason: string | null;
   sidePanelOpen: boolean;
   onToggleSidePanel: () => void;
-  onSend: (text: string) => Promise<boolean>;
+  onSend: (text: string, attachmentIds?: string[]) => Promise<boolean>;
   onStop: () => void;
   onRetry: () => void;
   onOpenSettings: () => void;
@@ -73,8 +77,13 @@ function UserRow({ m }: { m: MessageDto }) {
       <div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md bg-zinc-800">
         <User className="h-4 w-4 text-zinc-300" aria-hidden />
       </div>
-      <div className="min-w-0 flex-1 whitespace-pre-wrap break-words pt-0.5 text-[0.94rem] text-zinc-100">
-        {m.content}
+      <div className="min-w-0 flex-1 pt-0.5">
+        {m.content && (
+          <div className="whitespace-pre-wrap break-words text-[0.94rem] text-zinc-100">
+            {m.content}
+          </div>
+        )}
+        {m.attachments && <AttachmentThumbs attachments={m.attachments} className="mt-2" />}
       </div>
     </div>
   );
@@ -130,6 +139,7 @@ export function toRows(
         truncated: m.tool?.truncated,
         approval: m.tool?.approvalId ? approvals.get(m.tool.approvalId) : undefined,
         deploymentPlan: m.toolCallId ? plans.get(m.toolCallId) : undefined,
+        attachments: m.attachments,
       };
       const last = rows.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -304,12 +314,18 @@ function LiveOutput({
   );
 }
 
+/** Images per message (the server enforces the same limit). */
+const MAX_IMAGES = 4;
+
 export function ChatView(props: Props) {
   const { detail, project, live, canSend, blockedReason, onSend, onStop, onRetry, onOpenSettings } =
     props;
   const { approvals, onDecide, onRollback } = props;
   const runsById = new Map((detail?.runs ?? []).map((r) => [r.id, r]));
   const [draft, setDraft] = useState('');
+  const [images, setImages] = useState<DraftImage[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -347,14 +363,46 @@ export function ChatView(props: Props) {
     el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
   };
 
+  const uploading = images.some((d) => d.status === 'uploading');
+  const ready = images.filter((d) => d.status === 'ready' && d.attachment);
+
+  /** Downsize and upload pasted, dropped or picked images; each shows in the composer at once. */
+  const addImages = (files: File[]) => {
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0 || !files.length) return;
+    for (const file of files.slice(0, room)) {
+      const key = `${Date.now()}-${Math.random()}`;
+      const name = file.name && file.name !== 'image.png' ? file.name : 'pasted image';
+      setImages((list) => [...list, { key, name, status: 'uploading' }]);
+      const update = (patch: Partial<DraftImage>) =>
+        setImages((list) => list.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+      void prepareImage(file)
+        .then((blob) => api.uploadAttachment(blob, name))
+        .then((attachment) => update({ status: 'ready', attachment }))
+        .catch((e: unknown) =>
+          update({ status: 'error', error: e instanceof Error ? e.message : String(e) }),
+        );
+    }
+  };
+  const removeImage = (d: DraftImage) => {
+    setImages((list) => list.filter((x) => x.key !== d.key));
+    if (d.attachment) void api.removeAttachment(d.attachment.id).catch(() => undefined);
+  };
+
   const submit = async () => {
     const text = draft.trim();
-    if (!text || running || submitting || !canSend) return;
+    if ((!text && !ready.length) || uploading || running || submitting || !canSend) return;
     setSubmitting(true);
     stickToBottom.current = true;
-    const ok = await onSend(text);
+    const ok = await onSend(
+      text,
+      ready.map((d) => d.attachment!.id),
+    );
     setSubmitting(false);
-    if (ok) setDraft('');
+    if (ok) {
+      setDraft('');
+      setImages([]);
+    }
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -514,49 +562,104 @@ export function ChatView(props: Props) {
               </Button>
             </div>
           )}
-          <div className="flex items-end gap-2 rounded-xl border border-zinc-800 bg-zinc-900 p-2 focus-within:border-zinc-600">
-            <label htmlFor="composer" className="sr-only">
-              Message
-            </label>
-            <textarea
-              id="composer"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onKeyDown}
-              rows={Math.min(10, Math.max(1, draft.split('\n').length))}
-              placeholder={
-                project
-                  ? `Ask about ${project.name}… (Shift+Enter for a new line)`
-                  : 'Ask about code, DevOps, deployments… (Shift+Enter for a new line)'
-              }
-              className="max-h-64 min-h-[2.25rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.94rem] outline-none placeholder:text-zinc-500"
-            />
-            {running ? (
-              <Button
-                key="stop"
-                variant="danger"
-                size="md"
-                onClick={onStop}
-                aria-label="Stop generating"
-              >
-                <Square className="h-3.5 w-3.5 fill-current" /> Stop
-              </Button>
-            ) : (
-              <Button
-                key="send"
-                variant="primary"
-                size="icon"
-                onClick={() => void submit()}
-                disabled={!draft.trim() || submitting || !canSend}
-                aria-label="Send message"
-              >
-                {submitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowUp className="h-4 w-4" />
-                )}
-              </Button>
+          <div
+            onDragOver={(e) => {
+              if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              const files = imageFiles(e.dataTransfer.files);
+              setDragging(false);
+              if (!files.length) return;
+              e.preventDefault();
+              addImages(files);
+            }}
+            className={cn(
+              'rounded-xl border bg-zinc-900 p-2 focus-within:border-zinc-600',
+              dragging ? 'border-sky-500' : 'border-zinc-800',
             )}
+          >
+            <DraftImages images={images} onRemove={removeImage} />
+            {images.length > 0 && (
+              <p className="px-1 pb-1 text-[11px] text-zinc-500">
+                Images are sent to the model provider with your message. Don’t attach screenshots
+                that show passwords, keys or other secrets.
+              </p>
+            )}
+            <div className="flex items-end gap-2">
+              <label htmlFor="composer" className="sr-only">
+                Message
+              </label>
+              <input
+                ref={fileInput}
+                type="file"
+                accept={ACCEPTED.join(',')}
+                multiple
+                hidden
+                onChange={(e) => {
+                  addImages(imageFiles(e.target.files));
+                  e.target.value = '';
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInput.current?.click()}
+                disabled={images.length >= MAX_IMAGES}
+                aria-label="Attach images"
+                title={`Attach images (or paste / drop them), up to ${MAX_IMAGES}`}
+              >
+                <ImagePlus className="h-4 w-4" />
+              </Button>
+              <textarea
+                id="composer"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onPaste={(e) => {
+                  const files = imageFiles(e.clipboardData.items);
+                  if (!files.length) return;
+                  // Only images are taken over; pasted text still goes into the message.
+                  if (!e.clipboardData.getData('text/plain')) e.preventDefault();
+                  addImages(files);
+                }}
+                onKeyDown={onKeyDown}
+                rows={Math.min(10, Math.max(1, draft.split('\n').length))}
+                placeholder={
+                  project
+                    ? `Ask about ${project.name}… (Shift+Enter for a new line)`
+                    : 'Ask about code, DevOps, deployments… (Shift+Enter for a new line)'
+                }
+                className="max-h-64 min-h-[2.25rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.94rem] outline-none placeholder:text-zinc-500"
+              />
+              {running ? (
+                <Button
+                  key="stop"
+                  variant="danger"
+                  size="md"
+                  onClick={onStop}
+                  aria-label="Stop generating"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" /> Stop
+                </Button>
+              ) : (
+                <Button
+                  key="send"
+                  variant="primary"
+                  size="icon"
+                  onClick={() => void submit()}
+                  disabled={(!draft.trim() && !ready.length) || uploading || submitting || !canSend}
+                  aria-label="Send message"
+                >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowUp className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

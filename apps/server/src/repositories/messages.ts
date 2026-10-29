@@ -1,6 +1,7 @@
 import type { MessageDto, MessageRole, MessageStatus, ToolCallStatus } from '@friday/shared';
 import type { Db } from '../db/database.js';
 import type { ToolCall } from '../providers/types.js';
+import { AttachmentRepo, toAttachmentDto } from './attachments.js';
 
 interface MessageRow {
   id: number;
@@ -98,7 +99,21 @@ export interface NewMessage {
 }
 
 export class MessageRepo {
-  constructor(private readonly db: Db) {}
+  private readonly attachments: AttachmentRepo;
+
+  constructor(private readonly db: Db) {
+    this.attachments = new AttachmentRepo(db);
+  }
+
+  /** Add attachment metadata (not the bytes) to the messages that have some. */
+  private withAttachments(list: StoredMessage[]): StoredMessage[] {
+    const byMessage = this.attachments.byMessages(list.map((m) => m.id));
+    for (const m of list) {
+      const found = byMessage.get(m.id);
+      if (found) m.attachments = found.map(toAttachmentDto);
+    }
+    return list;
+  }
 
   insert(m: NewMessage): StoredMessage {
     const info = this.db
@@ -122,7 +137,7 @@ export class MessageRepo {
 
   get(id: number): StoredMessage | null {
     const row = this.db.prepare(`${SELECT} WHERE m.id = ?`).get(id) as MessageRow | undefined;
-    return row ? toStored(row) : null;
+    return row ? this.withAttachments([toStored(row)])[0]! : null;
   }
 
   update(id: number, content: string, status: MessageStatus, toolCalls?: ToolCall[]): void {
@@ -146,7 +161,7 @@ export class MessageRepo {
     afterId: number,
     throughId: number | null = null,
   ): StoredMessage[] {
-    return (
+    const rows = (
       this.db
         .prepare(
           `${SELECT} WHERE m.session_id = ? AND m.id > ? AND (? IS NULL OR m.id <= ?)
@@ -154,21 +169,24 @@ export class MessageRepo {
         )
         .all(sessionId, afterId, throughId, throughId) as MessageRow[]
     ).map(toStored);
+    return this.withAttachments(rows);
   }
 
   listBySession(sessionId: string): StoredMessage[] {
-    return (
-      this.db
-        .prepare(`${SELECT} WHERE m.session_id = ? ORDER BY m.id`)
-        .all(sessionId) as MessageRow[]
-    ).map(toStored);
+    return this.withAttachments(
+      (
+        this.db
+          .prepare(`${SELECT} WHERE m.session_id = ? ORDER BY m.id`)
+          .all(sessionId) as MessageRow[]
+      ).map(toStored),
+    );
   }
 
   lastUserMessage(sessionId: string): StoredMessage | null {
     const row = this.db
       .prepare(`${SELECT} WHERE m.session_id = ? AND m.role = 'user' ORDER BY m.id DESC LIMIT 1`)
       .get(sessionId) as MessageRow | undefined;
-    return row ? toStored(row) : null;
+    return row ? this.withAttachments([toStored(row)])[0]! : null;
   }
 
   countBySession(sessionId: string): number {

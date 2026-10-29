@@ -332,6 +332,29 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE projects ADD COLUMN sandbox TEXT;
     `,
   },
+  {
+    version: 10,
+    name: 'attachments',
+    up: `
+      -- Images attached to messages. Uploaded first (message_id NULL, pending), then bound to the
+      -- user message that sends them; pending uploads are removed after a day.
+      CREATE TABLE attachments (
+        id TEXT PRIMARY KEY,
+        session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+        message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+        name TEXT,
+        mime TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        data BLOB NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX attachments_message ON attachments(message_id);
+      ALTER TABLE model_capabilities ADD COLUMN image_input TEXT NOT NULL DEFAULT 'unknown';
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

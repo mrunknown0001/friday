@@ -155,6 +155,7 @@ describe('RunManager', () => {
     s.capabilities.saveProbe('test-model', {
       streaming: 'supported',
       toolCalling: 'unsupported',
+      imageInput: 'unknown',
       notes: null,
     });
     // Pick a window whose history budget (~1000 tokens) fits two ~435-token user messages but not three.

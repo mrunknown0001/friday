@@ -307,14 +307,14 @@ export function App() {
     }
   };
 
-  const send = async (text: string): Promise<boolean> => {
+  const send = async (text: string, attachmentIds: string[] = []): Promise<boolean> => {
     try {
       let id = activeId;
       if (!id) {
         id = (await api.createSession(projectId)).id;
         setActiveId(id);
       }
-      const { run } = await api.sendMessage(id, text);
+      const { run } = await api.sendMessage(id, text, attachmentIds);
       await loadDetail(id);
       setRunId(run.id);
       void loadSessions();

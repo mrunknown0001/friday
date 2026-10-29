@@ -7,6 +7,7 @@ import type {
   RiskLevel,
 } from '@friday/shared';
 import { z } from 'zod';
+import type { ImageInfo } from '../attachments/image.js';
 import type { ToolDefinition } from '../providers/types.js';
 import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
 import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
@@ -100,9 +101,17 @@ export interface Proposal {
   apply: (ctx: ToolContext) => Promise<ToolOutput>;
 }
 
+/** An image a tool returns for the model to look at (sent right after the tool results). */
+export interface ToolImage {
+  data: Buffer;
+  info: ImageInfo;
+  name: string;
+}
+
 export interface ToolOutput {
   /** Text returned to the model. Untrusted data from the workspace may appear here. */
   content: string;
+  images?: ToolImage[];
   /** One-line, human-readable result for the activity timeline. */
   summary: string;
   truncated?: boolean;

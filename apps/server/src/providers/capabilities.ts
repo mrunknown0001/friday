@@ -23,8 +23,13 @@ export function assumedContextWindow(model: string): number {
 export interface ProbeResult {
   streaming: CapabilityState;
   toolCalling: CapabilityState;
+  imageInput: CapabilityState;
   notes: string | null;
 }
+
+/** A 16×16 solid red PNG: a model that sees images names the colour. */
+const RED_SQUARE =
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGO4IyJCEmIY1TCqYfhqAAACcQQQFwFJQgAAAABJRU5ErkJggg==';
 
 const NOT_SUPPORTED_KINDS = new Set(['unsupported', 'bad_request']);
 
@@ -112,5 +117,33 @@ export async function probeCapabilities(
     }
   }
 
-  return { streaming, toolCalling, notes: notes.length ? notes.join('; ') : null };
+  let imageInput: CapabilityState;
+  try {
+    const result = await provider.complete({
+      model,
+      operation: 'probe_images',
+      messages: [
+        {
+          role: 'user',
+          content: 'What colour is this image? Answer with one word.',
+          images: [{ mime: 'image/png', base64: RED_SQUARE, width: 16, height: 16 }],
+        },
+      ],
+      maxOutputTokens: 16,
+      ...(signal ? { signal } : {}),
+    });
+    // Accepted but answered wrongly: the provider may have dropped the image.
+    imageInput = /red/i.test(result.text) ? 'supported' : 'unknown';
+    if (imageInput !== 'supported')
+      notes.push('images: request accepted, but the image was not described');
+  } catch (err) {
+    if (err instanceof ProviderError && NOT_SUPPORTED_KINDS.has(err.kind)) {
+      imageInput = 'unsupported';
+      notes.push(`images: ${err.message}`);
+    } else {
+      throw err;
+    }
+  }
+
+  return { streaming, toolCalling, imageInput, notes: notes.length ? notes.join('; ') : null };
 }
