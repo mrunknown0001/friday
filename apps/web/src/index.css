@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-100 antialiased;
+}
+
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-sky-500;
+}
+
+/* Markdown content */
+.prose-friday {
+  @apply text-[0.94rem] leading-relaxed;
+}
+.prose-friday > * + * {
+  @apply mt-3;
+}
+.prose-friday h1,
+.prose-friday h2,
+.prose-friday h3 {
+  @apply font-semibold text-zinc-50 mt-5;
+}
+.prose-friday h1 {
+  @apply text-xl;
+}
+.prose-friday h2 {
+  @apply text-lg;
+}
+.prose-friday h3 {
+  @apply text-base;
+}
+.prose-friday ul {
+  @apply list-disc pl-6 space-y-1;
+}
+.prose-friday ol {
+  @apply list-decimal pl-6 space-y-1;
+}
+.prose-friday a {
+  @apply text-sky-400 underline underline-offset-2;
+}
+.prose-friday blockquote {
+  @apply border-l-2 border-zinc-700 pl-3 text-zinc-400;
+}
+.prose-friday :not(pre) > code {
+  @apply rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.85em] text-zinc-200;
+}
+.prose-friday table {
+  @apply w-full border-collapse text-sm;
+}
+.prose-friday th,
+.prose-friday td {
+  @apply border border-zinc-800 px-2 py-1 text-left;
+}
+.prose-friday th {
+  @apply bg-zinc-900;
+}
+.prose-friday pre code.hljs {
+  @apply bg-transparent p-0;
+}

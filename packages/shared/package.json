@@ -1,0 +1,13 @@
+{
+  "name": "@friday/shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Type-only API contract shared by server and web",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  }
+}
