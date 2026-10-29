@@ -48,10 +48,25 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Runaway processes                        | Per-command timeout (max 600 s), closed stdin, and process-group SIGTERM then SIGKILL on timeout or cancel.                                                                                                                                                                    |
 | Misleading success reports               | The UI shows a run record built from approval outcomes (exit codes, stale and rejected actions) next to the model's answer.                                                                                                                                                    |
 
+## Threats addressed in Phase 4 (git and coding workflow)
+
+| Threat                                                           | Mitigation                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Malicious repository config executing programs during inspection | Every git call passes `-c core.fsmonitor=false`, `core.pager=cat`, `core.sshCommand=false`, empty `credential.helper`, `core.hooksPath=/dev/null` (inspection), and `--no-ext-diff --no-textconv` for diffs. Tested against a repo with all of these booby-trapped. |
+| Option injection through refs or paths                           | Refs must match a strict pattern and never start with `-`; `--end-of-options` and `--` separate them; pathspecs starting with `:` are refused.                                                                                                                      |
+| Git exposing or committing files outside the project             | Git tools require the project root to be the repository top level.                                                                                                                                                                                                  |
+| Committing secrets                                               | `git_commit` refuses when any in-scope path is a credential file; diffs of credential files are hidden.                                                                                                                                                             |
+| Committing more than was reviewed                                | `git commit --only -- <paths>` commits exactly the approved paths; the fingerprint covers HEAD, branch, and the per-file diffs.                                                                                                                                     |
+| Destructive git operations                                       | No reset/checkout/clean/push tools; via `run_command` they are flagged high risk and need approval like any command.                                                                                                                                                |
+| Partial multi-file application                                   | `edit_files` restores already-written files if any write fails and records changes only after all succeed.                                                                                                                                                          |
+| Rollback clobbering newer work                                   | Rollback validates every file first and refuses if any was edited since, or changed again by a later task.                                                                                                                                                          |
+| Lost progress or double execution after a crash                  | Checkpoints after every action; pending approvals are cancelled at startup; resume context tells the model what already ran.                                                                                                                                        |
+
 ## Known limitations
 
 - `run_command` is **not sandboxed**: an approved command runs as the current user with full filesystem and network
   access. The approval card says so. Container isolation for untrusted code is still to come.
+- Commit hooks are the repository's own code and run during an approved `git_commit` (the approval card lists them).
 - Risk notes on commands are heuristics for the reviewer; they never relax the approval requirement.
 
 - Any process running as the same OS user can call the API. A per-launch bearer token (for Electron, passed through the

@@ -2,11 +2,12 @@
 
 A local-first AI coding and DevOps assistant that uses [NoTokenLimit](https://notokenlimit.com) as its model provider.
 
-**Current status: Phase 3 (approval engine).** Friday investigates an authorized project with read-only tools, then
-proposes changes and commands that run **only after you approve each one**: file edits show a line-numbered diff, and
-commands show the exact argv or shell script, working directory, and risk. Applied file changes can be undone. A run
-record under each answer lists what actually happened, taken from Friday's logs rather than the model's wording.
-Git operations, network tools, remote hosts, and deployments are not available yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Current status: Phase 4 (coding agent).** Friday investigates an authorized project, inspects git, proposes edits
+(including multi-file change sets), runs tests, and commits or branches, each change or command **only after you approve
+it**. After every task it shows a **verification report** built from its own records (which files changed, whether a
+test or build passed _after_ the last change, what was committed), with one-click rollback. Interrupted tasks keep a
+checkpoint and resume without redoing finished steps. Pushing, remote servers, and deployments are not available as
+tools yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -67,13 +68,16 @@ npm start
 
 Reading is automatic. These always need your approval, one action at a time:
 
-| Tool          | What you review                                                                                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `edit_file`   | Diff of exact-string replacements in an existing file                                                                                                                    |
-| `write_file`  | Diff for a new file or a full rewrite                                                                                                                                    |
-| `delete_file` | The file's contents being removed (a backup is kept)                                                                                                                     |
-| `move_file`   | Source and destination (never overwrites)                                                                                                                                |
-| `run_command` | Exact command (argv, or `/bin/sh -c` script when shell features are needed), working directory, timeout, network expectation, environment variable names, and risk notes |
+| Tool                | What you review                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `edit_file`         | Diff of exact-string replacements in an existing file                                                                                                                    |
+| `write_file`        | Diff for a new file or a full rewrite                                                                                                                                    |
+| `delete_file`       | The file's contents being removed (a backup is kept)                                                                                                                     |
+| `move_file`         | Source and destination (never overwrites)                                                                                                                                |
+| `edit_files`        | Several files changed as one all-or-nothing step, one diff per file                                                                                                      |
+| `git_commit`        | Branch, HEAD, exact message, the files and diffs being committed, and any hooks that will run. Only the listed paths are committed; nothing is pushed                    |
+| `git_create_branch` | New branch name and starting commit                                                                                                                                      |
+| `run_command`       | Exact command (argv, or `/bin/sh -c` script when shell features are needed), working directory, timeout, network expectation, environment variable names, and risk notes |
 
 - **Approve once**, **Reject** (optionally with a note telling Friday what to do instead), or **Cancel run**.
   There is no "always allow".
@@ -83,6 +87,27 @@ Reading is automatic. These always need your approval, one action at a time:
 - Commands run as your user on this machine. **This is not a sandbox.** stdin is closed, `CI=1` is set, and only a
   small allowlist of environment variables is passed (no API keys or tokens).
 - **Undo** restores a file only if it is still exactly as Friday left it; it never overwrites your later edits.
+  **Roll back this run** on a verification report undoes all of a task's file changes, newest first, and does nothing
+  if any of them was edited since.
+
+## Verification reports and resuming
+
+- After a task that proposed actions, Friday adds a **verification report** generated from its records, not from the
+  model's answer. Its status is _verified_ (a test/build/lint/type-check command passed after the last file change),
+  _failed_ (the last such check failed), _not verified_ (files changed but nothing checked them afterwards), or
+  _no file changes_. It also lists the files, commands with exit codes, and commits, and flags files edited outside
+  Friday since.
+- Progress is checkpointed after every executed action. If the server stops mid-task, the run shows as interrupted
+  with its checkpoint. **Resume** gives the model a summary of what was already done (files changed, commands and their
+  results, plan) so it continues instead of starting over. Approvals that were pending at the time are cancelled.
+
+## Git
+
+Read-only inspection (`git_status`, `git_diff`, `git_log`, `git_show`, `git_branches`) runs without approval.
+Committing and creating branches need approval. Push, merge, rebase, and reset are not tools: if you ask for one, the
+agent proposes it through `run_command`, where it is flagged as high risk. Git tools only work when the project folder
+is the repository's top level, and they run with settings that stop a repository's own config from executing programs
+(`core.fsmonitor`, diff drivers, pagers).
 
 What Friday will not read, even inside a project: credential files (`.env`, `.env.*` except templates such as
 `.env.example`, private keys, `.npmrc`, `auth.json`, `*.tfstate`, `.ssh/`, `.aws/`, …) and `.git` internals.

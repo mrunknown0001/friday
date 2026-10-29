@@ -66,6 +66,7 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
       hasSummary: session.summary !== null,
       plan: session.plan,
       approvals: s.approvalRepo.listBySession(id),
+      runs: s.runs.listBySession(id).map(toRunDto),
     };
   });
 

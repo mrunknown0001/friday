@@ -173,6 +173,19 @@ export type ApprovalDetails =
       env: string[];
       network: boolean;
       riskReasons: string[];
+    }
+  | {
+      kind: 'git';
+      operation: 'commit' | 'create_branch';
+      /** Current branch (null when HEAD is detached). */
+      branch: string | null;
+      head: string | null;
+      message: string | null;
+      newBranch: string | null;
+      /** What the commit will contain. */
+      files: FileChangePreview[];
+      /** True if the repository has hooks that git will run (e.g. pre-commit). */
+      hooks: string[];
     };
 
 export interface ApprovalDto {
@@ -265,6 +278,41 @@ export type RunErrorKind =
   | 'context_overflow'
   | 'approval_expired';
 
+export interface RunCheckpoint {
+  iteration: number;
+  toolCalls: number;
+  filesChanged: string[];
+  lastCommand: { title: string; result: string } | null;
+  plan: PlanStep[] | null;
+  updatedAt: string;
+}
+
+export type VerificationStatus = 'verified' | 'failed' | 'unverified' | 'no_changes';
+
+export interface RunReport {
+  status: VerificationStatus;
+  /** One-sentence explanation of the status, generated from records (not by the model). */
+  note: string;
+  files: Array<{
+    path: string;
+    change: 'create' | 'modify' | 'delete' | 'move';
+    fromPath: string | null;
+    reverted: boolean;
+    /** The file no longer matches what Friday wrote (edited elsewhere afterwards). */
+    modifiedSince: boolean;
+  }>;
+  commands: Array<{
+    title: string;
+    result: string;
+    exitCode: number | null;
+    /** Looks like a test, build, lint or type-check command. */
+    verification: boolean;
+    /** Ran after the last file change in this run. */
+    afterLastChange: boolean;
+  }>;
+  commits: string[];
+}
+
 export interface RunDto {
   id: string;
   sessionId: string;
@@ -275,6 +323,8 @@ export interface RunDto {
   retryable: boolean;
   startedAt: string;
   finishedAt: string | null;
+  checkpoint: RunCheckpoint | null;
+  report: RunReport | null;
 }
 
 export interface SessionSummaryDto {
@@ -292,6 +342,8 @@ export interface SessionDetailDto extends SessionSummaryDto {
   hasSummary: boolean;
   plan: PlanStep[] | null;
   approvals: ApprovalDto[];
+  /** Every run in the session, oldest first (for per-run reports). */
+  runs: RunDto[];
 }
 
 export type RunPhase =

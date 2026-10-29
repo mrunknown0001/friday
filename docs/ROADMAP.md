@@ -2,7 +2,7 @@
 
 Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
-**Current phase: 4 (coding agent).**
+**Current phase: 5 (DevOps agent).**
 
 ## Phase 1: Foundation
 
@@ -73,8 +73,21 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
 ## Phase 4: Coding agent
 
-- ⬜ Multi-file edits, test execution, error interpretation, git status/diff/log
-- ⬜ Task checkpoints, verification reports, rollback
+- ✅ Git inspection tools: `git_status` (porcelain v2), `git_diff` (working tree, staged, against a ref, stat), `git_log`,
+  `git_show`, `git_branches`; credential-file diffs hidden; refs validated and `--end-of-options` used
+- ✅ Git hardening: `core.fsmonitor`, external diff and textconv drivers, pager, credential helper and hooks
+  neutralised for inspection; the project root must be the repository top level
+- ✅ `git_commit` (exact paths only via `git commit --only`; other staged work untouched; credential files refused;
+  hooks disclosed) and `git_create_branch`, both approval-gated with stale detection
+- ✅ Multi-file edits: `edit_files` with a single approval and all-or-nothing application
+- ✅ Error interpretation: failing commands list the project `file:line` locations referenced in their output
+- ✅ Task checkpoints after every executed action; resumption context for the next attempt; tasks spanning several
+  attempts are reported and rolled back as one
+- ✅ Verification reports from records (verified / failed / unverified / no changes, drift detection, commits) and
+  whole-run rollback
+- ✅ Tests: 145 server (21 new in `phase4.test.ts`, including a malicious-repository test) and 15 frontend
+- ✅ Verified live on 2026-10-29 with `claude-haiku-4.5`: branch → edit → `npm test` (exit 0) → commit in a real git
+  repo with a "verified" report; and a `kill -9` mid-task followed by a restart and resume that did not redo the edit
 
 ## Phase 5: DevOps agent
 

@@ -90,6 +90,102 @@ async function atomicWrite(abs: string, content: string, mode?: number) {
 const sizeRisk = (p: FileChangePreview): RiskLevel =>
   p.added + p.removed > 400 ? 'high' : 'medium';
 
+/** A computed, not-yet-applied change to one text file. */
+interface FilePlan {
+  rel: string;
+  abs: string;
+  before: { buf: Buffer; text: string } | null;
+  after: string;
+  preview: FileChangePreview;
+  mode: number | undefined;
+  fingerprint: string;
+}
+
+async function planWrite(root: string, p: string, content: string): Promise<FilePlan> {
+  const target = await resolveForWrite(root, p);
+  const before = target.exists ? await readText(target.abs, target.rel) : null;
+  if (before?.text === content) {
+    throw new WorkspaceError('unsupported', `"${target.rel}" already has exactly this content.`);
+  }
+  return {
+    rel: target.rel,
+    abs: target.abs,
+    before,
+    after: content,
+    preview: makeDiff(target.rel, before?.text ?? '', content, before ? 'modify' : 'create'),
+    mode: target.exists ? (await fs.stat(target.abs)).mode : undefined,
+    fingerprint: `${target.rel}:${before ? sha256(before.buf) : 'absent'}`,
+  };
+}
+
+const editSchema = z.object({
+  old_text: z.string().min(1).max(100_000),
+  new_text: z.string().max(100_000),
+  replace_all: z.boolean().default(false),
+});
+type Edit = z.infer<typeof editSchema>;
+
+async function planEdit(root: string, p: string, edits: Edit[]): Promise<FilePlan> {
+  const target = await resolveForWrite(root, p);
+  if (!target.exists) {
+    throw new WorkspaceError(
+      'not_found',
+      `"${target.rel}" does not exist; use write_file to create it.`,
+    );
+  }
+  const before = await readText(target.abs, target.rel);
+  let after = before.text;
+  edits.forEach((e, i) => {
+    const count = after.split(e.old_text).length - 1;
+    if (count === 0) {
+      throw new WorkspaceError(
+        'unsupported',
+        `Edit ${i + 1} to ${target.rel}: old_text was not found. Re-read the file and copy the text exactly.`,
+      );
+    }
+    if (count > 1 && !e.replace_all) {
+      throw new WorkspaceError(
+        'unsupported',
+        `Edit ${i + 1} to ${target.rel}: old_text matches ${count} places. Include more surrounding lines or set replace_all.`,
+      );
+    }
+    after = e.replace_all
+      ? after.split(e.old_text).join(e.new_text)
+      : after.replace(e.old_text, () => e.new_text);
+  });
+  if (after === before.text)
+    throw new WorkspaceError('unsupported', `The edits do not change ${target.rel}.`);
+  return {
+    rel: target.rel,
+    abs: target.abs,
+    before,
+    after,
+    preview: makeDiff(target.rel, before.text, after, 'modify'),
+    mode: (await fs.stat(target.abs)).mode,
+    fingerprint: `${target.rel}:${sha256(before.buf)}`,
+  };
+}
+
+async function applyPlan(plan: FilePlan, ctx: ToolContext): Promise<void> {
+  await atomicWrite(plan.abs, plan.after, plan.mode);
+  ctx.recordFileChange?.({
+    path: plan.rel,
+    fromPath: null,
+    change: plan.before ? 'modify' : 'create',
+    beforeContent: plan.before?.buf ?? null,
+    beforeHash: plan.before ? sha256(plan.before.buf) : null,
+    afterHash: sha256(plan.after),
+  });
+}
+
+/** Restore the pre-change state of a plan that was applied as part of a failed batch. */
+async function undoPlan(plan: FilePlan): Promise<void> {
+  if (plan.before) await atomicWrite(plan.abs, plan.before.text, plan.mode);
+  else await fs.rm(plan.abs, { force: true });
+}
+
+const counts = (p: FileChangePreview) => `+${p.added} −${p.removed}`;
+
 export const writeFile = defineTool({
   name: 'write_file',
   description:
@@ -100,38 +196,20 @@ export const writeFile = defineTool({
   schema: z.object({ path: relPath, content: z.string().max(MAX_WRITE_CHARS), reason }),
   describeCall: (a) => a.path,
   async prepare(args, ctx): Promise<Proposal> {
-    const r = await root(ctx);
-    const target = await resolveForWrite(r, args.path);
-    const before = target.exists ? await readText(target.abs, target.rel) : null;
-    if (before?.text === args.content)
-      throw new WorkspaceError('unsupported', `"${target.rel}" already has exactly this content.`);
-    const preview = makeDiff(
-      target.rel,
-      before?.text ?? '',
-      args.content,
-      before ? 'modify' : 'create',
-    );
-    const mode = target.exists ? (await fs.stat(target.abs)).mode : undefined;
+    const plan = await planWrite(await root(ctx), args.path, args.content);
+    const verb = plan.before ? 'updated' : 'created';
     return {
-      title: `${before ? 'Overwrite' : 'Create'} ${target.rel}`,
-      summary: `${before ? 'Replaces the contents of' : 'Creates'} ${target.rel} (+${preview.added} −${preview.removed}).`,
-      category: before ? 'file_modify' : 'file_create',
-      risk: sizeRisk(preview),
-      details: { kind: 'file_change', changes: [preview] },
-      fingerprint: `${target.rel}:${before ? sha256(before.buf) : 'absent'}`,
+      title: `${plan.before ? 'Overwrite' : 'Create'} ${plan.rel}`,
+      summary: `${plan.before ? 'Replaces the contents of' : 'Creates'} ${plan.rel} (${counts(plan.preview)}).`,
+      category: plan.before ? 'file_modify' : 'file_create',
+      risk: sizeRisk(plan.preview),
+      details: { kind: 'file_change', changes: [plan.preview] },
+      fingerprint: plan.fingerprint,
       async apply(execCtx) {
-        await atomicWrite(target.abs, args.content, mode);
-        execCtx.recordFileChange?.({
-          path: target.rel,
-          fromPath: null,
-          change: before ? 'modify' : 'create',
-          beforeContent: before?.buf ?? null,
-          beforeHash: before ? sha256(before.buf) : null,
-          afterHash: sha256(args.content),
-        });
+        await applyPlan(plan, execCtx);
         return {
-          content: `${before ? 'Updated' : 'Created'} ${target.rel} (+${preview.added} −${preview.removed}).`,
-          summary: `${before ? 'updated' : 'created'} ${target.rel}`,
+          content: `${verb[0]!.toUpperCase()}${verb.slice(1)} ${plan.rel} (${counts(plan.preview)}).`,
+          summary: `${verb} ${plan.rel}`,
         };
       },
     };
@@ -145,74 +223,99 @@ export const editFile = defineTool({
   category: 'file_modify',
   risk: 'medium',
   requiresProject: true,
+  schema: z.object({ path: relPath, edits: z.array(editSchema).min(1).max(20), reason }),
+  describeCall: (a) =>
+    `${a.path} (${a.edits?.length ?? 0} edit${a.edits?.length === 1 ? '' : 's'})`,
+  async prepare(args, ctx): Promise<Proposal> {
+    const plan = await planEdit(await root(ctx), args.path, args.edits);
+    return {
+      title: `Edit ${plan.rel}`,
+      summary: `Applies ${args.edits.length} edit${args.edits.length === 1 ? '' : 's'} to ${plan.rel} (${counts(plan.preview)}).`,
+      category: 'file_modify',
+      risk: sizeRisk(plan.preview),
+      details: { kind: 'file_change', changes: [plan.preview] },
+      fingerprint: plan.fingerprint,
+      async apply(execCtx) {
+        await applyPlan(plan, execCtx);
+        return {
+          content: `Edited ${plan.rel} (${counts(plan.preview)}).`,
+          summary: `edited ${plan.rel} (${counts(plan.preview)})`,
+        };
+      },
+    };
+  },
+});
+
+export const editFiles = defineTool({
+  name: 'edit_files',
+  description:
+    'Change several files in one reviewed step (e.g. a function and its callers, or code plus its test). Each entry either applies exact-string `edits` to an existing file or writes full `content` (new file or rewrite). The user approves the whole set at once; it is applied all-or-nothing.',
+  category: 'file_modify',
+  risk: 'medium',
+  requiresProject: true,
   schema: z.object({
-    path: relPath,
-    edits: z
+    changes: z
       .array(
-        z.object({
-          old_text: z.string().min(1).max(100_000),
-          new_text: z.string().max(100_000),
-          replace_all: z.boolean().default(false),
-        }),
+        z
+          .object({
+            path: relPath,
+            edits: z.array(editSchema).min(1).max(20).optional(),
+            content: z.string().max(MAX_WRITE_CHARS).optional(),
+          })
+          .refine((c) => (c.edits === undefined) !== (c.content === undefined), {
+            message: 'Each change needs exactly one of edits or content.',
+          }),
       )
       .min(1)
       .max(20),
     reason,
   }),
-  describeCall: (a) =>
-    `${a.path} (${a.edits?.length ?? 0} edit${a.edits?.length === 1 ? '' : 's'})`,
+  describeCall: (a) => `${a.changes?.length ?? 0} files`,
   async prepare(args, ctx): Promise<Proposal> {
     const r = await root(ctx);
-    const target = await resolveForWrite(r, args.path);
-    if (!target.exists)
-      throw new WorkspaceError(
-        'not_found',
-        `"${target.rel}" does not exist; use write_file to create it.`,
+    const plans: FilePlan[] = [];
+    for (const c of args.changes) {
+      plans.push(
+        c.edits ? await planEdit(r, c.path, c.edits) : await planWrite(r, c.path, c.content!),
       );
-    const before = await readText(target.abs, target.rel);
-    let after = before.text;
-    args.edits.forEach((e, i) => {
-      const count = after.split(e.old_text).length - 1;
-      if (count === 0) {
-        throw new WorkspaceError(
-          'unsupported',
-          `Edit ${i + 1}: old_text was not found in ${target.rel}. Re-read the file and copy the text exactly.`,
-        );
-      }
-      if (count > 1 && !e.replace_all) {
-        throw new WorkspaceError(
-          'unsupported',
-          `Edit ${i + 1}: old_text matches ${count} places in ${target.rel}. Include more surrounding lines or set replace_all.`,
-        );
-      }
-      after = e.replace_all
-        ? after.split(e.old_text).join(e.new_text)
-        : after.replace(e.old_text, () => e.new_text);
-    });
-    if (after === before.text)
-      throw new WorkspaceError('unsupported', 'The edits do not change the file.');
-    const preview = makeDiff(target.rel, before.text, after, 'modify');
-    const mode = (await fs.stat(target.abs)).mode;
+    }
+    const dup = plans.find((p, i) => plans.findIndex((q) => q.abs === p.abs) !== i);
+    if (dup)
+      throw new WorkspaceError(
+        'unsupported',
+        `"${dup.rel}" appears more than once; combine its edits.`,
+      );
+    const added = plans.reduce((n, p) => n + p.preview.added, 0);
+    const removed = plans.reduce((n, p) => n + p.preview.removed, 0);
+    const creates = plans.some((p) => !p.before);
     return {
-      title: `Edit ${target.rel}`,
-      summary: `Applies ${args.edits.length} edit${args.edits.length === 1 ? '' : 's'} to ${target.rel} (+${preview.added} −${preview.removed}).`,
-      category: 'file_modify',
-      risk: sizeRisk(preview),
-      details: { kind: 'file_change', changes: [preview] },
-      fingerprint: `${target.rel}:${sha256(before.buf)}`,
+      title: `Change ${plans.length} files`,
+      summary: `Applies changes to ${plans.map((p) => p.rel).join(', ')} (+${added} −${removed}) as one all-or-nothing step.`,
+      category: creates ? 'file_create' : 'file_modify',
+      risk: added + removed > 400 || plans.length > 10 ? 'high' : 'medium',
+      details: { kind: 'file_change', changes: plans.map((p) => p.preview) },
+      fingerprint: plans.map((p) => p.fingerprint).join('|'),
       async apply(execCtx) {
-        await atomicWrite(target.abs, after, mode);
-        execCtx.recordFileChange?.({
-          path: target.rel,
-          fromPath: null,
-          change: 'modify',
-          beforeContent: before.buf,
-          beforeHash: sha256(before.buf),
-          afterHash: sha256(after),
-        });
+        const done: FilePlan[] = [];
+        const recorded: Parameters<NonNullable<ToolContext['recordFileChange']>>[0][] = [];
+        // Collect change records and only persist them once every file is written.
+        const batchCtx: ToolContext = { ...execCtx, recordFileChange: (c) => recorded.push(c) };
+        try {
+          for (const plan of plans) {
+            await applyPlan(plan, batchCtx);
+            done.push(plan);
+          }
+        } catch (err) {
+          for (const plan of done.reverse()) await undoPlan(plan).catch(() => undefined);
+          throw new WorkspaceError(
+            'unsupported',
+            `Applying the change set failed (${err instanceof Error ? err.message : String(err)}); the ${done.length} file(s) already written were restored.`,
+          );
+        }
+        for (const c of recorded) execCtx.recordFileChange?.(c);
         return {
-          content: `Edited ${target.rel} (+${preview.added} −${preview.removed}).`,
-          summary: `edited ${target.rel} (+${preview.added} −${preview.removed})`,
+          content: `Changed ${plans.length} files: ${plans.map((p) => `${p.rel} (${counts(p.preview)})`).join(', ')}.`,
+          summary: `changed ${plans.length} files (+${added} −${removed})`,
         };
       },
     };

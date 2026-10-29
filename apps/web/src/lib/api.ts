@@ -126,6 +126,8 @@ export const api = {
   sessionChanges: (id: string) =>
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
+  rollbackRun: (runId: string) =>
+    request<{ reverted: string[]; run: RunDto }>('POST', `/api/runs/${runId}/rollback`),
   retry: (id: string) => request<{ run: RunDto }>('POST', `/api/sessions/${id}/retry`),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>('POST', `/api/runs/${runId}/cancel`),

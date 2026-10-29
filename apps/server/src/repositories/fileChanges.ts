@@ -84,6 +84,18 @@ export class FileChangeRepo {
     ).map(toRecord);
   }
 
+  /** Changes applied by approvals that belong to `runId`. */
+  listByRun(runId: string): FileChangeRecord[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT fc.* FROM file_changes fc JOIN approvals a ON a.id = fc.approval_id
+           WHERE a.run_id = ? ORDER BY fc.id`,
+        )
+        .all(runId) as FileChangeRow[]
+    ).map(toRecord);
+  }
+
   /** Later, unreverted changes to the same path would be clobbered by reverting this one. */
   laterChangesToPath(change: FileChangeRecord): number {
     return (

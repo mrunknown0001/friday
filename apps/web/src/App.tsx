@@ -166,6 +166,21 @@ export function App() {
     }
   };
 
+  const rollback = async (runId: string) => {
+    if (
+      !window.confirm(
+        "Roll back all of this run's file changes? Files edited since then will block the rollback.",
+      )
+    )
+      return;
+    try {
+      await api.rollbackRun(runId);
+    } catch (e) {
+      report(e);
+    }
+    if (activeId) void loadDetail(activeId);
+  };
+
   const revert = async (c: FileChangeDto) => {
     const what =
       c.change === 'create'
@@ -297,6 +312,7 @@ export function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           approvals={approvals}
           onDecide={decide}
+          onRollback={rollback}
         />
         {error && (
           <div

@@ -1,5 +1,13 @@
 import type { ApprovalDto, ApprovalStatus, RiskLevel } from '@friday/shared';
-import { Check, FileDiff, Loader2, ShieldAlert, SquareTerminal, X } from 'lucide-react';
+import {
+  Check,
+  FileDiff,
+  GitCommitHorizontal,
+  Loader2,
+  ShieldAlert,
+  SquareTerminal,
+  X,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { displayArgv } from '../lib/format';
 import { DiffView } from './DiffView';
@@ -30,6 +38,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   file_modify: 'Modify file',
   file_delete: 'Delete / move file',
   shell: 'Run command',
+  git: 'Git',
 };
 
 function useCountdown(expiresAt: string, active: boolean): number {
@@ -47,28 +56,68 @@ function formatRemaining(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+function FileDiffs({
+  changes,
+}: {
+  changes: Extract<ApprovalDto['details'], { kind: 'file_change' }>['changes'];
+}) {
+  return (
+    <div className="space-y-3">
+      {changes.map((c) => (
+        <div key={`${c.fromPath ?? ''}${c.path}`}>
+          <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+            <FileDiff className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
+            <span className="font-mono text-zinc-200">
+              {c.fromPath ? `${c.fromPath} → ${c.path}` : c.path}
+            </span>
+            <Badge>{c.change}</Badge>
+            <span className="text-emerald-400">+{c.added}</span>
+            <span className="text-red-400">−{c.removed}</span>
+          </div>
+          {c.change !== 'move' && <DiffView diff={c.diff} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Details({ approval }: { approval: ApprovalDto }) {
   const d = approval.details;
-  if (d.kind === 'file_change') {
+  if (d.kind === 'git') {
     return (
-      <div className="space-y-3">
-        {d.changes.map((c) => (
-          <div key={`${c.fromPath ?? ''}${c.path}`}>
-            <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
-              <FileDiff className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
-              <span className="font-mono text-zinc-200">
-                {c.fromPath ? `${c.fromPath} → ${c.path}` : c.path}
-              </span>
-              <Badge>{c.change}</Badge>
-              <span className="text-emerald-400">+{c.added}</span>
-              <span className="text-red-400">−{c.removed}</span>
-            </div>
-            {c.change !== 'move' && <DiffView diff={c.diff} />}
-          </div>
-        ))}
+      <div className="space-y-2">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+          <dt className="text-zinc-500">Branch</dt>
+          <dd className="font-mono text-zinc-300">{d.branch ?? '(detached HEAD)'}</dd>
+          <dt className="text-zinc-500">HEAD</dt>
+          <dd className="font-mono text-zinc-300">{d.head?.slice(0, 12) ?? '(no commits)'}</dd>
+          {d.newBranch && (
+            <>
+              <dt className="text-zinc-500">New branch</dt>
+              <dd className="font-mono text-zinc-100">{d.newBranch}</dd>
+            </>
+          )}
+          <dt className="text-zinc-500">Push</dt>
+          <dd className="text-zinc-300">No: nothing leaves this machine</dd>
+        </dl>
+        {d.message !== null && (
+          <pre
+            aria-label="Commit message"
+            className="whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem] text-zinc-100"
+          >
+            {d.message}
+          </pre>
+        )}
+        {d.hooks.length > 0 && (
+          <p className="text-xs text-amber-300">
+            Repository hooks will run during the commit: {d.hooks.join(', ')}.
+          </p>
+        )}
+        {d.files.length > 0 && <FileDiffs changes={d.files} />}
       </div>
     );
   }
+  if (d.kind === 'file_change') return <FileDiffs changes={d.changes} />;
   const shown = d.argv ? displayArgv(d.argv) : (d.shellCommand ?? '');
   return (
     <div className="space-y-2">
@@ -126,7 +175,12 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
   const status = expired ? STATUS.expired : STATUS[approval.status];
-  const Icon = approval.details.kind === 'command' ? SquareTerminal : ShieldAlert;
+  const Icon =
+    approval.details.kind === 'command'
+      ? SquareTerminal
+      : approval.details.kind === 'git'
+        ? GitCommitHorizontal
+        : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);

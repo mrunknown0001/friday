@@ -2,7 +2,16 @@ import type { ToolCallStatus } from '@friday/shared';
 import type { ToolCall, ToolDefinition } from '../providers/types.js';
 import { WorkspaceError } from '../workspace/paths.js';
 import { runCommand } from './commandTool.js';
-import { deleteFile, editFile, moveFile, writeFile } from './fileTools.js';
+import { deleteFile, editFile, editFiles, moveFile, writeFile } from './fileTools.js';
+import {
+  gitBranches,
+  gitCommit,
+  gitCreateBranch,
+  gitDiff,
+  gitLog,
+  gitShow,
+  gitStatus,
+} from './gitTools.js';
 import { updatePlan } from './planTool.js';
 import { decide, type PolicyDecision } from './policy.js';
 import { toToolDefinition, type ToolContext, type ToolOutput, type ToolSpec } from './types.js';
@@ -54,9 +63,17 @@ export const DEFAULT_TOOLS = [
   updatePlan,
   writeFile,
   editFile,
+  editFiles,
   deleteFile,
   moveFile,
   runCommand,
+  gitStatus,
+  gitDiff,
+  gitLog,
+  gitShow,
+  gitBranches,
+  gitCommit,
+  gitCreateBranch,
 ] as unknown as Array<ToolSpec<never>>;
 
 export interface ToolExecution {

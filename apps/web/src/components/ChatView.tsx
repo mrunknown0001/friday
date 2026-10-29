@@ -13,7 +13,7 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { LiveRun } from '../lib/useRunStream';
 import { ApprovalCard } from './ApprovalCard';
-import { RunRecord } from './RunRecord';
+import { RunSummary } from './RunSummary';
 import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
 import { ToolActivity, type ToolItem } from './ToolActivity';
@@ -35,6 +35,7 @@ interface Props {
   /** All approvals for the session, with live updates applied. */
   approvals: ApprovalDto[];
   onDecide: (approval: ApprovalDto, decision: 'approve' | 'reject', note?: string) => Promise<void>;
+  onRollback: (runId: string) => Promise<void>;
 }
 
 const Avatar = () => (
@@ -167,6 +168,23 @@ function RunProblem({
         {run.errorMessage && (
           <p className="mt-1 break-words text-amber-100/80">{run.errorMessage}</p>
         )}
+        {run.checkpoint &&
+          (run.checkpoint.filesChanged.length > 0 || run.checkpoint.lastCommand) && (
+            <p className="mt-1 text-xs text-amber-100/70">
+              Progress saved at step {run.checkpoint.iteration}
+              {run.checkpoint.filesChanged.length > 0 && (
+                <> · files changed: {run.checkpoint.filesChanged.join(', ')}</>
+              )}
+              {run.checkpoint.lastCommand && (
+                <>
+                  {' '}
+                  · last command: <code>{run.checkpoint.lastCommand.title}</code> (
+                  {run.checkpoint.lastCommand.result})
+                </>
+              )}
+              . Resuming tells Friday what was already done.
+            </p>
+          )}
         {run.status === 'failed' && !run.retryable && (
           <p className="mt-1 text-xs text-amber-100/60">
             Retrying will likely fail until the underlying problem is fixed.
@@ -174,7 +192,12 @@ function RunProblem({
         )}
       </div>
       <Button size="sm" onClick={onRetry} disabled={disabled}>
-        <RotateCcw className="h-3.5 w-3.5" /> {run.status === 'blocked' ? 'Continue' : 'Retry'}
+        <RotateCcw className="h-3.5 w-3.5" />{' '}
+        {run.status === 'blocked'
+          ? 'Continue'
+          : run.checkpoint?.filesChanged.length
+            ? 'Resume'
+            : 'Retry'}
       </Button>
     </div>
   );
@@ -229,7 +252,8 @@ function LiveOutput({ live, byCall }: { live: LiveRun; byCall: Map<string, Appro
 export function ChatView(props: Props) {
   const { detail, project, live, canSend, blockedReason, onSend, onStop, onRetry, onOpenSettings } =
     props;
-  const { approvals, onDecide } = props;
+  const { approvals, onDecide, onRollback } = props;
+  const runsById = new Map((detail?.runs ?? []).map((r) => [r.id, r]));
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -321,7 +345,12 @@ export function ChatView(props: Props) {
             ) : r.kind === 'assistant' ? (
               <AssistantRow key={r.m.id} content={r.m.content} footer={<MessageFooter m={r.m} />} />
             ) : r.kind === 'record' ? (
-              <RunRecord key={`rec-${r.runId}`} approvals={r.approvals} />
+              <RunSummary
+                key={`rec-${r.runId}`}
+                run={runsById.get(r.runId)}
+                approvals={r.approvals}
+                onRollback={onRollback}
+              />
             ) : (
               <ToolActivity key={r.key} items={r.items} />
             ),

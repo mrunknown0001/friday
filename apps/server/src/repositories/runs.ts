@@ -1,4 +1,4 @@
-import type { RunDto, RunErrorKind, RunStatus } from '@friday/shared';
+import type { RunCheckpoint, RunDto, RunErrorKind, RunReport, RunStatus } from '@friday/shared';
 import type { Db } from '../db/database.js';
 
 interface RunRow {
@@ -12,6 +12,17 @@ interface RunRow {
   retryable: number;
   started_at: string;
   finished_at: string | null;
+  checkpoint: string | null;
+  report: string | null;
+}
+
+function parseJson<T>(json: string | null): T | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
 }
 
 export interface RunRecord extends RunDto {
@@ -30,6 +41,8 @@ function toRecord(r: RunRow): RunRecord {
     retryable: r.retryable === 1,
     startedAt: r.started_at,
     finishedAt: r.finished_at,
+    checkpoint: parseJson<RunCheckpoint>(r.checkpoint),
+    report: parseJson<RunReport>(r.report),
   };
 }
 
@@ -84,6 +97,35 @@ export class RunRepo {
         id,
       );
     return this.get(id)!;
+  }
+
+  setCheckpoint(id: string, checkpoint: RunCheckpoint): void {
+    this.db
+      .prepare('UPDATE runs SET checkpoint = ? WHERE id = ?')
+      .run(JSON.stringify(checkpoint), id);
+  }
+
+  setReport(id: string, report: RunReport): void {
+    this.db.prepare('UPDATE runs SET report = ? WHERE id = ?').run(JSON.stringify(report), id);
+  }
+
+  listBySession(sessionId: string): RunRecord[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM runs WHERE session_id = ? ORDER BY started_at, rowid')
+        .all(sessionId) as RunRow[]
+    ).map(toRecord);
+  }
+
+  /** Most recent run before `beforeRunId` in the same session. */
+  previousRun(sessionId: string, beforeStartedAt: string): RunRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM runs WHERE session_id = ? AND started_at < ?
+         ORDER BY started_at DESC, rowid DESC LIMIT 1`,
+      )
+      .get(sessionId, beforeStartedAt) as RunRow | undefined;
+    return row ? toRecord(row) : null;
   }
 
   /** Toggle between running and awaiting_approval while the run is active. */

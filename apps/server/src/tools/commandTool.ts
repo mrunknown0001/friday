@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { z } from 'zod';
+import { extractLocations } from '../commands/locations.js';
 import { assessCommand } from '../commands/risk.js';
 import { childEnv, runProcess } from '../commands/runner.js';
 import { assertRootAvailable, resolveInside, WorkspaceError } from '../workspace/paths.js';
@@ -110,12 +111,22 @@ export const runCommand = defineTool({
               ? `killed by ${result.signal}`
               : `exit code ${result.exitCode}`;
         const { text, clipped } = clipOutput(result.output, execCtx.maxOutputChars - 400);
+        const failed =
+          result.timedOut || result.cancelled || result.signal !== null || result.exitCode !== 0;
+        const locations = failed ? extractLocations(result.output, root, cwd.abs) : [];
         const content = [
           `$ ${shown}`,
           `cwd: ${cwd.rel}`,
           `${status} in ${(result.durationMs / 1000).toFixed(1)}s`,
           '--- output ---',
           text || '(no output)',
+          ...(locations.length
+            ? [
+                '--- project locations referenced in the output ---',
+                locations.join('\n'),
+                'Read these before changing code.',
+              ]
+            : []),
         ].join('\n');
         return {
           content,

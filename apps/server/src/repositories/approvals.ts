@@ -101,6 +101,14 @@ export class ApprovalRepo {
     ).map(toDto);
   }
 
+  listByRun(runId: string): ApprovalDto[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM approvals WHERE run_id = ? ORDER BY created_at, rowid')
+        .all(runId) as ApprovalRow[]
+    ).map(toDto);
+  }
+
   /**
    * Compare-and-set transition. Succeeds only if the row is still in `from`, so two concurrent
    * decisions (or a replayed request) cannot both win. Returns the updated approval or null.

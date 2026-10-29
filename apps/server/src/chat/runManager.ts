@@ -43,6 +43,12 @@ import type { ToolEnvironment } from '../workspace/environment.js';
 import { assertRootAvailable, WorkspaceError } from '../workspace/paths.js';
 import { ContextOverflowError, fitHistory, repairToolPairs, summarizeHistory } from './context.js';
 import { buildSystemPrompt } from './systemPrompt.js';
+import {
+  buildCheckpoint,
+  buildRunReport,
+  resumeContext,
+  taskRunIds,
+} from '../reports/runReport.js';
 
 export interface RunManagerDeps {
   provider: LLMProvider;
@@ -83,6 +89,9 @@ interface ActiveRun {
   listeners: Set<Listener>;
   done: boolean;
   finished: Promise<void>;
+  /** Progress counters for checkpoints. */
+  iteration: number;
+  toolCalls: number;
 }
 
 /** Stops the loop without being an error from the provider. */
@@ -226,6 +235,8 @@ export class RunManager {
       listeners: new Set(),
       done: false,
       finished: Promise.resolve(),
+      iteration: 0,
+      toolCalls: 0,
     };
     this.runs.set(id, active);
     this.activeBySession.set(sessionId, id);
@@ -512,6 +523,7 @@ export class RunManager {
         project,
         detection: project ? await this.detect(project) : null,
         toolsEnabled: tools.length > 0,
+        resume: this.resumeFor(run, session.plan),
       });
 
       for (;;) {
@@ -523,6 +535,7 @@ export class RunManager {
           );
         }
         iterations++;
+        run.iteration = iterations;
         const context = await this.buildContext(run, model, systemPrompt);
         this.aborted(run);
         this.phase(run, iterations === 1 ? 'waiting_for_model' : 'reading_results');
@@ -579,6 +592,7 @@ export class RunManager {
             continue;
           }
           toolCallsUsed++;
+          run.toolCalls = toolCallsUsed;
           this.emit(run, {
             type: 'tool_started',
             callId: call.id,
@@ -626,6 +640,7 @@ export class RunManager {
           }
         }
         this.deps.runs.recordProgress(run.id, iterations, toolCallsUsed);
+        this.saveCheckpoint(run);
         this.aborted(run);
         if (blocked) throw blocked;
       }
@@ -758,10 +773,12 @@ export class RunManager {
       fingerprint: proposal.fingerprint,
     });
     this.deps.runs.setActiveStatus(run.id, 'awaiting_approval');
+    // Start waiting before announcing the request, so a decision can never arrive first.
+    const waiting = approvals.wait(approval, run.controller.signal);
     this.emit(run, { type: 'approval_requested', approval });
     this.phase(run, 'awaiting_approval', proposal.title);
 
-    const decision = await approvals.wait(approval, run.controller.signal);
+    const decision = await waiting;
     this.deps.runs.setActiveStatus(run.id, 'running');
     const resolved = () => this.deps.approvalRepo.get(approval.id)!;
     this.emit(run, { type: 'approval_resolved', approval: resolved() });
@@ -845,6 +862,8 @@ export class RunManager {
       exec.status === 'completed' ? 'executed' : 'failed',
       exec.summary,
     );
+    // Persist progress right after every side effect, so a crash mid-turn cannot lose it.
+    this.saveCheckpoint(run);
     this.emit(run, { type: 'approval_resolved', approval: resolved() });
     return { exec, approvalId: approval.id, outcome: 'none' };
   }
@@ -860,6 +879,14 @@ export class RunManager {
       err ? { kind: err.kind, message: err.message, retryable: err.retryable } : undefined,
     );
     this.deps.sessions.touch(run.sessionId);
+    // Only runs that proposed actions get a report; plain answers have nothing to verify.
+    if (
+      taskRunIds(run.id, this.deps.runs).some(
+        (id) => this.deps.approvalRepo.listByRun(id).length > 0,
+      )
+    ) {
+      this.deps.runs.setReport(run.id, buildRunReport(run.id, this.deps));
+    }
     if (err) {
       this.deps.audit.record({
         sessionId: run.sessionId,
@@ -868,7 +895,36 @@ export class RunManager {
         details: { runId: run.id, kind: err.kind, status: err.status ?? null },
       });
     }
-    this.emit(run, { type: 'run_finished', run: toRunDto(record) });
+    this.emit(run, {
+      type: 'run_finished',
+      run: toRunDto(this.deps.runs.get(record.id) ?? record),
+    });
+  }
+
+  private saveCheckpoint(run: ActiveRun): void {
+    this.deps.runs.setCheckpoint(
+      run.id,
+      buildCheckpoint(run.id, this.deps, {
+        iteration: run.iteration,
+        toolCalls: run.toolCalls,
+        plan: this.deps.sessions.get(run.sessionId)?.plan ?? null,
+      }),
+    );
+  }
+
+  /** Resumption context when the previous request in this session did not complete. */
+  private resumeFor(run: ActiveRun, plan: PlanStep[] | null): string | null {
+    const current = this.deps.runs.get(run.id);
+    if (!current) return null;
+    const prev = this.deps.runs.previousRun(run.sessionId, current.startedAt);
+    if (!prev || prev.status === 'completed' || prev.status === 'running') return null;
+    if (this.deps.approvalRepo.listByRun(prev.id).length === 0) return null;
+    return resumeContext(
+      prev.status,
+      prev.errorMessage,
+      prev.report ?? buildRunReport(prev.id, this.deps),
+      plan,
+    );
   }
 }
 

@@ -137,11 +137,25 @@ model tool call ─▶ validateToolCall (policy, JSON, zod)
 The registry refuses to register a protected tool that has a direct `execute`, so there is no code path that runs
 one without `prepare` and approval.
 
+## Coding agent (Phase 4)
+
+| Module                  | Responsibility                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git/git.ts`            | Single entry point for git: hardened `-c` overrides, scrubbed env, `GIT_OPTIONAL_LOCKS=0`, porcelain v2 parsing, secret-diff hiding, repo-root check. |
+| `tools/gitTools.ts`     | Read-only git tools plus approval-gated `git_commit` and `git_create_branch`.                                                                         |
+| `tools/fileTools.ts`    | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                   |
+| `commands/locations.ts` | `file:line` extraction from tool output; verification-command classification.                                                                         |
+| `reports/runReport.ts`  | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                |
+
+A _task_ is a run plus the unfinished runs (interrupted, failed, blocked, cancelled) it directly continues. Reports
+and rollback operate on the task. Checkpoints are written after every executed approval, not only at the end of a
+model turn, so a crash between two actions in one turn loses nothing.
+
 ## Web (`apps/web/src`)
 
 - `lib/api.ts` is a typed fetch client. It adds the `x-friday-client` header on mutating requests.
 - `lib/useRunStream.ts` wraps `EventSource` with automatic reconnect and de-duplication by `seq`.
-- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, AddProjectDialog, SettingsDialog, and
+- `components/` contains Sidebar (project switcher), ChatView (messages, tool activity groups, live run, approval cards, run records, error/retry/continue card, composer), SidePanel (plan, changes with undo, file explorer), ApprovalCard and DiffView, RunSummary (verification report and rollback), AddProjectDialog, SettingsDialog, and
   small shadcn-style primitives (`ui/`) built on native elements such as `<dialog>`.
 - Markdown is rendered with react-markdown, GFM, and highlight.js. Raw HTML in model output is not rendered.
 

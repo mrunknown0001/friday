@@ -207,6 +207,16 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE tool_calls ADD COLUMN approval_id TEXT;
     `,
   },
+  {
+    version: 4,
+    name: 'run_checkpoints_and_reports',
+    up: `
+      -- Progress snapshot updated during a run (for resume after interruption).
+      ALTER TABLE runs ADD COLUMN checkpoint TEXT;
+      -- Verification report generated from records when the run ends.
+      ALTER TABLE runs ADD COLUMN report TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: Database.Database, migrations: Migration[] = MIGRATIONS): number[] {
