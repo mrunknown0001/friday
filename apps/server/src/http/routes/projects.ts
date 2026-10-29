@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  CodeMapStatusDto,
   FileViewDto,
   ProjectDto,
   ProjectOverviewDto,
@@ -115,6 +116,25 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     requireProject(id);
     s.projects.rename(id, body.name);
     return toDto(s.projects.get(id)!);
+  });
+
+  // ---- code map (per project) ----
+
+  /** Index status; `refresh` brings it up to date first (the tools do this on every use anyway). */
+  app.get('/api/projects/:id/codemap', async (req): Promise<CodeMapStatusDto> => {
+    const { id } = parseInput(idParams, req.params);
+    const project = requireProject(id);
+    return { ...s.codeMap.status(project.id), lastRefresh: s.codeMap.lastRefresh(project.id) };
+  });
+
+  /** Rebuild the index from scratch (user action). */
+  app.post('/api/projects/:id/codemap/rebuild', async (req): Promise<CodeMapStatusDto> => {
+    const { id } = parseInput(idParams, req.params);
+    const project = requireProject(id);
+    await assertRootAvailable(project.rootPath);
+    s.codeMap.clear(project.id);
+    await s.codeMap.refresh(project, { force: true });
+    return { ...s.codeMap.status(project.id), lastRefresh: s.codeMap.lastRefresh(project.id) };
   });
 
   // ---- command sandbox (per project) ----

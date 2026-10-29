@@ -11,6 +11,7 @@ import type { ImageInfo } from '../attachments/image.js';
 import type { ToolDefinition } from '../providers/types.js';
 import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
 import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
+import type { CodeMap } from '../codemap/index.js';
 import type { ProcessManager } from '../processes/manager.js';
 import type { ProjectRecord } from '../repositories/projects.js';
 import type { SshService } from '../ssh/ssh.js';
@@ -41,6 +42,8 @@ export interface ToolContext {
   emitDeploymentPlan?: (plan: DeploymentPlanDto) => void;
   /** DevOps configuration (SSH hosts, authorized log sources, deployment plans). */
   devops?: DevopsContext;
+  /** Symbol index of the project (code_map, find_symbol). */
+  codeMap?: CodeMap;
   /** Background processes (dev servers, watchers) started with start_process. */
   processes?: ProcessManager;
   /** Record an applied file change for the change list and undo. */

@@ -427,6 +427,14 @@ export type AppNotice =
     }
   | { type: 'process_updated'; process: ProcessDto };
 
+/** Code map index of a project (Project settings). */
+export interface CodeMapStatusDto {
+  files: number;
+  symbols: number;
+  /** Last refresh in this server run (null until the code map is first used after a start). */
+  lastRefresh: { at: string; durationMs: number; truncated: boolean } | null;
+}
+
 /** A background process (dev server, watcher) Friday started with the user's approval. */
 export interface ProcessDto {
   /** Short id the model and the API use, e.g. "proc_1a2b3c4d". */

@@ -42,6 +42,8 @@ export interface WalkEntry {
   name: string;
   type: 'file' | 'dir' | 'symlink';
   size: number | null;
+  /** Files only: modification time in ms (null if it could not be read). */
+  mtimeMs?: number | null;
   depth: number;
 }
 
@@ -133,11 +135,15 @@ export async function walk(root: string, startAbs: string, opts: WalkOptions): P
           entries.push({ rel, name: d.name, type: 'dir', size: null, depth });
         if (depth < opts.maxDepth) await visit(abs, depth + 1, active);
       } else if (d.isFile()) {
-        const size = await fs
-          .stat(abs)
-          .then((s) => s.size)
-          .catch(() => null);
-        entries.push({ rel, name: d.name, type: 'file', size, depth });
+        const stat = await fs.stat(abs).catch(() => null);
+        entries.push({
+          rel,
+          name: d.name,
+          type: 'file',
+          size: stat?.size ?? null,
+          mtimeMs: stat ? Math.floor(stat.mtimeMs) : null,
+          depth,
+        });
       }
       if (truncated) return;
     }

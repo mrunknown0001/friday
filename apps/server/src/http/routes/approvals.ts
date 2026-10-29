@@ -53,6 +53,7 @@ export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
     if (!project)
       throw new HttpError(409, 'project_removed', 'The project for this change was removed.');
     await revertFileChange(change, project.rootPath);
+    s.codeMap.invalidate(project.id);
     s.fileChanges.markReverted(id);
     const runId = change.approvalId ? s.approvalRepo.get(change.approvalId)?.runId : null;
     if (runId && s.runs.get(runId)?.report) s.runs.setReport(runId, buildRunReport(runId, s));

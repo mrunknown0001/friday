@@ -162,6 +162,25 @@ dialog suggests one for the project's stack (e.g. `node:22-bookworm-slim`), show
 your machine. Commands can still change files in the project folder, so review them as usual. Requires Docker (checked
 at startup and from the dialog).
 
+### Code map
+
+To find its way around large projects without reading files blindly, Friday keeps an index of the definitions in
+your code: classes, interfaces, types, functions, methods and constants, with their file, line and signature. It
+covers TypeScript/JavaScript, Python, PHP, Go, Rust, Ruby, Java, Kotlin and C#. Two read-only tools use it:
+
+- `code_map` outlines the project, a folder or a file. Large scopes are summarised (names per file, or per folder),
+  so the model narrows down step by step.
+- `find_symbol` finds where a name is defined (`Class.method` works too), and with `references` the lines that use
+  it (whole-word text matches).
+
+The index is built the first time Friday needs it and is stored in the local database. After that only files whose
+size or modification time changed are re-read, and changes Friday makes itself are picked up immediately. It follows
+the same rules as the file tree (`.gitignore` and dependency folders excluded, credential files skipped). Definitions
+are found by per-language patterns, not a compiler, so unusual syntax can be missed; `search_code` still covers
+everything else. Project settings › **Code map** shows what is indexed and has a **Rebuild** button. For scale:
+about 10,000 source files index in roughly 5 seconds the first time, and a check with nothing changed takes about
+1.5 seconds.
+
 ### Images and screenshots
 
 Paste a screenshot into the message box (Ctrl+V), drop image files on it, or use the image button, up to 4 per

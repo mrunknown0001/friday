@@ -14,6 +14,7 @@ import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
 import { MessageRepo } from './repositories/messages.js';
 import { MemoryRepo } from './repositories/memories.js';
+import { CodeMap } from './codemap/index.js';
 import { MemoryService } from './memory/service.js';
 import { ProcessManager } from './processes/manager.js';
 import { SshService } from './ssh/ssh.js';
@@ -91,6 +92,7 @@ export interface Services {
   memoryRepo: MemoryRepo;
   memory: MemoryService;
   processes: ProcessManager;
+  codeMap: CodeMap;
   registry: ToolRegistry;
   toolEnv: ToolEnvironment;
   capabilities: CapabilityRepo;
@@ -165,6 +167,7 @@ export function createServices(
   const modelSettings = new ModelSettings(settings, config.provider.envModel);
   const approvals = new ApprovalService(approvalRepo, audit, config.approvalTtlMs);
   const memory = new MemoryService(memoryRepo, settings, redactor);
+  const codeMap = new CodeMap(db);
   const processes = new ProcessManager({
     instance: toolEnv.sandboxInstance,
     redact: (text) => redactor.redact(text),
@@ -185,6 +188,7 @@ export function createServices(
     attachments,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
+    codeMap,
     memory,
     memoryRepo,
     capabilities,
@@ -219,6 +223,7 @@ export function createServices(
     memoryRepo,
     memory,
     processes,
+    codeMap,
     registry,
     toolEnv,
     capabilities,

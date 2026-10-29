@@ -87,6 +87,7 @@ export interface RunManagerDeps {
   attachments: AttachmentRepo;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
+  codeMap?: ToolContext['codeMap'];
   memory?: MemoryService;
   memoryRepo?: MemoryRepo;
   capabilities: CapabilityRepo;
@@ -958,6 +959,7 @@ export class RunManager {
       callId,
       ...(this.deps.devops ? { devops: this.deps.devops } : {}),
       ...(this.deps.processes ? { processes: this.deps.processes } : {}),
+      ...(this.deps.codeMap ? { codeMap: this.deps.codeMap } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,
@@ -1193,6 +1195,8 @@ export class RunManager {
       execCtx,
       fresh.timeoutMs ?? limits.toolTimeoutMs,
     );
+    // Edits, commands and commits can change source files: the code map re-checks on next use.
+    if (project) this.deps.codeMap?.invalidate(project.id);
     approvals.complete(
       approval.id,
       exec.status === 'completed' ? 'executed' : 'failed',
