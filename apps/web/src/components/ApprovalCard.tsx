@@ -45,6 +45,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   remote: 'Remote server',
   deployment: 'Production change',
   task_permission: 'Task permission',
+  process_control: 'Process',
 };
 
 function TaskPermissionDetails({
@@ -207,12 +208,27 @@ function Details({ approval }: { approval: ApprovalDto }) {
             {d.sandbox.hiddenCredentials
               ? `, ${d.sandbox.hiddenCredentials} credential file${d.sandbox.hiddenCredentials === 1 ? '' : 's'} hidden`
               : ''}
+            {d.sandbox.ports?.length
+              ? `, port${d.sandbox.ports.length === 1 ? '' : 's'} ${d.sandbox.ports.join(', ')} published on 127.0.0.1`
+              : ''}
           </dd>
         ) : (
           <dd className="text-zinc-300">On this machine, as your user (not sandboxed)</dd>
         )}
-        <dt className="text-zinc-500">Timeout</dt>
-        <dd className="text-zinc-300">{d.timeoutSeconds}s</dd>
+        {d.background ? (
+          <>
+            <dt className="text-zinc-500">Duration</dt>
+            <dd className="text-amber-200">
+              Keeps running in the background as “{d.background.name}” until you stop it (Processes
+              panel) or Friday quits
+            </dd>
+          </>
+        ) : (
+          <>
+            <dt className="text-zinc-500">Timeout</dt>
+            <dd className="text-zinc-300">{d.timeoutSeconds}s</dd>
+          </>
+        )}
         <dt className="text-zinc-500">Network</dt>
         <dd className={d.network ? 'text-amber-300' : 'text-zinc-300'}>
           {d.network ? 'Likely' : 'Not expected'}

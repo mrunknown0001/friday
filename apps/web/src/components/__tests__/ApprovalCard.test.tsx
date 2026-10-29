@@ -171,6 +171,36 @@ describe('ApprovalCard: commands', () => {
     expect(screen.getByText(/the container has none/)).toBeTruthy();
   });
 
+  it('says a background process keeps running, and which ports it publishes', () => {
+    const details = cmd.details as Extract<ApprovalDto['details'], { kind: 'command' }>;
+    render(
+      <ApprovalCard
+        approval={{
+          ...cmd,
+          toolName: 'start_process',
+          details: {
+            ...details,
+            timeoutSeconds: 0,
+            background: { name: 'dev server' },
+            sandbox: {
+              image: 'node:22-bookworm-slim',
+              network: 'bridge',
+              hiddenCredentials: 0,
+              gitReadOnly: false,
+              ports: [5173],
+            },
+          },
+        }}
+        onDecide={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Keeps running in the background as “dev server”/)).toBeTruthy();
+    expect(screen.queryByText('Timeout')).toBeNull();
+    expect(screen.getByText(/In a container/).textContent).toContain(
+      'port 5173 published on 127.0.0.1',
+    );
+  });
+
   it('shows the exact command, working directory, shell use, host, environment and risks', () => {
     render(<ApprovalCard approval={cmd} onDecide={vi.fn()} />);
     expect(screen.getByLabelText('Exact command').textContent).toBe("$ npm install 'left pad'");

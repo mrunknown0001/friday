@@ -2,6 +2,7 @@ import type {
   FileChangeDto,
   FileViewDto,
   PlanStep,
+  ProcessDto,
   ProjectDto,
   TreeEntryDto,
 } from '@friday/shared';
@@ -20,6 +21,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { formatBytes } from '../lib/format';
+import { ProcessList } from './Processes';
 import { Dialog } from './ui/dialog';
 
 const PLAN_ICON = {
@@ -283,11 +285,17 @@ export function SidePanel({
   plan,
   changes,
   onRevert,
+  processes = [],
+  onStopProcess = () => undefined,
+  onDismissProcess = () => undefined,
 }: {
   project: ProjectDto | null;
   plan: PlanStep[] | null;
   changes: FileChangeDto[];
   onRevert: (c: FileChangeDto) => void;
+  processes?: ProcessDto[];
+  onStopProcess?: (p: ProcessDto) => void;
+  onDismissProcess?: (p: ProcessDto) => void;
 }) {
   const [root, setRoot] = useState<TreeEntryDto[] | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -330,6 +338,14 @@ export function SidePanel({
         </h2>
         <Changes changes={changes} onRevert={onRevert} />
       </section>
+      {project && processes.length > 0 && (
+        <section className="border-b border-zinc-800 py-3">
+          <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            Processes
+          </h2>
+          <ProcessList processes={processes} onStop={onStopProcess} onDismiss={onDismissProcess} />
+        </section>
+      )}
       <section className="flex min-h-0 flex-1 flex-col py-3">
         <h2 className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
           Files

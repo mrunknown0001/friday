@@ -159,7 +159,8 @@ export type PermissionCategory =
   | 'remote'
   | 'database'
   | 'deployment'
-  | 'task_permission';
+  | 'task_permission'
+  | 'process_control';
 
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
 
@@ -204,7 +205,11 @@ export type ApprovalDetails =
         hiddenCredentials: number;
         /** .git is mounted read-only, so nothing in the container can plant git hooks. */
         gitReadOnly: boolean;
+        /** Container ports published on 127.0.0.1 (background processes only). */
+        ports?: number[];
       } | null;
+      /** Set when the command keeps running in the background until stopped (start_process). */
+      background?: { name: string } | null;
     }
   | {
       kind: 'git';
@@ -417,7 +422,42 @@ export type AppNotice =
       runId: string;
       status: RunStatus;
       durationMs: number | null;
-    };
+    }
+  | { type: 'process_updated'; process: ProcessDto };
+
+/** A background process (dev server, watcher) Friday started with the user's approval. */
+export interface ProcessDto {
+  /** Short id the model and the API use, e.g. "proc_1a2b3c4d". */
+  id: string;
+  projectId: string;
+  /** Conversation that started it. */
+  sessionId: string;
+  name: string;
+  /** The command as shown on the approval card. */
+  command: string;
+  cwd: string;
+  sandbox: { image: string; network: 'none' | 'bridge'; ports: number[] } | null;
+  status: 'running' | 'stopping' | 'stopped' | 'exited';
+  exitCode: number | null;
+  signal: string | null;
+  /** Why it could not start (e.g. command not found). */
+  error: string | null;
+  /** Who stopped it; null when it exited by itself. */
+  stoppedBy: 'user' | 'friday' | 'shutdown' | null;
+  /** Local URLs seen in its output (e.g. a dev server's address). */
+  urls: string[];
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface ProcessOutputDto {
+  process: ProcessDto;
+  output: string;
+  /** Pass back as `since` to get only newer output. */
+  cursor: number;
+  /** True when older output was discarded (only the most recent output is kept). */
+  dropped: boolean;
+}
 
 /** State of the task permission active in a run (see request_task_permissions). */
 export interface TaskPermissionDto {

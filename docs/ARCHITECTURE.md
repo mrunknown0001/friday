@@ -161,6 +161,18 @@ to project paths before error locations are extracted. Startup detects Docker (`
 containers labelled with this instance's id (a hash of the data folder). Routes: `GET/PUT /api/projects/:id/sandbox`
 and `POST /api/projects/:id/sandbox/pull` (user action).
 
+### Background processes (`processes/manager.ts`, `tools/processTools.ts`)
+
+`ProcessManager` (one per server, in memory) spawns approved `start_process` commands detached in their own process
+group. Commands run on the host, or as `docker run` with `--publish 127.0.0.1:p:p` in a sandboxed project. Each gets
+the `FRIDAY_BACKGROUND=<instance>:<id>` marker in its environment. The manager keeps the last 256 KB of output
+(ANSI stripped) with a cursor for incremental reads, and records the local URLs it sees. `waitFor` resolves on ready
+text or URL, exit, timeout or cancel. `stop` sends SIGTERM to the group (or `docker stop`), then SIGKILL. `onChange`
+feeds `process_updated` notices on `/api/events`. The routes (`routes/processes.ts`: list, output, stop, dismiss) can
+never start a process. The server's `onClose` stops everything. Startup's `reapOrphans` kills leftover processes that
+carry the marker. `run_command` and `start_process` share `prepareCommand` (folder, risk, sandbox checks). The system
+prompt lists each process's current status, so the model does not trust stale history.
+
 ## Coding agent (Phase 4)
 
 | Module                  | Responsibility                                                                                                                                        |

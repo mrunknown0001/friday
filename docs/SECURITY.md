@@ -132,12 +132,24 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Unwanted downloads                                        | Images are only pulled on the user's click in Project settings; image names are validated (no options, lowercase reference).                                                                                            |
 | Leftover or foreign containers                            | Containers carry a per-instance label; timeouts and cancels remove the container; startup removes only this instance's leftovers.                                                                                       |
 
+## Background processes
+
+| Threat                                     | Mitigation                                                                                                                                                                                                     |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starting long-running code without consent | `start_process` is in the `shell` category: always a per-action approval, never covered by a task permission or "allow similar". The card says it keeps running. Duplicates and over-limit starts are refused. |
+| Forgotten or orphaned processes            | Listed in the Processes panel with **Stop**; stopped (whole process group, or the container) when Friday quits. After a crash, startup kills only processes whose environment carries this instance's marker.  |
+| Secrets in process output                  | Same environment allowlist as `run_command` (no API key); output is redacted before it reaches the model or the UI.                                                                                            |
+| Exposing a sandboxed dev server            | Ports are published on `127.0.0.1` only, only for a sandbox with network, and are part of the approval fingerprint.                                                                                            |
+| The model stopping other programs          | `stop_process` (category `process_control`, no approval) only accepts ids of processes Friday started in the same project.                                                                                     |
+
 ## Known limitations
 
 - Without the per-project **command sandbox**, an approved `run_command` runs as the current user with full
   filesystem and network access (the card says so). With it, the command can still modify the project folder (it is
   mounted writable), and isolation is Docker's: a container escape or a vulnerable Docker daemon is outside Friday's
   control. Very large projects (over 20,000 entries scanned) may have credential files the scan did not reach.
+- Background processes on the host run as you until stopped. Orphan cleanup after a crash reads `/proc`, so it works
+  on Linux only, and it misses a process that deliberately clears its environment.
 - Commit hooks are the repository's own code and run during an approved `git_commit` (the approval card lists them).
 - `remote_command` runs through the remote user's shell with that user's privileges; Friday cannot sandbox it. Remote
   processes may keep running if ssh is killed on timeout or cancel (the result says so).

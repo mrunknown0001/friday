@@ -1,4 +1,4 @@
-import type { RunEvent, SessionDetailDto } from '@friday/shared';
+import type { AppNotice, RunEvent, SessionDetailDto } from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { MAX_USER_MESSAGE_CHARS } from '../../chat/runManager.js';
@@ -124,7 +124,7 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     return { revoked: s.runManager.revokeTaskPermission(id) };
   });
 
-  /** App-wide notices for every conversation (approvals waiting, finished runs). */
+  /** App-wide notices for every conversation (approvals waiting, finished runs, processes). */
   const noticeStreams = new Set<() => void>();
   // These streams stay open for the app's lifetime; end them so shutdown is not held up.
   app.addHook('preClose', async () => {
@@ -141,14 +141,16 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
       'X-Content-Type-Options': 'nosniff',
     });
     raw.write(': connected\n\n');
-    const unsubscribe = s.runManager.onNotice((n) => {
-      raw.write(`event: notice\ndata: ${JSON.stringify(n)}\n\n`);
-    });
+    const send = (n: AppNotice) => raw.write(`event: notice\ndata: ${JSON.stringify(n)}\n\n`);
+    const unsubscribers = [
+      s.runManager.onNotice(send),
+      s.processes.onChange((process) => send({ type: 'process_updated', process })),
+    ];
     const heartbeat = setInterval(() => raw.write(': ping\n\n'), SSE_HEARTBEAT_MS);
     const end = () => {
       if (!noticeStreams.delete(end)) return;
       clearInterval(heartbeat);
-      unsubscribe();
+      for (const u of unsubscribers) u();
       raw.end();
     };
     noticeStreams.add(end);

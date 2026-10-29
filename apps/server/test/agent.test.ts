@@ -222,6 +222,10 @@ describe('tool executor', () => {
         'search_memory',
         'suggest_next_steps',
         'request_task_permissions',
+        'start_process',
+        'list_processes',
+        'read_process_output',
+        'stop_process',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;
