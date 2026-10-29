@@ -1,6 +1,7 @@
 import type {
   ApprovalDto,
   FileChangeDto,
+  ProcessDto,
   ProjectDto,
   RunDto,
   SessionDetailDto,
@@ -10,6 +11,7 @@ import type {
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AddProjectDialog } from './components/AddProjectDialog';
+import { crashed } from './components/Processes';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { ChatView } from './components/ChatView';
 import { MemoryDialog } from './components/MemoryDialog';
@@ -54,6 +56,9 @@ export function App() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [detail, setDetail] = useState<SessionDetailDto | null>(null);
   const [changes, setChanges] = useState<{ sessionId: string; list: FileChangeDto[] } | null>(null);
+  const [processes, setProcesses] = useState<{ projectId: string; list: ProcessDto[] } | null>(
+    null,
+  );
   const [runId, setRunId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +118,19 @@ export function App() {
     void loadSessions();
   }, [projectId, loadSessions]);
 
+  // Background processes of the selected project; kept current by process_updated notices.
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    api
+      .projectProcesses(projectId)
+      .then((r) => !cancelled && setProcesses({ projectId, list: r.processes }))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   useEffect(() => {
     writeStored(ACTIVE_KEY, activeId);
     // loadDetail only sets state after its fetch resolves; the rule cannot see through the await.
@@ -134,6 +152,31 @@ export function App() {
   // System notifications when Friday needs you (or finished a longer task) while you are looking
   // at something else: another window, another app, or another conversation.
   useAppNotices((n) => {
+    if (n.type === 'process_updated') {
+      const p = n.process;
+      setProcesses((cur) =>
+        cur && cur.projectId === p.projectId
+          ? {
+              projectId: cur.projectId,
+              list: [p, ...cur.list.filter((x) => x.id !== p.id)].sort(
+                (a, b) =>
+                  Number(b.status === 'running') - Number(a.status === 'running') ||
+                  b.startedAt.localeCompare(a.startedAt),
+              ),
+            }
+          : cur,
+      );
+      // A dev server that crashes while you are elsewhere (e.g. in the browser) is worth knowing.
+      if (crashed(p) && (document.hidden || !document.hasFocus())) {
+        notify({
+          title: `“${p.name}” stopped unexpectedly`,
+          body: p.error ?? `Exited with ${p.signal ?? `code ${p.exitCode}`}.`,
+          tag: p.id,
+          onClick: () => setActiveId(p.sessionId),
+        });
+      }
+      return;
+    }
     if (n.type === 'run_finished') void loadSessions();
     // A run started elsewhere (another window, the API) in the conversation on screen: attach to it.
     if (n.type === 'approval_requested' && n.sessionId === activeId && runId !== n.runId)
@@ -401,6 +444,18 @@ export function App() {
           plan={live?.plan ?? shownDetail?.plan ?? null}
           changes={sessionChanges}
           onRevert={(c) => void revert(c)}
+          processes={processes && processes.projectId === projectId ? processes.list : []}
+          onStopProcess={(p) => void api.stopProcess(p.id).catch(report)}
+          onDismissProcess={(p) =>
+            void api
+              .dismissProcess(p.id)
+              .then(() =>
+                setProcesses((cur) =>
+                  cur ? { ...cur, list: cur.list.filter((x) => x.id !== p.id) } : cur,
+                ),
+              )
+              .catch(report)
+          }
         />
       )}
       {projectSettingsOpen && project && (

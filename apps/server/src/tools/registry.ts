@@ -23,6 +23,7 @@ import {
 } from './gitTools.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
+import { listProcesses, readProcessOutput, startProcess, stopProcess } from './processTools.js';
 import { requestTaskPermissions } from './taskPermissionTool.js';
 import { decide, type PolicyDecision } from './policy.js';
 import { toToolDefinition, type ToolContext, type ToolOutput, type ToolSpec } from './types.js';
@@ -41,7 +42,7 @@ export class ToolRegistry {
   constructor(specs: Array<ToolSpec<never>> = DEFAULT_TOOLS) {
     for (const s of specs) {
       if (this.tools.has(s.name)) throw new Error(`Duplicate tool ${s.name}`);
-      const direct = s.category === 'read_only' || s.category === 'agent_state';
+      const direct = decide(s.category).action === 'allow';
       // Protected tools must go through prepare() so nothing can run before approval.
       if (direct ? !s.execute : !s.prepare || s.execute) {
         throw new Error(
@@ -79,6 +80,10 @@ export const DEFAULT_TOOLS = [
   deleteFile,
   moveFile,
   runCommand,
+  startProcess,
+  listProcesses,
+  readProcessOutput,
+  stopProcess,
   gitStatus,
   gitDiff,
   gitLog,

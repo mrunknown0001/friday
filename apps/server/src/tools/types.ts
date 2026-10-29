@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { ToolDefinition } from '../providers/types.js';
 import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
 import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
+import type { ProcessManager } from '../processes/manager.js';
 import type { ProjectRecord } from '../repositories/projects.js';
 import type { SshService } from '../ssh/ssh.js';
 import type { Redactor } from '../security/redact.js';
@@ -39,6 +40,8 @@ export interface ToolContext {
   emitDeploymentPlan?: (plan: DeploymentPlanDto) => void;
   /** DevOps configuration (SSH hosts, authorized log sources, deployment plans). */
   devops?: DevopsContext;
+  /** Background processes (dev servers, watchers) started with start_process. */
+  processes?: ProcessManager;
   /** Record an applied file change for the change list and undo. */
   recordFileChange?: (change: AppliedFileChange) => void;
   /**

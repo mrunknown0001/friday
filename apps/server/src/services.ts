@@ -14,6 +14,7 @@ import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/d
 import { MessageRepo } from './repositories/messages.js';
 import { MemoryRepo } from './repositories/memories.js';
 import { MemoryService } from './memory/service.js';
+import { ProcessManager } from './processes/manager.js';
 import { SshService } from './ssh/ssh.js';
 import { ProjectRepo } from './repositories/projects.js';
 import { RunRepo } from './repositories/runs.js';
@@ -87,6 +88,7 @@ export interface Services {
   deploymentPlans: DeploymentPlanRepo;
   memoryRepo: MemoryRepo;
   memory: MemoryService;
+  processes: ProcessManager;
   registry: ToolRegistry;
   toolEnv: ToolEnvironment;
   capabilities: CapabilityRepo;
@@ -160,6 +162,12 @@ export function createServices(
   const modelSettings = new ModelSettings(settings, config.provider.envModel);
   const approvals = new ApprovalService(approvalRepo, audit, config.approvalTtlMs);
   const memory = new MemoryService(memoryRepo, settings, redactor);
+  const processes = new ProcessManager({
+    instance: toolEnv.sandboxInstance,
+    redact: (text) => redactor.redact(text),
+    audit: (action, sessionId, details) =>
+      audit.record({ sessionId, actor: 'system', action, details }),
+  });
 
   const runManager = new RunManager({
     provider,
@@ -172,6 +180,7 @@ export function createServices(
     approvalRepo,
     fileChanges,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
+    processes,
     memory,
     memoryRepo,
     capabilities,
@@ -204,6 +213,7 @@ export function createServices(
     deploymentPlans,
     memoryRepo,
     memory,
+    processes,
     registry,
     toolEnv,
     capabilities,

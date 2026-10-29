@@ -5,6 +5,7 @@ import { buildApp } from './app.js';
 import { ConfigError, loadConfig, resolveEnvFile } from './config.js';
 import { openDatabase } from './db/database.js';
 import { acquireDataDirLock } from './db/lock.js';
+import { reapOrphans } from './processes/manager.js';
 import { cleanupSandboxes, instanceLabel } from './sandbox/docker.js';
 import { createServices } from './services.js';
 import { detectToolEnvironment } from './workspace/environment.js';
@@ -25,6 +26,8 @@ async function main() {
   const toolEnv = await detectToolEnvironment(instanceLabel(config.dataDir));
   // Containers left by a crash of this instance (labelled with its id; nobody else's).
   const leftoverSandboxes = toolEnv.docker ? await cleanupSandboxes(toolEnv.sandboxInstance) : 0;
+  // Background processes (dev servers) a crash of this instance left running.
+  const leftoverProcesses = await reapOrphans(toolEnv.sandboxInstance);
   const services = createServices(config, db, { toolEnv });
 
   const interrupted = services.runs.markInterrupted();
@@ -84,6 +87,7 @@ async function main() {
       ripgrep: toolEnv.ripgrepVersion ?? 'not found (literal search fallback)',
       docker: toolEnv.docker ?? 'not reachable (command sandbox unavailable)',
       leftoverSandboxes,
+      leftoverProcesses,
     },
     'Friday server ready',
   );

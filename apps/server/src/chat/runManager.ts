@@ -81,6 +81,7 @@ export interface RunManagerDeps {
   approvalRepo: ApprovalRepo;
   fileChanges: FileChangeRepo;
   devops?: ToolContext['devops'];
+  processes?: ToolContext['processes'];
   memory?: MemoryService;
   memoryRepo?: MemoryRepo;
   capabilities: CapabilityRepo;
@@ -640,6 +641,7 @@ export class RunManager {
         resume: this.resumeFor(run, session.plan),
         memory: memoryPromptSection(memoryRefs),
         guidance: project ? await readGuidance(project.rootPath).catch(() => null) : null,
+        processes: project ? (this.deps.processes?.list(project.id) ?? []) : [],
       });
 
       for (;;) {
@@ -817,6 +819,7 @@ export class RunManager {
     return {
       callId,
       ...(this.deps.devops ? { devops: this.deps.devops } : {}),
+      ...(this.deps.processes ? { processes: this.deps.processes } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,

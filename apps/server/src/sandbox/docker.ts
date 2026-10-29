@@ -152,6 +152,8 @@ export interface SandboxRun {
   name: string;
   uid: number;
   gid: number;
+  /** Container ports to publish on 127.0.0.1 (same port number on the host). Needs a network. */
+  ports?: number[];
 }
 
 /** The exact `docker run` arguments for a sandboxed command (pure; tested directly). */
@@ -190,6 +192,10 @@ export function dockerRunArgs(r: SandboxRun): string[] {
     '--mount',
     `type=bind,src=${root},dst=${WORKSPACE}`,
   ];
+  for (const port of r.ports ?? []) {
+    // Loopback only: a dev server in the sandbox must never be reachable from the network.
+    args.push('--publish', `127.0.0.1:${port}:${port}`);
+  }
   if (r.gitDir) {
     args.push('--mount', `type=bind,src=${root}/.git,dst=${WORKSPACE}/.git,readonly`);
   }
@@ -228,6 +234,15 @@ export async function runInSandbox(
   });
   if (result.timedOut || result.cancelled || result.signal) await docker(['rm', '-f', r.name]);
   return result;
+}
+
+/** Stop a sandbox container (SIGTERM, then SIGKILL after the grace period); --rm removes it. */
+export async function stopContainer(name: string, graceSeconds = 5): Promise<void> {
+  const r = await docker(
+    ['stop', '--time', String(graceSeconds), name],
+    (graceSeconds + 15) * 1000,
+  );
+  if (!r.ok) await docker(['rm', '-f', name]);
 }
 
 /** Map container paths in output back to project paths (for locations and readability). */

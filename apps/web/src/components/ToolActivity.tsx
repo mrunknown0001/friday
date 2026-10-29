@@ -89,6 +89,15 @@ export function toolLabel(name: string, argsJson: string): string {
       return Array.isArray(a.argv)
         ? (a.argv as unknown[]).map(str).join(' ')
         : str(a.shell_command);
+    case 'start_process':
+      return `${str(a.name)}: ${
+        Array.isArray(a.argv) ? (a.argv as unknown[]).map(str).join(' ') : str(a.shell_command)
+      }`;
+    case 'read_process_output':
+    case 'stop_process':
+      return str(a.id);
+    case 'list_processes':
+      return '';
     default:
       return Object.values(a).map(str).join(' ').slice(0, 80);
   }

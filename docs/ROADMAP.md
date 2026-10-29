@@ -163,4 +163,12 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
   pulls; refuses instead of falling back to the host. Verified live on 2026-10-30 with `claude-sonnet-4.6`: failing
   test, fix and passing test all ran in `node:22-alpine` with the card saying so, the project's `.env` value never
   appeared, and no containers were left behind
-- ⬜ Long-running processes, code map for large repos (see the suggestion list)
+- ✅ Background processes: `start_process` (approved), `read_process_output`, `list_processes`, `stop_process`;
+  Processes panel with live output, local links and **Stop**; stopped when Friday quits and reaped after a crash.
+  Verified live on 2026-10-30 with `claude-sonnet-4.6`: the dev server started after one approval and served
+  requests; Friday read only the new log lines through the cursor and stopped the server on request. The UI's
+  Output and Stop worked, axe found 0 violations, and after a `kill -9` of Friday the next start stopped the
+  orphaned server
+- ⬜ Image attachments: paste screenshots or photos from the clipboard (or attach files) so Friday can inspect an
+  actual UI or read an image (queued)
+- ⬜ Code map for large repos (see the suggestion list)

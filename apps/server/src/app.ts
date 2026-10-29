@@ -7,6 +7,7 @@ import { HttpError } from './http/errors.js';
 import { registerApprovalRoutes } from './http/routes/approvals.js';
 import { registerDevopsRoutes } from './http/routes/devops.js';
 import { registerMemoryRoutes } from './http/routes/memory.js';
+import { registerProcessRoutes } from './http/routes/processes.js';
 import { registerProjectRoutes } from './http/routes/projects.js';
 import { registerProviderRoutes } from './http/routes/provider.js';
 import { registerSessionRoutes } from './http/routes/sessions.js';
@@ -96,6 +97,7 @@ export async function buildApp(
   registerProviderRoutes(app, services);
   registerSessionRoutes(app, services);
   registerProjectRoutes(app, services);
+  registerProcessRoutes(app, services);
   registerApprovalRoutes(app, services);
   registerDevopsRoutes(app, services);
   registerMemoryRoutes(app, services);

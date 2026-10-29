@@ -162,6 +162,21 @@ dialog suggests one for the project's stack (e.g. `node:22-bookworm-slim`), show
 your machine. Commands can still change files in the project folder, so review them as usual. Requires Docker (checked
 at startup and from the dialog).
 
+### Background processes
+
+For commands that keep running (dev servers, `tsc --watch`, test watchers), Friday uses `start_process` instead of
+`run_command`. It needs your approval like any command; the card says it keeps running in the background. Friday waits
+until the process looks ready (a text you named, or a local URL such as `http://localhost:5173`) and reports the
+output. It can then read new output (for example to check for compile errors after an edit) and stop the process
+without asking, since stopping only ends something you approved.
+
+Running processes appear in the side panel under **Processes**, with their local URL, a live output view and a
+**Stop** button. They run until stopped, or until Friday quits. If Friday crashes, the next start stops anything it
+left behind; only processes carrying this Friday instance's marker are touched. Limits: 3 running per project and 8
+in total, keeping the last 256 KB of output each. In a sandboxed project the process runs in the container. A dev
+server there is reachable only through ports Friday publishes on `127.0.0.1`, which needs the project's sandbox
+network turned on.
+
 ### Task permissions
 
 A fix usually means edit, test, edit again, test again. Instead of approving each step, you can approve a bounded
