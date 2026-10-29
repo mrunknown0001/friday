@@ -19,12 +19,117 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Runaway requests                                  | Bounded retries for transient errors only, per-request header timeout, stream idle timeout, cancellation, 200 000-character message limit, 1 MB default body limit.                                                                                  |
 | Local data disclosure                             | The data directory is created `0700` and the database file `0600`.                                                                                                                                                                                   |
 
+## Threats addressed in Phase 2 (read-only tools)
+
+| Threat                                   | Mitigation                                                                                                                                                                                                           |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model reads outside the project          | Every path goes through `resolveInside`: lexical check, then `realpath` check against the canonical root, so `../`, absolute paths, and symlinks pointing out are refused.                                           |
+| Over-broad authorization                 | Project roots must be absolute, existing directories. `/`, the home directory, its ancestors, system directories, and whole drives are refused, both as typed and after resolving symlinks.                          |
+| Project root swapped after authorization | Each tool call re-verifies that the root still resolves to the same canonical directory.                                                                                                                             |
+| Secrets sent to the model provider       | Credential files and `.git` internals are never read, including via symlink, by tools or the UI viewer. Search drops their matches and reports only the file name. All tool output also passes through the redactor. |
+| Cross-project leakage                    | A session's project is fixed at creation. Tools receive only that project's root, and context comes only from that session.                                                                                          |
+| Model invoking mutating or unknown tools | `policy.decide` runs on the server for every call. Phase 2 allows only `read_only` and `agent_state`; everything else returns `denied` and is never advertised.                                                      |
+| Malformed or hostile tool arguments      | JSON parse plus zod validation before execution; ripgrep runs with an argv array (no shell), `-e` for the query and `--` before paths; the built-in fallback has no regex mode (ReDoS).                              |
+| Runaway agent                            | Iteration, tool-call, duplicate-call, consecutive-failure, output-size, and per-tool timeout limits; cancellation between and during tools.                                                                          |
+| Prompt injection via file contents       | The system prompt labels file contents, search results, and file names as data. Tools are read-only, so injected instructions cannot cause changes.                                                                  |
+
+## Threats addressed in Phase 3 (approvals and execution)
+
+| Threat                                   | Mitigation                                                                                                                                                                                                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Model performing changes without consent | Policy maps file and shell categories to `require_approval`. The registry rejects protected tools with a direct `execute`; only `apply()` after approval performs side effects.                                                                                                |
+| Model approving its own action           | Decisions only arrive through `POST /api/approvals/:id/decision` (browser client header required). No tool can reach it.                                                                                                                                                       |
+| Approving one thing, executing another   | The approval stores a hash over the approval id, session, project root, tool, canonical args, and observed preconditions. The client must echo the reviewed hash, and the hash is recomputed from fresh state right before execution; any difference marks the approval stale. |
+| Replay or double execution               | Compare-and-set status transitions; `approved` can only move to a terminal state. Approval ids are part of the hash.                                                                                                                                                           |
+| Stale or abandoned approvals             | Expiry (default 15 min), run cancellation, and server restart all close pending approvals; none can execute later.                                                                                                                                                             |
+| Overwriting user edits                   | Edits fingerprint the file; changes made after review make the action stale. Undo refuses if the file differs from what Friday wrote, or if later changes exist.                                                                                                               |
+| Secret leakage via commands              | Child processes get an allowlisted environment (PATH, HOME, USER, locale, …) plus `CI=1`; API keys and tokens in the server environment are not inherited. Output is redacted before reaching the model.                                                                       |
+| Hidden shell semantics                   | argv runs without a shell. Shell mode is explicit, the script is shown verbatim, and the card lists the shell features used (pipes, redirection, chaining, substitution).                                                                                                      |
+| Runaway processes                        | Per-command timeout (max 600 s), closed stdin, and process-group SIGTERM then SIGKILL on timeout or cancel.                                                                                                                                                                    |
+| Misleading success reports               | The UI shows a run record built from approval outcomes (exit codes, stale and rejected actions) next to the model's answer.                                                                                                                                                    |
+
+## Threats addressed in Phase 4 (git and coding workflow)
+
+| Threat                                                           | Mitigation                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Malicious repository config executing programs during inspection | Every git call passes `-c core.fsmonitor=false`, `core.pager=cat`, `core.sshCommand=false`, empty `credential.helper`, `core.hooksPath=/dev/null` (inspection), and `--no-ext-diff --no-textconv` for diffs. Tested against a repo with all of these booby-trapped. |
+| Option injection through refs or paths                           | Refs must match a strict pattern and never start with `-`; `--end-of-options` and `--` separate them; pathspecs starting with `:` are refused.                                                                                                                      |
+| Git exposing or committing files outside the project             | Git tools require the project root to be the repository top level.                                                                                                                                                                                                  |
+| Committing secrets                                               | `git_commit` refuses when any in-scope path is a credential file; diffs of credential files are hidden.                                                                                                                                                             |
+| Committing more than was reviewed                                | `git commit --only -- <paths>` commits exactly the approved paths; the fingerprint covers HEAD, branch, and the per-file diffs.                                                                                                                                     |
+| Destructive git operations                                       | No reset/checkout/clean/push tools; via `run_command` they are flagged high risk and need approval like any command.                                                                                                                                                |
+| Partial multi-file application                                   | `edit_files` restores already-written files if any write fails and records changes only after all succeed.                                                                                                                                                          |
+| Rollback clobbering newer work                                   | Rollback validates every file first and refuses if any was edited since, or changed again by a later task.                                                                                                                                                          |
+| Lost progress or double execution after a crash                  | Checkpoints after every action; pending approvals are cancelled at startup; resume context tells the model what already ran.                                                                                                                                        |
+
+## Threats addressed in Phase 5 (DevOps and remote access)
+
+| Threat                                    | Mitigation                                                                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Credentials pasted into Friday            | Host configuration accepts only a key _path_ (strict schema rejects extra fields such as `password`); `.pub` files refused; keys are read by ssh, never by Friday.                                     |
+| Man-in-the-middle on SSH                  | No trust on first use: the user scans, compares the fingerprint out-of-band, and trusts it explicitly. Per-host known_hosts and `StrictHostKeyChecking=yes`; a changed key fails with a clear warning. |
+| Surprising ssh behaviour from user config | `-F /dev/null`, `BatchMode`, password/keyboard-interactive disabled, agent/X11/port forwarding disabled, `--` before the host.                                                                         |
+| Injection through diagnostic parameters   | `remote_diagnose` uses fixed command templates; service names and log paths are pattern-validated and shell-quoted.                                                                                    |
+| Accidental production changes             | Production commands need a recorded deployment plan, a server-checked typed host name, and a fresh approval that expires in 5 minutes.                                                                 |
+| Destructive data changes without backup   | Plans whose steps touch data (migrations, database clients, DROP/ALTER/TRUNCATE) are rejected unless a backup pre-check is listed.                                                                     |
+| Secrets in logs and container metadata    | Log tails and container logs are redacted; `docker inspect` output keeps only env variable names; `inspect_environment` never reads env.                                                               |
+| Reading arbitrary system files as "logs"  | Log sources must be added by the user; `/etc`, `/proc`, `/sys`, `/dev`, `/boot`, `/root` and credential files are refused.                                                                             |
+| Provider altering model output            | NoTokenLimit rewrites `/home/...` paths in model text. Approvals, run records and reports use Friday's own records, never model prose.                                                                 |
+
+## Threats addressed in Phase 6 (memory)
+
+| Threat                                       | Mitigation                                                                                                                                                      |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Secrets persisted and replayed to the model  | Server-side rejection of credential patterns, "secret is <value>" statements, credential URLs and random tokens, for agent and user writes alike.               |
+| Cross-project leakage                        | One visibility predicate for all model-facing reads; tested with two projects in unit tests and live.                                                           |
+| Memory poisoning (wrong facts reused later)  | Evidence-ordering rule for "confirmed" facts, confidence labels, "verify before relying" framing, user review/edit/delete, replacement instead of accumulation. |
+| Prompt injection via memory or repo guidance | Memories and guidance files are placed in sections labelled as information, not instructions; guidance is explicitly untrusted.                                 |
+| Unwanted personal profiling                  | User-scope memories proposed by the agent stay pending until approved; memory can be disabled globally or per project; deleting is permanent.                   |
+| FTS query injection                          | Search text is reduced to quoted word tokens before reaching FTS5.                                                                                              |
+
+## Threats addressed in Phase 7 (desktop app and hardening)
+
+| Threat                                                       | Mitigation                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Other local programs or users driving the agent (desktop)    | A 256-bit token generated at each launch is required on every request (compared as fixed-length digests). Electron adds it at the network layer to the app's own requests only; page JavaScript never sees it, and it is never logged or stored.                        |
+| Another program taking the desktop server's port             | The server binds port 0 itself and reports the port over the utility-process channel, so there is no gap between choosing a port and binding it.                                                                                                                        |
+| Renderer compromise reaching the OS                          | `contextIsolation`, `sandbox`, no `nodeIntegration`. The preload exposes three calls (folder picker, restart, show config file); IPC is honoured only from the app window's top frame on the server's origin.                                                           |
+| Navigation, pop-ups and permission prompts                   | Navigation and redirects off the app origin are blocked (http/https links open in the system browser), `window.open` and webviews are denied, and every permission except clipboard writes for the app is refused.                                                      |
+| Repurposing the packaged binary                              | Electron fuses: `RunAsNode`, `NODE_OPTIONS` and inspector flags disabled; asar integrity validation and app-from-asar-only enabled.                                                                                                                                     |
+| Two servers on one database                                  | A PID lock file in the data folder; a stale lock from a crash is replaced.                                                                                                                                                                                              |
+| API key storage (desktop)                                    | `friday.env` is created `0600` in the user's config folder and read only by the server process. Settings shows its path, never its contents.                                                                                                                            |
+| Committed credential files via git (`HEAD:.env`, blob ids)   | Revisions may not contain `:`; `git_show` resolves the revision to a commit first, so blobs and trees are refused.                                                                                                                                                      |
+| Repository-defined programs in read-only git commands        | Before every git call, program-running keys in the repository's own config (filter, diff, merge, gpg, editor, askpass, proxy, …) are read and blanked with `-c key=`. User and system config stay trusted.                                                              |
+| Guessing secrets through search results                      | Credential files and `.git` are never searched, and nothing in the result depends on their contents (previously "matched in .env" was reported, which allowed character-by-character guessing). Every ripgrep result is re-checked, so a glob cannot re-include `.git`. |
+| Credential diffs with quoted file names                      | Diff sections are matched on decoded paths from the header, `---`/`+++` and rename lines, so C-quoted names are hidden too.                                                                                                                                             |
+| Case-insensitive filesystems (`/mnt/c` under WSL)            | `.git` and credential-folder checks compare lower-cased path segments.                                                                                                                                                                                                  |
+| Env-style secrets (`DB_PASSWORD=`, `AWS_SECRET_ACCESS_KEY=`) | Redaction matches secret words inside variable names and `user:password@` in URLs; the memory policy also refuses `login user:password` pairs.                                                                                                                          |
+| Folder swapped for a symlink between approval and write      | The target folder is resolved again right before writing, and the write goes through the resolved path.                                                                                                                                                                 |
+
+An independent review (2026-10-29) of the HTTP guards, approval engine, path confinement, command and git execution,
+SSH, renderer, Electron shell and memory policy found the issues listed above; all are fixed and covered by tests.
+Not reviewed in depth: the deployment-plan module beyond its remote tools.
+
 ## Known limitations
 
-- Any process running as the same OS user can call the API. A per-launch bearer token (for Electron, passed through the
-  preload bridge) is planned for Phase 7.
+- `run_command` is **not sandboxed**: an approved command runs as the current user with full filesystem and network
+  access. The approval card says so. Container isolation for untrusted code is still to come.
+- Commit hooks are the repository's own code and run during an approved `git_commit` (the approval card lists them).
+- `remote_command` runs through the remote user's shell with that user's privileges; Friday cannot sandbox it. Remote
+  processes may keep running if ssh is killed on timeout or cancel (the result says so).
+- Secret detection is pattern-based; a secret phrased unusually (e.g. a plain dictionary word as a password) can
+  slip through. Review saved memories periodically.
+- Risk notes on commands are heuristics for the reviewer; they never relax the approval requirement.
+
+- In the **web app**, any process running as the same OS user can call the API on `127.0.0.1:4317`. The desktop app
+  closes this with its per-launch token. In both, a process running as you can still read the data folder and the
+  config file; Friday cannot defend against malware already running under your account.
 - Redaction is pattern-based and cannot catch every secret format.
 - The context-window size is an estimate (about 3.5 characters per token) unless the user configures it.
+- NoTokenLimit adds its own hidden prompt (~1,100 tokens measured), which Friday cannot see or override. Friday
+  reserves 1,500 tokens of context for it.
+- The credential-file list is a denylist of common names. A secret stored in an ordinary source file can still be read
+  and sent to the model; redaction catches only known patterns.
 - NoTokenLimit's `/models` endpoint does not authenticate. Model "availability" checks only prove a model ID exists, not
   that the user's plan can use it. The connection test, which makes a real completion request, is the authoritative check.
 

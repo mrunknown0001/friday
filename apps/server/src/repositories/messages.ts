@@ -1,5 +1,6 @@
-import type { MessageDto, MessageRole, MessageStatus } from '@friday/shared';
+import type { MessageDto, MessageRole, MessageStatus, ToolCallStatus } from '@friday/shared';
 import type { Db } from '../db/database.js';
+import type { ToolCall } from '../providers/types.js';
 
 interface MessageRow {
   id: number;
@@ -7,13 +8,46 @@ interface MessageRow {
   run_id: string | null;
   role: MessageRole;
   content: string;
+  tool_calls: string | null;
+  tool_call_id: string | null;
   status: MessageStatus;
   model: string | null;
   created_at: string;
+  // Joined from tool_calls for tool result messages.
+  tc_name: string | null;
+  tc_arguments: string | null;
+  tc_status: ToolCallStatus | null;
+  tc_summary: string | null;
+  tc_duration_ms: number | null;
+  tc_truncated: number | null;
+  tc_approval_id: string | null;
 }
 
-function toDto(r: MessageRow): MessageDto {
-  return {
+const SELECT = `
+  SELECT m.*, tc.name AS tc_name, tc.arguments AS tc_arguments, tc.status AS tc_status,
+         tc.summary AS tc_summary, tc.duration_ms AS tc_duration_ms, tc.truncated AS tc_truncated,
+         tc.approval_id AS tc_approval_id
+  FROM messages m
+  LEFT JOIN tool_calls tc ON tc.result_message_id = m.id`;
+
+function parseToolCalls(json: string | null): ToolCall[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json) as ToolCall[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface StoredMessage extends MessageDto {
+  /** Full tool calls (untruncated arguments) for rebuilding model context. */
+  rawToolCalls: ToolCall[];
+}
+
+function toStored(r: MessageRow): StoredMessage {
+  const rawToolCalls = parseToolCalls(r.tool_calls);
+  const dto: StoredMessage = {
     id: r.id,
     sessionId: r.session_id,
     runId: r.run_id,
@@ -22,7 +56,34 @@ function toDto(r: MessageRow): MessageDto {
     status: r.status,
     model: r.model,
     createdAt: r.created_at,
+    rawToolCalls,
   };
+  if (rawToolCalls.length > 0) {
+    dto.toolCalls = rawToolCalls.map((c) => ({
+      id: c.id,
+      name: c.name,
+      arguments: c.argumentsJson,
+    }));
+  }
+  if (r.tool_call_id) dto.toolCallId = r.tool_call_id;
+  if (r.tc_name && r.tool_call_id) {
+    dto.tool = {
+      callId: r.tool_call_id,
+      name: r.tc_name,
+      arguments: r.tc_arguments ?? '',
+      status: r.tc_status ?? 'completed',
+      summary: r.tc_summary ?? '',
+      durationMs: r.tc_duration_ms ?? 0,
+      truncated: r.tc_truncated === 1,
+      approvalId: r.tc_approval_id,
+    };
+  }
+  return dto;
+}
+
+export function toMessageDto(m: StoredMessage): MessageDto {
+  const { rawToolCalls: _raw, ...dto } = m;
+  return dto;
 }
 
 export interface NewMessage {
@@ -32,22 +93,26 @@ export interface NewMessage {
   content: string;
   status: MessageStatus;
   model?: string | null;
+  toolCalls?: ToolCall[];
+  toolCallId?: string | null;
 }
 
 export class MessageRepo {
   constructor(private readonly db: Db) {}
 
-  insert(m: NewMessage): MessageDto {
+  insert(m: NewMessage): StoredMessage {
     const info = this.db
       .prepare(
-        `INSERT INTO messages (session_id, run_id, role, content, status, model, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (session_id, run_id, role, content, tool_calls, tool_call_id, status, model, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         m.sessionId,
         m.runId ?? null,
         m.role,
         m.content,
+        m.toolCalls && m.toolCalls.length > 0 ? JSON.stringify(m.toolCalls) : null,
+        m.toolCallId ?? null,
         m.status,
         m.model ?? null,
         new Date().toISOString(),
@@ -55,49 +120,55 @@ export class MessageRepo {
     return this.get(Number(info.lastInsertRowid))!;
   }
 
-  get(id: number): MessageDto | null {
-    const row = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as
-      MessageRow | undefined;
-    return row ? toDto(row) : null;
+  get(id: number): StoredMessage | null {
+    const row = this.db.prepare(`${SELECT} WHERE m.id = ?`).get(id) as MessageRow | undefined;
+    return row ? toStored(row) : null;
   }
 
-  update(id: number, content: string, status: MessageStatus): void {
-    this.db
-      .prepare('UPDATE messages SET content = ?, status = ? WHERE id = ?')
-      .run(content, status, id);
+  update(id: number, content: string, status: MessageStatus, toolCalls?: ToolCall[]): void {
+    if (toolCalls === undefined) {
+      this.db
+        .prepare('UPDATE messages SET content = ?, status = ? WHERE id = ?')
+        .run(content, status, id);
+    } else {
+      this.db
+        .prepare('UPDATE messages SET content = ?, status = ?, tool_calls = ? WHERE id = ?')
+        .run(content, status, toolCalls.length > 0 ? JSON.stringify(toolCalls) : null, id);
+    }
   }
 
-  /** Completed user/assistant messages after `afterId`, up to and including `throughId`. */
-  contextHistory(sessionId: string, afterId: number, throughId: number): MessageDto[] {
+  /**
+   * Completed messages after `afterId`, up to and including `throughId` (or everything after it when
+   * null). Tool results and assistant tool-call messages are included so the model sees its own work.
+   */
+  contextHistory(
+    sessionId: string,
+    afterId: number,
+    throughId: number | null = null,
+  ): StoredMessage[] {
     return (
       this.db
         .prepare(
-          `SELECT * FROM messages WHERE session_id = ? AND id > ? AND id <= ?
-             AND status = 'complete' AND role IN ('user', 'assistant') ORDER BY id`,
+          `${SELECT} WHERE m.session_id = ? AND m.id > ? AND (? IS NULL OR m.id <= ?)
+             AND m.status = 'complete' AND m.role IN ('user', 'assistant', 'tool') ORDER BY m.id`,
         )
-        .all(sessionId, afterId, throughId) as MessageRow[]
-    ).map(toDto);
+        .all(sessionId, afterId, throughId, throughId) as MessageRow[]
+    ).map(toStored);
   }
 
-  setRunId(id: number, runId: string): void {
-    this.db.prepare('UPDATE messages SET run_id = ? WHERE id = ?').run(runId, id);
-  }
-
-  listBySession(sessionId: string): MessageDto[] {
+  listBySession(sessionId: string): StoredMessage[] {
     return (
       this.db
-        .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY id')
+        .prepare(`${SELECT} WHERE m.session_id = ? ORDER BY m.id`)
         .all(sessionId) as MessageRow[]
-    ).map(toDto);
+    ).map(toStored);
   }
 
-  lastUserMessage(sessionId: string): MessageDto | null {
+  lastUserMessage(sessionId: string): StoredMessage | null {
     const row = this.db
-      .prepare(
-        `SELECT * FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1`,
-      )
+      .prepare(`${SELECT} WHERE m.session_id = ? AND m.role = 'user' ORDER BY m.id DESC LIMIT 1`)
       .get(sessionId) as MessageRow | undefined;
-    return row ? toDto(row) : null;
+    return row ? toStored(row) : null;
   }
 
   countBySession(sessionId: string): number {

@@ -23,6 +23,7 @@ export function registerProviderRoutes(app: FastifyInstance, s: Services) {
       model,
       modelSource: source,
       apiKeyConfigured: s.provider.isConfigured(),
+      envFile: s.config.envFile,
       baseUrl: s.config.provider.baseUrl,
       timeoutMs: s.config.provider.timeoutMs,
       maxRetries: s.config.provider.maxRetries,

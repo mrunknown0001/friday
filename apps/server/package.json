@@ -15,14 +15,15 @@
   },
   "dependencies": {
     "@fastify/static": "^10.1.8",
-    "better-sqlite3": "^13.0.3",
+    "diff": "^9.0.0",
     "fastify": "^5.12.7",
+    "ignore": "7.0.12",
     "openai": "^7.45.1",
+    "yaml": "2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@friday/shared": "0.1.0",
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.5",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",

@@ -8,8 +8,16 @@ const PATTERNS: RegExp[] = [
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-  /\b((?:api[_-]?key|secret|password|passwd|token)\s*[=:]\s*)["']?[^\s"']{6,}/gi,
+  // NAME=value / name: value where the name contains a secret word, including env-var style names
+  // such as DB_PASSWORD, AWS_SECRET_ACCESS_KEY or GITHUB_TOKEN ("_" is a word character, so \b
+  // alone would miss them).
+  /((?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_.-])*(?:api[_-]?key|access[_-]?key|secret|password|passwd|passphrase|token|credentials?|private[_-]?key)(?:[_.-][A-Za-z0-9]+)*\s*[=:]\s*)["']?[^\s"']{4,}/gi,
+  // MYSQL_PWD=..., but not a bare PWD=/current/dir.
+  /((?<![A-Za-z0-9])[A-Za-z0-9]+_PWD\s*[=:]\s*)["']?[^\s"']{4,}/gi,
 ];
+
+/** user:password@ in URLs (basic auth); the user name is kept. */
+const URL_CREDENTIALS = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi;
 
 const REDACTED = '[REDACTED]';
 
@@ -26,6 +34,7 @@ export class Redactor {
     for (const secret of this.literals) {
       out = out.split(secret).join(REDACTED);
     }
+    out = out.replace(URL_CREDENTIALS, `$1${REDACTED}@`);
     for (const pattern of PATTERNS) {
       out = out.replace(pattern, (match, prefix?: string) =>
         typeof prefix === 'string' && match.startsWith(prefix) ? `${prefix}${REDACTED}` : REDACTED,

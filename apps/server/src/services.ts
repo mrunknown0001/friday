@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { z } from 'zod';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/database.js';
@@ -5,12 +7,23 @@ import { RunManager } from './chat/runManager.js';
 import { NoTokenLimitProvider } from './providers/notokenlimit.js';
 import type { LLMProvider, ModelInfo } from './providers/types.js';
 import { CapabilityRepo } from './repositories/capabilities.js';
+import { ApprovalService } from './approvals/service.js';
+import { ApprovalRepo } from './repositories/approvals.js';
+import { FileChangeRepo } from './repositories/fileChanges.js';
+import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
 import { MessageRepo } from './repositories/messages.js';
+import { MemoryRepo } from './repositories/memories.js';
+import { MemoryService } from './memory/service.js';
+import { SshService } from './ssh/ssh.js';
+import { ProjectRepo } from './repositories/projects.js';
 import { RunRepo } from './repositories/runs.js';
 import { SessionRepo } from './repositories/sessions.js';
 import { SettingsRepo } from './repositories/settings.js';
 import { AuditRepo, ProviderCallRepo } from './repositories/telemetry.js';
+import { ToolCallRepo } from './repositories/toolCalls.js';
 import { Redactor } from './security/redact.js';
+import { ToolRegistry } from './tools/registry.js';
+import type { ToolEnvironment } from './workspace/environment.js';
 
 export const MODEL_SETTING = 'provider.model';
 const modelSettingSchema = z.string().min(1).max(200);
@@ -63,6 +76,19 @@ export interface Services {
   sessions: SessionRepo;
   messages: MessageRepo;
   runs: RunRepo;
+  projects: ProjectRepo;
+  toolCalls: ToolCallRepo;
+  approvalRepo: ApprovalRepo;
+  approvals: ApprovalService;
+  fileChanges: FileChangeRepo;
+  sshHosts: SshHostRepo;
+  ssh: SshService;
+  logSources: LogSourceRepo;
+  deploymentPlans: DeploymentPlanRepo;
+  memoryRepo: MemoryRepo;
+  memory: MemoryService;
+  registry: ToolRegistry;
+  toolEnv: ToolEnvironment;
   capabilities: CapabilityRepo;
   providerCalls: ProviderCallRepo;
   audit: AuditRepo;
@@ -75,6 +101,8 @@ export interface ServiceOverrides {
   provider?: LLMProvider;
   fetch?: typeof fetch;
   retryBaseDelayMs?: number;
+  toolEnv?: ToolEnvironment;
+  registry?: ToolRegistry;
   runManager?: {
     checkpointIntervalMs?: number;
     retainFinishedMs?: number;
@@ -108,18 +136,45 @@ export function createServices(
   const sessions = new SessionRepo(db);
   const messages = new MessageRepo(db);
   const runs = new RunRepo(db);
+  const projects = new ProjectRepo(db);
+  const toolCalls = new ToolCallRepo(db);
+  const approvalRepo = new ApprovalRepo(db);
+  const fileChanges = new FileChangeRepo(db);
+  const sshHosts = new SshHostRepo(db);
+  const ssh = new SshService(
+    sshHosts,
+    path.join(config.dataDir === ':memory:' ? os.tmpdir() : config.dataDir, 'ssh'),
+  );
+  const logSources = new LogSourceRepo(db);
+  const deploymentPlans = new DeploymentPlanRepo(db);
+  const memoryRepo = new MemoryRepo(db);
+  const registry = overrides.registry ?? new ToolRegistry();
+  const toolEnv = overrides.toolEnv ?? { ripgrep: null, ripgrepVersion: null };
   const capabilities = new CapabilityRepo(db);
   const audit = new AuditRepo(db);
   const modelSettings = new ModelSettings(settings, config.provider.envModel);
+  const approvals = new ApprovalService(approvalRepo, audit, config.approvalTtlMs);
+  const memory = new MemoryService(memoryRepo, settings, redactor);
 
   const runManager = new RunManager({
     provider,
     sessions,
     messages,
     runs,
+    projects,
+    toolCalls,
+    approvals,
+    approvalRepo,
+    fileChanges,
+    devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
+    memory,
+    memoryRepo,
     capabilities,
     audit,
     redactor,
+    registry,
+    toolEnv,
+    limits: config.agent,
     resolveModel: () => modelSettings.resolve().model,
     ...overrides.runManager,
   });
@@ -133,6 +188,19 @@ export function createServices(
     sessions,
     messages,
     runs,
+    projects,
+    toolCalls,
+    approvalRepo,
+    approvals,
+    fileChanges,
+    sshHosts,
+    ssh,
+    logSources,
+    deploymentPlans,
+    memoryRepo,
+    memory,
+    registry,
+    toolEnv,
     capabilities,
     providerCalls,
     audit,

@@ -54,18 +54,35 @@ export function buildSystemMessage(systemPrompt: string, summary: string | null)
 }
 
 /**
- * Groups keep an assistant tool-call message together with its tool results, so trimming never
- * produces a tool result without the call that requested it.
+ * Groups history into turns, each starting at a user message, so trimming never separates tool
+ * results from the call that produced them and kept history always starts with a user message.
  */
-function groupHistory(history: HistoryItem[]): HistoryItem[][] {
+function groupTurns(history: HistoryItem[]): HistoryItem[][] {
   const groups: HistoryItem[][] = [];
   for (const item of history) {
     const last = groups.at(-1);
-    if (item.message.role === 'tool' && last) last.push(item);
+    if (item.message.role !== 'user' && last) last.push(item);
     else groups.push([item]);
   }
   return groups;
 }
+
+/** Tool output from earlier turns is clipped: the model can re-run a read if it needs details. */
+export const OLD_TOOL_OUTPUT_CHARS = 1_500;
+const STUB = '[earlier tool output omitted to fit the context window; re-run the tool if needed]';
+
+function clipTool(m: ChatMessage, max: number): ChatMessage {
+  if (m.role !== 'tool' || m.content.length <= max) return m;
+  return {
+    ...m,
+    content:
+      max === 0
+        ? STUB
+        : `${m.content.slice(0, max)}\n[clipped: ${m.content.length - max} more characters]`,
+  };
+}
+
+const groupCost = (g: HistoryItem[]) => g.reduce((n, h) => n + estimateMessageTokens(h.message), 0);
 
 export function fitHistory(input: ContextInput): ContextPlan {
   const system = buildSystemMessage(input.systemPrompt, input.summary);
@@ -74,12 +91,26 @@ export function fitHistory(input: ContextInput): ContextPlan {
     input.reserveOutputTokens -
     estimateMessageTokens(system);
 
-  const groups = groupHistory(input.history);
+  const groups = groupTurns(input.history).map((g, i, all) =>
+    i === all.length - 1
+      ? g.map((h) => ({ ...h }))
+      : g.map((h) => ({ ...h, message: clipTool(h.message, OLD_TOOL_OUTPUT_CHARS) })),
+  );
+
+  // The current turn must fit. If its tool output is too large, stub the oldest results first.
+  const current = groups.at(-1);
+  if (current && groupCost(current) > budget) {
+    for (const h of current) {
+      if (groupCost(current) <= budget) break;
+      if (h.message.role === 'tool') h.message = clipTool(h.message, 0);
+    }
+  }
+
   const kept: HistoryItem[][] = [];
   let used = 0;
   for (let i = groups.length - 1; i >= 0; i--) {
     const group = groups[i]!;
-    const cost = group.reduce((n, h) => n + estimateMessageTokens(h.message), 0);
+    const cost = groupCost(group);
     if (used + cost > budget) {
       if (kept.length === 0) {
         throw new ContextOverflowError(
@@ -91,6 +122,9 @@ export function fitHistory(input: ContextInput): ContextPlan {
     kept.unshift(group);
     used += cost;
   }
+  // A leading group that does not start with a user message (history right after a summary
+  // watermark) is dropped unless it is the only thing left.
+  if (kept.length > 1 && kept[0]![0]!.message.role !== 'user') used -= groupCost(kept.shift()!);
 
   const keptItems = kept.flat();
   const dropped = input.history.slice(0, input.history.length - keptItems.length);
@@ -99,6 +133,41 @@ export function fitHistory(input: ContextInput): ContextPlan {
     dropped,
     estimatedTokens: used + estimateMessageTokens(system),
   };
+}
+
+/**
+ * Ensure every assistant tool call has a result and every tool result has a call. A run that
+ * crashed between the two would otherwise produce history the provider rejects.
+ */
+export function repairToolPairs(items: HistoryItem[]): HistoryItem[] {
+  const out: HistoryItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    const m = item.message;
+    if (m.role === 'tool') continue; // handled with its assistant message below
+    out.push(item);
+    if (m.role !== 'assistant' || !m.toolCalls?.length) continue;
+    const results = new Map<string, HistoryItem>();
+    let j = i + 1;
+    for (; j < items.length && items[j]!.message.role === 'tool'; j++) {
+      const t = items[j]!.message as Extract<ChatMessage, { role: 'tool' }>;
+      if (!results.has(t.toolCallId)) results.set(t.toolCallId, items[j]!);
+    }
+    for (const call of m.toolCalls) {
+      out.push(
+        results.get(call.id) ?? {
+          id: item.id,
+          message: {
+            role: 'tool',
+            toolCallId: call.id,
+            content: 'Error: no result recorded (the run was interrupted).',
+          },
+        },
+      );
+    }
+    i = j - 1;
+  }
+  return out;
 }
 
 const SUMMARY_ITEM_CHAR_LIMIT = 4_000;
@@ -114,7 +183,10 @@ export async function summarizeHistory(
   const transcript = dropped
     .map((h) => {
       const m = h.message;
-      const text = m.role === 'assistant' ? (m.content ?? '') : m.content;
+      const text =
+        m.role === 'assistant'
+          ? `${m.content ?? ''}${m.toolCalls?.length ? `\n[called: ${m.toolCalls.map((c) => c.name).join(', ')}]` : ''}`
+          : m.content;
       const clipped =
         text.length > SUMMARY_ITEM_CHAR_LIMIT
           ? `${text.slice(0, SUMMARY_ITEM_CHAR_LIMIT)} [...]`

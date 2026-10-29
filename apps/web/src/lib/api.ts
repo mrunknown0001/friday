@@ -1,6 +1,20 @@
 import type {
   ApiErrorBody,
+  ApprovalDto,
+  FileChangeDto,
+  HostEnvironment,
+  LogSourceDto,
+  MemoryCategory,
+  MemoryDto,
+  MemoryScope,
+  MemorySettingsDto,
+  SshHostDto,
   ConnectionTestResult,
+  FileViewDto,
+  ProjectDto,
+  ProjectOverviewDto,
+  SystemInfoDto,
+  TreeEntryDto,
   MessageDto,
   ModelCapabilities,
   ModelInfo,
@@ -81,8 +95,29 @@ export const api = {
     request<ModelCapabilities>('PUT', '/api/provider/capabilities/context-window', { tokens }),
   providerCalls: () => request<{ calls: ProviderCallDto[] }>('GET', '/api/provider/calls'),
 
-  sessions: () => request<{ sessions: SessionSummaryDto[] }>('GET', '/api/sessions'),
-  createSession: () => request<SessionSummaryDto>('POST', '/api/sessions', {}),
+  system: () => request<SystemInfoDto>('GET', '/api/system'),
+  projects: () => request<{ projects: ProjectDto[] }>('GET', '/api/projects'),
+  addProject: (path: string, name?: string) =>
+    request<ProjectDto>('POST', '/api/projects', name ? { path, name } : { path }),
+  removeProject: (id: string) => request<void>('DELETE', `/api/projects/${id}`),
+  projectOverview: (id: string) =>
+    request<ProjectOverviewDto>('GET', `/api/projects/${id}/overview`),
+  projectTree: (id: string, path = '.') =>
+    request<{ path: string; entries: TreeEntryDto[]; truncated: boolean }>(
+      'GET',
+      `/api/projects/${id}/tree?path=${encodeURIComponent(path)}`,
+    ),
+  projectFile: (id: string, path: string) =>
+    request<FileViewDto>('GET', `/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
+
+  /** projectId null lists conversations that have no project. */
+  sessions: (projectId: string | null) =>
+    request<{ sessions: SessionSummaryDto[] }>(
+      'GET',
+      `/api/sessions?project=${projectId ?? 'none'}`,
+    ),
+  createSession: (projectId: string | null) =>
+    request<SessionSummaryDto>('POST', '/api/sessions', { projectId }),
   session: (id: string) => request<SessionDetailDto>('GET', `/api/sessions/${id}`),
   renameSession: (id: string, title: string) =>
     request<SessionSummaryDto>('PATCH', `/api/sessions/${id}`, { title }),
@@ -91,6 +126,77 @@ export const api = {
     request<{ run: RunDto; userMessage: MessageDto }>('POST', `/api/sessions/${id}/messages`, {
       content,
     }),
+  decideApproval: (
+    id: string,
+    body: {
+      decision: 'approve' | 'reject';
+      actionHash: string;
+      sessionId: string;
+      note?: string;
+      confirmation?: string;
+    },
+  ) => request<ApprovalDto>('POST', `/api/approvals/${id}/decision`, body),
+  sessionChanges: (id: string) =>
+    request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
+  revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
+  sshHosts: () => request<{ hosts: SshHostDto[] }>('GET', '/api/ssh-hosts'),
+  addSshHost: (h: {
+    name: string;
+    hostname: string;
+    port: number;
+    username: string;
+    identityFile: string | null;
+    environment: HostEnvironment;
+  }) => request<SshHostDto>('POST', '/api/ssh-hosts', h),
+  removeSshHost: (id: string) => request<void>('DELETE', `/api/ssh-hosts/${id}`),
+  scanSshHost: (id: string) =>
+    request<{ keys: Array<{ fingerprint: string }> }>('POST', `/api/ssh-hosts/${id}/scan`),
+  trustSshHost: (id: string, fingerprint: string) =>
+    request<SshHostDto>('POST', `/api/ssh-hosts/${id}/trust`, { fingerprint }),
+  untrustSshHost: (id: string) => request<SshHostDto>('POST', `/api/ssh-hosts/${id}/untrust`),
+  testSshHost: (id: string) =>
+    request<{ ok: boolean; message: string; detail?: string }>('POST', `/api/ssh-hosts/${id}/test`),
+  logSources: () => request<{ sources: LogSourceDto[] }>('GET', '/api/log-sources'),
+  addLogSource: (label: string, path: string) =>
+    request<LogSourceDto>('POST', '/api/log-sources', { label, path }),
+  removeLogSource: (id: string) => request<void>('DELETE', `/api/log-sources/${id}`),
+  memories: (
+    filter: { scope?: MemoryScope; projectId?: string | 'none'; status?: string; q?: string } = {},
+  ) => {
+    const params = new URLSearchParams(
+      Object.entries(filter).filter(
+        (e): e is [string, string] => typeof e[1] === 'string' && e[1] !== '',
+      ),
+    );
+    return request<{ memories: MemoryDto[] }>(
+      'GET',
+      `/api/memories${params.size ? `?${params}` : ''}`,
+    );
+  },
+  createMemory: (m: {
+    scope: 'user' | 'project' | 'operational';
+    category: MemoryCategory;
+    content: string;
+    projectId: string | null;
+  }) => request<MemoryDto>('POST', '/api/memories', m),
+  updateMemory: (
+    id: string,
+    changes: Partial<{
+      content: string;
+      category: MemoryCategory;
+      pinned: boolean;
+      confidence: 'confirmed' | 'assumed';
+      status: 'active' | 'rejected';
+    }>,
+  ) => request<MemoryDto>('PATCH', `/api/memories/${id}`, changes),
+  deleteMemory: (id: string) => request<void>('DELETE', `/api/memories/${id}`),
+  memorySettings: () => request<MemorySettingsDto>('GET', '/api/memory/settings'),
+  setMemorySettings: (s: MemorySettingsDto) =>
+    request<MemorySettingsDto>('PUT', '/api/memory/settings', s),
+  exportMemory: (projectId: string) =>
+    request<{ path: string; count: number }>('POST', `/api/projects/${projectId}/memory/export`),
+  rollbackRun: (runId: string) =>
+    request<{ reverted: string[]; run: RunDto }>('POST', `/api/runs/${runId}/rollback`),
   retry: (id: string) => request<{ run: RunDto }>('POST', `/api/sessions/${id}/retry`),
   cancelRun: (runId: string) =>
     request<{ cancelled: boolean }>('POST', `/api/runs/${runId}/cancel`),

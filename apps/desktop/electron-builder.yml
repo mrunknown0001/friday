@@ -1,0 +1,54 @@
+# Linux desktop packages for Friday. Build with: npm run dist -w @friday/desktop
+appId: dev.friday.desktop
+productName: Friday
+electronVersion: 44.9.3
+directories:
+  output: release
+  buildResources: build-resources
+# The app itself is just the compiled shell; the server is one bundled file and the UI is static.
+files:
+  - dist/**
+  - package.json
+extraResources:
+  - from: build/server
+    to: server
+    filter: ['index.mjs', 'index.mjs.LEGAL.txt']
+  - from: ../web/dist
+    to: web
+    filter: ['**/*', '!**/*.map']
+asar: true
+npmRebuild: false
+linux:
+  executableName: friday
+  syncDesktopName: true
+  target:
+    - AppImage
+    - deb
+  category: Development
+  icon: build-resources/icon.png
+  maintainer: Friday <friday@localhost>
+  synopsis: Local-first AI coding and DevOps assistant
+appImage:
+  artifactName: Friday-${version}-${arch}.${ext}
+deb:
+  artifactName: friday_${version}_${arch}.${ext}
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+# Electron fuses: the packaged binary cannot be repurposed as a Node.js interpreter or debugged
+# through environment variables or CLI flags, and only loads the integrity-checked app.asar.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false

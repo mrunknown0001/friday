@@ -2,6 +2,7 @@ import type { RunEvent, SessionDetailDto } from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { MAX_USER_MESSAGE_CHARS } from '../../chat/runManager.js';
+import { toMessageDto } from '../../repositories/messages.js';
 import { toRunDto } from '../../repositories/runs.js';
 import type { SessionRecord } from '../../repositories/sessions.js';
 import type { Services } from '../../services.js';
@@ -22,17 +23,34 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
 
   const summary = (r: SessionRecord) => ({
     id: r.id,
+    projectId: r.projectId,
     title: r.title,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     lastRunStatus: r.lastRunStatus,
   });
 
-  app.get('/api/sessions', async () => ({ sessions: s.sessions.list().map(summary) }));
+  app.get('/api/sessions', async (req) => {
+    // ?project=<id> lists that project's sessions; ?project=none lists sessions without a project.
+    const { project } = parseInput(
+      z.object({ project: z.union([z.uuid(), z.literal('none')]).optional() }),
+      req.query,
+    );
+    const filter = project === undefined ? undefined : project === 'none' ? null : project;
+    return { sessions: s.sessions.list(filter).map(summary) };
+  });
 
   app.post('/api/sessions', async (req, reply) => {
-    const body = parseInput(z.object({ title: title.optional() }), req.body);
-    const session = s.sessions.create(body.title);
+    const body = parseInput(
+      z.object({ title: title.optional(), projectId: z.uuid().nullable().optional() }),
+      req.body,
+    );
+    if (body.projectId && !s.projects.get(body.projectId)) {
+      throw new HttpError(404, 'project_not_found', 'Project not found.');
+    }
+    // The project binding is fixed at creation so a conversation can never span projects.
+    const session = s.sessions.create(body.title, body.projectId ?? null);
+    if (body.projectId) s.projects.touch(body.projectId);
     reply.code(201);
     return summary(session);
   });
@@ -43,9 +61,14 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     const latest = s.runs.latestForSession(id);
     return {
       ...summary(session),
-      messages: s.messages.listBySession(id),
+      messages: s.messages.listBySession(id).map(toMessageDto),
       latestRun: latest ? toRunDto(latest) : null,
       hasSummary: session.summary !== null,
+      plan: session.plan,
+      approvals: s.approvalRepo.listBySession(id),
+      runs: s.runs.listBySession(id).map(toRunDto),
+      deploymentPlans: s.deploymentPlans.listBySession(id),
+      memoryUsage: s.memoryRepo.usageBySession(id),
     };
   });
 

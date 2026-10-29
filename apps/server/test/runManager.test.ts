@@ -151,6 +151,12 @@ describe('RunManager', () => {
       ],
     );
     const { s, session } = setup(provider);
+    // Conversation-only model, so the system prompt is exactly SYSTEM_PROMPT and no tool schemas count.
+    s.capabilities.saveProbe('test-model', {
+      streaming: 'supported',
+      toolCalling: 'unsupported',
+      notes: null,
+    });
     // Pick a window whose history budget (~1000 tokens) fits two ~435-token user messages but not three.
     const sys = estimateMessageTokens({ role: 'system', content: SYSTEM_PROMPT });
     s.capabilities.setContextWindow('test-model', Math.ceil((1000 + sys) / 0.55));

@@ -10,7 +10,8 @@ const RETRYABLE: ReadonlySet<ProviderErrorKind> = new Set([
 ]);
 
 const USER_MESSAGES: Record<ProviderErrorKind, string> = {
-  not_configured: 'NoTokenLimit is not configured. Set NTL_API_KEY in .env and restart the server.',
+  not_configured:
+    'NoTokenLimit is not configured. Set NTL_API_KEY (see Settings for the file) and restart Friday.',
   auth: 'NoTokenLimit rejected the API key. Check NTL_API_KEY.',
   permission: 'Your NoTokenLimit account is not permitted to use this model or endpoint.',
   rate_limit: 'NoTokenLimit is rate limiting requests. Wait a moment and retry.',

@@ -1,0 +1,25 @@
+{
+  "name": "@friday/desktop",
+  "productName": "Friday",
+  "desktopName": "friday.desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Friday desktop app (Electron shell around the local Friday server)",
+  "type": "module",
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.17.0",
+    "esbuild": "0.28.2"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/bundle-server.mjs",
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dist": "npm run build && electron-builder --linux --config electron-builder.yml"
+  },
+  "author": {
+    "name": "Friday"
+  },
+  "homepage": "https://github.com/mrunknown0001/friday"
+}

@@ -3,6 +3,9 @@
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  /* Lighter than Tailwind's zinc-500 so secondary text meets WCAG AA (4.5:1) on every surface
+     it is used on, down to zinc-800. */
+  --color-zinc-500: #8e8e98;
 }
 
 html,

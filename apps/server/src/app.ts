@@ -4,6 +4,10 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ProviderError } from './providers/errors.js';
 import { HttpError } from './http/errors.js';
+import { registerApprovalRoutes } from './http/routes/approvals.js';
+import { registerDevopsRoutes } from './http/routes/devops.js';
+import { registerMemoryRoutes } from './http/routes/memory.js';
+import { registerProjectRoutes } from './http/routes/projects.js';
 import { registerProviderRoutes } from './http/routes/provider.js';
 import { registerSessionRoutes } from './http/routes/sessions.js';
 import { registerLocalOnlyGuards } from './http/security.js';
@@ -52,6 +56,7 @@ export async function buildApp(
   registerLocalOnlyGuards(app, {
     port: services.config.server.port,
     devOrigins: services.config.server.devOrigins,
+    launchToken: services.config.server.launchToken,
   });
 
   app.setErrorHandler((error, req, reply) => {
@@ -90,6 +95,10 @@ export async function buildApp(
   app.get('/api/health', async () => ({ ok: true }));
   registerProviderRoutes(app, services);
   registerSessionRoutes(app, services);
+  registerProjectRoutes(app, services);
+  registerApprovalRoutes(app, services);
+  registerDevopsRoutes(app, services);
+  registerMemoryRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {

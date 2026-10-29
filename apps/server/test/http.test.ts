@@ -2,7 +2,13 @@ import type { RunEvent } from '@friday/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
+  call,
+  cleanupProjects,
+  makeProject,
+  ScriptedProvider,
   jsonResponse,
   mockFetch,
   sseResponse,
@@ -51,6 +57,45 @@ describe('local-only HTTP guards', () => {
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error.code).toBe('forbidden_host');
+  });
+
+  it('requires the launch token on every request when one is configured (desktop)', async () => {
+    const token = 'T'.repeat(43);
+    const config = testConfig();
+    config.server.launchToken = token;
+    const { app } = await setup([], config);
+    for (const headers of [LOCAL, { ...LOCAL, 'x-friday-token': 'T'.repeat(42) }]) {
+      const res = await app.inject({ method: 'GET', url: '/api/settings', headers });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error.code).toBe('invalid_launch_token');
+    }
+    const ok = await app.inject({
+      method: 'GET',
+      url: '/api/settings',
+      headers: { ...LOCAL, 'x-friday-token': token },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body).not.toContain(token);
+  });
+
+  it('accepts its own origin when the OS picked the port (desktop binds port 0)', async () => {
+    const config = testConfig();
+    config.server.port = 0;
+    const { app } = await setup([], config);
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const port = (app.server.address() as { port: number }).port;
+    const res = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      method: 'POST',
+      headers: { ...MUTATE, origin: `http://127.0.0.1:${port}` },
+      body: '{}',
+    });
+    expect(res.status).toBe(201);
+    const foreign = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      method: 'POST',
+      headers: { ...MUTATE, origin: 'http://127.0.0.1:4317' },
+      body: '{}',
+    });
+    expect(foreign.status).toBe(403);
   });
 
   it('rejects foreign origins and cross-site fetches', async () => {
@@ -360,5 +405,288 @@ describe('chat over HTTP', () => {
     expect(del.statusCode).toBe(204);
     expect(services.runManager.activeRunId(created.id)).toBeNull();
     expect(services.runs.get(run.id)).toBeNull();
+  });
+});
+
+describe('project routes', () => {
+  afterEach(cleanupProjects);
+
+  it('authorizes a folder, dedupes it, and binds new sessions to it', async () => {
+    const { app, services } = await setup([]);
+    const root = makeProject({
+      'package.json': '{"devDependencies":{"vite":"8"}}',
+      'src/a.ts': 'x',
+    });
+    const added = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      headers: MUTATE,
+      payload: { path: root },
+    });
+    expect(added.statusCode).toBe(201);
+    const project = added.json();
+    expect(project).toMatchObject({
+      name: root.split('/').at(-1),
+      rootPath: root,
+      available: true,
+    });
+    const again = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      headers: MUTATE,
+      payload: { path: `${root}/` },
+    });
+    expect(again.statusCode).toBe(200);
+    expect(again.json().id).toBe(project.id);
+    expect(services.audit.list().map((e) => e.action)).toContain('project_authorized');
+
+    const session = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/sessions',
+        headers: MUTATE,
+        payload: { projectId: project.id },
+      })
+    ).json();
+    expect(session.projectId).toBe(project.id);
+    await app.inject({ method: 'POST', url: '/api/sessions', headers: MUTATE, payload: {} });
+    const scoped = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/sessions?project=${project.id}`,
+        headers: LOCAL,
+      })
+    ).json();
+    expect(scoped.sessions.map((x: { id: string }) => x.id)).toEqual([session.id]);
+    const none = (
+      await app.inject({ method: 'GET', url: '/api/sessions?project=none', headers: LOCAL })
+    ).json();
+    expect(none.sessions).toHaveLength(1);
+
+    const overview = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/projects/${project.id}/overview`,
+        headers: LOCAL,
+      })
+    ).json();
+    expect(overview.stack).toEqual(expect.arrayContaining(['Node.js', 'Vite']));
+  });
+
+  it('refuses broad, missing, or relative folders', async () => {
+    const { app } = await setup([]);
+    for (const [path, code] of [
+      ['/', 'forbidden_path'],
+      ['/etc', 'forbidden_path'],
+      ['relative/dir', 'invalid_path'],
+      ['/definitely/not/here', 'not_found'],
+    ]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/projects',
+        headers: MUTATE,
+        payload: { path },
+      });
+      expect(res.json().error.code, path).toBe(code);
+    }
+  });
+
+  it('serves the file browser with the same confinement as the agent', async () => {
+    const { app, services } = await setup([]);
+    const root = makeProject({
+      'src/a.ts': 'const a = 1;',
+      '.env': 'SECRET=1',
+      'node_modules/x/i.js': '',
+    });
+    const project = services.projects.create('p', root);
+    const tree = (
+      await app.inject({ method: 'GET', url: `/api/projects/${project.id}/tree`, headers: LOCAL })
+    ).json();
+    expect(tree.entries.map((e: { path: string }) => e.path).sort()).toEqual(['.env', 'src']);
+    const file = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/projects/${project.id}/file?path=src/a.ts`,
+        headers: LOCAL,
+      })
+    ).json();
+    expect(file).toMatchObject({
+      path: 'src/a.ts',
+      content: 'const a = 1;',
+      language: 'typescript',
+      binary: false,
+    });
+    const secret = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${project.id}/file?path=.env`,
+      headers: LOCAL,
+    });
+    expect(secret.statusCode).toBe(403);
+    expect(secret.body).not.toContain('SECRET=1');
+    const escape = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${project.id}/file?path=../../etc/passwd`,
+      headers: LOCAL,
+    });
+    expect(escape.statusCode).toBe(403);
+  });
+
+  it('removing a project keeps its sessions but detaches them', async () => {
+    const { app, services } = await setup([]);
+    const project = services.projects.create('p', makeProject({ 'a.txt': '' }));
+    const session = services.sessions.create(undefined, project.id);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${project.id}`,
+      headers: MUTATE_NO_BODY,
+    });
+    expect(res.statusCode).toBe(204);
+    expect(services.sessions.get(session.id)?.projectId).toBeNull();
+  });
+});
+
+describe('approval and undo routes', () => {
+  afterEach(cleanupProjects);
+
+  async function approvalSetup() {
+    const provider = new ScriptedProvider([
+      {
+        toolCalls: [
+          call(
+            'write_file',
+            { path: 'notes/todo.md', content: '- ship it\n', reason: 'Track work' },
+            'w1',
+          ),
+        ],
+      },
+      { chunks: ['Created.'] },
+    ]);
+    const services = testServices({ provider });
+    app = await buildApp(services);
+    const root = makeProject({ 'README.md': '# demo\n' });
+    const project = services.projects.create('demo', root);
+    const session = services.sessions.create(undefined, project.id);
+    return { app, services, root, session };
+  }
+
+  async function pendingApproval(services: ReturnType<typeof testServices>, sessionId: string) {
+    for (let i = 0; i < 100; i++) {
+      const pending = services.approvalRepo
+        .listBySession(sessionId)
+        .find((a) => a.status === 'pending');
+      if (pending) return pending;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error('no approval requested');
+  }
+
+  it('applies a change only via an approved decision, then undoes it', async () => {
+    const { app, services, root, session } = await approvalSetup();
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${session.id}/messages`,
+      headers: MUTATE,
+      payload: { content: 'add a todo' },
+    });
+    const { run } = sent.json();
+    const a = await pendingApproval(services, session.id);
+
+    // Session detail exposes the pending approval for the UI (survives a page reload).
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/sessions/${session.id}`, headers: LOCAL })
+    ).json();
+    expect(detail.approvals).toMatchObject([
+      { id: a.id, status: 'pending', category: 'file_create' },
+    ]);
+    expect(detail.latestRun.status).toBe('awaiting_approval');
+
+    // CSRF header and a well-formed hash are required.
+    const noHeader = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: { ...LOCAL, 'content-type': 'application/json' },
+      payload: { decision: 'approve', actionHash: a.actionHash, sessionId: session.id },
+    });
+    expect(noHeader.statusCode).toBe(403);
+    const badHash = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: MUTATE,
+      payload: { decision: 'approve', actionHash: 'x', sessionId: session.id },
+    });
+    expect(badHash.statusCode).toBe(400);
+    expect(fs.existsSync(path.join(root, 'notes/todo.md'))).toBe(false);
+
+    const ok = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: MUTATE,
+      payload: { decision: 'approve', actionHash: a.actionHash, sessionId: session.id },
+    });
+    expect(ok.json().status).toBe('approved');
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/api/approvals/${a.id}/decision`,
+      headers: MUTATE,
+      payload: { decision: 'approve', actionHash: a.actionHash, sessionId: session.id },
+    });
+    expect(replay.statusCode).toBe(409);
+    await services.runManager.waitFor(run.id);
+    expect(fs.readFileSync(path.join(root, 'notes/todo.md'), 'utf8')).toBe('- ship it\n');
+
+    const changes = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${session.id}/changes`,
+        headers: LOCAL,
+      })
+    ).json().changes;
+    expect(changes).toMatchObject([{ path: 'notes/todo.md', change: 'create', revertedAt: null }]);
+    expect(JSON.stringify(changes)).not.toContain('before'); // backups are not exposed
+
+    const undo = await app.inject({
+      method: 'POST',
+      url: `/api/file-changes/${changes[0].id}/revert`,
+      headers: MUTATE_NO_BODY,
+    });
+    expect(undo.statusCode).toBe(200);
+    expect(undo.json().revertedAt).not.toBeNull();
+    expect(fs.existsSync(path.join(root, 'notes/todo.md'))).toBe(false);
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/file-changes/${changes[0].id}/revert`,
+      headers: MUTATE_NO_BODY,
+    });
+    expect(again.statusCode).toBe(409);
+    expect(services.audit.list().map((e) => e.action)).toContain('file_change_reverted');
+  });
+
+  it('refuses to undo a change the user edited afterwards', async () => {
+    const { app, services, root, session } = await approvalSetup();
+    const { run } = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/sessions/${session.id}/messages`,
+        headers: MUTATE,
+        payload: { content: 'add a todo' },
+      })
+    ).json();
+    const a = await pendingApproval(services, session.id);
+    services.approvals.decide(a.id, {
+      decision: 'approve',
+      actionHash: a.actionHash,
+      sessionId: session.id,
+    });
+    await services.runManager.waitFor(run.id);
+    fs.writeFileSync(path.join(root, 'notes/todo.md'), '- ship it\n- my own line\n');
+    const [change] = services.fileChanges.listBySession(session.id);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/file-changes/${change!.id}/revert`,
+      headers: MUTATE_NO_BODY,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('changed_since');
+    expect(fs.readFileSync(path.join(root, 'notes/todo.md'), 'utf8')).toContain('my own line');
   });
 });

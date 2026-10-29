@@ -9,3 +9,8 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// Fetch the Markdown renderer once the app is idle, so the first answer renders formatted.
+const preload = () => void import('./components/MarkdownRenderer');
+if ('requestIdleCallback' in window) window.requestIdleCallback(preload);
+else setTimeout(preload, 1000);

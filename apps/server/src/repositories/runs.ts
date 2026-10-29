@@ -1,4 +1,11 @@
-import type { ProviderErrorKind, RunDto, RunStatus } from '@friday/shared';
+import type {
+  NextStep,
+  RunCheckpoint,
+  RunDto,
+  RunErrorKind,
+  RunReport,
+  RunStatus,
+} from '@friday/shared';
 import type { Db } from '../db/database.js';
 
 interface RunRow {
@@ -7,11 +14,23 @@ interface RunRow {
   user_message_id: number;
   status: RunStatus;
   model: string | null;
-  error_kind: ProviderErrorKind | null;
+  error_kind: RunErrorKind | null;
   error_message: string | null;
   retryable: number;
   started_at: string;
   finished_at: string | null;
+  checkpoint: string | null;
+  report: string | null;
+  suggestions: string | null;
+}
+
+function parseJson<T>(json: string | null): T | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
 }
 
 export interface RunRecord extends RunDto {
@@ -30,6 +49,9 @@ function toRecord(r: RunRow): RunRecord {
     retryable: r.retryable === 1,
     startedAt: r.started_at,
     finishedAt: r.finished_at,
+    checkpoint: parseJson<RunCheckpoint>(r.checkpoint),
+    report: parseJson<RunReport>(r.report),
+    suggestions: parseJson<NextStep[]>(r.suggestions),
   };
 }
 
@@ -67,13 +89,13 @@ export class RunRepo {
 
   finish(
     id: string,
-    status: Exclude<RunStatus, 'running'>,
-    error?: { kind: ProviderErrorKind; message: string; retryable: boolean },
+    status: Exclude<RunStatus, 'running' | 'awaiting_approval'>,
+    error?: { kind: RunErrorKind; message: string; retryable: boolean },
   ): RunRecord {
     this.db
       .prepare(
         `UPDATE runs SET status = ?, error_kind = ?, error_message = ?, retryable = ?, finished_at = ?
-         WHERE id = ? AND status = 'running'`,
+         WHERE id = ? AND status IN ('running', 'awaiting_approval')`,
       )
       .run(
         status,
@@ -86,13 +108,63 @@ export class RunRepo {
     return this.get(id)!;
   }
 
+  setCheckpoint(id: string, checkpoint: RunCheckpoint): void {
+    this.db
+      .prepare('UPDATE runs SET checkpoint = ? WHERE id = ?')
+      .run(JSON.stringify(checkpoint), id);
+  }
+
+  setSuggestions(id: string, suggestions: NextStep[]): void {
+    this.db
+      .prepare('UPDATE runs SET suggestions = ? WHERE id = ?')
+      .run(JSON.stringify(suggestions), id);
+  }
+
+  setReport(id: string, report: RunReport): void {
+    this.db.prepare('UPDATE runs SET report = ? WHERE id = ?').run(JSON.stringify(report), id);
+  }
+
+  listBySession(sessionId: string): RunRecord[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM runs WHERE session_id = ? ORDER BY started_at, rowid')
+        .all(sessionId) as RunRow[]
+    ).map(toRecord);
+  }
+
+  /** Most recent run before `beforeRunId` in the same session. */
+  previousRun(sessionId: string, beforeStartedAt: string): RunRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM runs WHERE session_id = ? AND started_at < ?
+         ORDER BY started_at DESC, rowid DESC LIMIT 1`,
+      )
+      .get(sessionId, beforeStartedAt) as RunRow | undefined;
+    return row ? toRecord(row) : null;
+  }
+
+  /** Toggle between running and awaiting_approval while the run is active. */
+  setActiveStatus(id: string, status: 'running' | 'awaiting_approval'): void {
+    this.db
+      .prepare(
+        `UPDATE runs SET status = ? WHERE id = ? AND status IN ('running', 'awaiting_approval')`,
+      )
+      .run(status, id);
+  }
+
+  recordProgress(id: string, iterations: number, toolCallCount: number): void {
+    this.db
+      .prepare('UPDATE runs SET iterations = ?, tool_call_count = ? WHERE id = ?')
+      .run(iterations, toolCallCount, id);
+  }
+
   /** Called at startup: runs left 'running' by a crash or restart can no longer progress. */
   markInterrupted(): number {
     return this.db
       .prepare(
         `UPDATE runs SET status = 'interrupted', retryable = 1, finished_at = ?,
            error_message = 'The server stopped while this run was in progress.'
-         WHERE status = 'running'`,
+         WHERE status IN ('running', 'awaiting_approval')`,
       )
       .run(new Date().toISOString()).changes;
   }
