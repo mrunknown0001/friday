@@ -441,6 +441,31 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE provider_calls ADD COLUMN tokens_estimated INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    version: 16,
+    name: 'page_captures',
+    up: `
+      -- Screenshots Friday took, so a later one of the same page can be compared with it, and
+      -- the comparisons (before, after, highlighted difference) for the run report.
+      CREATE TABLE page_captures (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        full_page INTEGER NOT NULL,
+        before_id TEXT REFERENCES page_captures(id) ON DELETE SET NULL,
+        diff_attachment_id TEXT REFERENCES attachments(id) ON DELETE SET NULL,
+        changed_ratio REAL,
+        regions TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX page_captures_page ON page_captures(session_id, url, created_at);
+      CREATE INDEX page_captures_run ON page_captures(run_id);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

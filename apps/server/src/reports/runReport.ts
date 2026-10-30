@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { PlanStep, RunCheckpoint, RunReport } from '@friday/shared';
 import { isVerificationCommand } from '../commands/locations.js';
 import type { ApprovalRepo } from '../repositories/approvals.js';
+import type { CaptureRepo } from '../repositories/captures.js';
 import type { FileChangeRepo } from '../repositories/fileChanges.js';
 import type { ProjectRepo } from '../repositories/projects.js';
 import type { RunRepo } from '../repositories/runs.js';
@@ -11,6 +12,7 @@ import { displayArgv } from '../tools/commandTool.js';
 
 export interface ReportDeps {
   approvalRepo: ApprovalRepo;
+  captures?: CaptureRepo;
   fileChanges: FileChangeRepo;
   projects: ProjectRepo;
   runs: RunRepo;
@@ -104,6 +106,9 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
       return `${(a.resultSummary ?? '').replace(/^committed /, '')} ${msg}`.trim();
     });
 
+  const comparisons = deps.captures?.comparisons(chain) ?? [];
+  const visuals = comparisons.length ? { visuals: comparisons } : {};
+
   const drifted = files.filter((f) => f.modifiedSince).length;
   const driftNote = drifted
     ? ` ${drifted} file(s) no longer match what Friday wrote (edited elsewhere since).`
@@ -118,6 +123,7 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
       files,
       commands,
       commits,
+      ...visuals,
     };
   }
   const checks = commands.filter((c) => c.verification && c.afterLastChange);
@@ -129,6 +135,7 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
       files,
       commands,
       commits,
+      ...visuals,
     };
   }
   const passed = last.exitCode === 0;
@@ -141,6 +148,7 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
     files,
     commands,
     commits,
+    ...visuals,
   };
 }
 

@@ -46,6 +46,8 @@ export interface ToolContext {
   devops?: DevopsContext;
   /** Screenshots of local pages; null/absent when no browser is available. */
   capture?: { engine: CaptureEngine; fridayPort: () => number | null };
+  /** Screenshots taken in this conversation (absent when not stored, e.g. in tests). */
+  captures?: CaptureStore;
   /** Symbol index of the project (code_map, find_symbol). */
   codeMap?: CodeMap;
   /** Background processes (dev servers, watchers) started with start_process. */
@@ -118,6 +120,32 @@ export interface ToolImage {
   data: Buffer;
   info: ImageInfo;
   name: string;
+  /** Already stored (through ctx.captures): bound to the tool message instead of stored again. */
+  attachmentId?: string;
+}
+
+/** Screenshots in this conversation, for before/after comparisons. */
+export interface CaptureStore {
+  /** The latest earlier capture of this page at this size. */
+  latest(page: PageKey): { id: string; attachmentId: string; createdAt: string } | null;
+  image(attachmentId: string): Buffer | null;
+  /** Store an image now (bound to the tool message when the result is recorded). */
+  store(image: ToolImage): string;
+  record(capture: PageKey & { attachmentId: string; comparison?: CaptureComparison }): string;
+}
+
+export interface PageKey {
+  url: string;
+  width: number;
+  height: number;
+  fullPage: boolean;
+}
+
+export interface CaptureComparison {
+  beforeId: string;
+  diffAttachmentId: string | null;
+  changedRatio: number;
+  regions: Array<{ x: number; y: number; width: number; height: number }>;
 }
 
 export interface ToolOutput {

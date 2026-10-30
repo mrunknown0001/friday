@@ -24,6 +24,7 @@ import type {
 } from '../providers/types.js';
 import { IMAGE_LIMITS } from '../attachments/image.js';
 import { toAttachmentDto, type AttachmentRepo } from '../repositories/attachments.js';
+import type { CaptureRepo } from '../repositories/captures.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
@@ -50,7 +51,7 @@ import {
   type ToolExecution,
   type ToolRegistry,
 } from '../tools/registry.js';
-import type { Proposal, ToolContext } from '../tools/types.js';
+import type { CaptureStore, Proposal, ToolContext } from '../tools/types.js';
 import { detectProject } from '../workspace/detect.js';
 import type { ToolEnvironment } from '../workspace/environment.js';
 import { assertRootAvailable, WorkspaceError } from '../workspace/paths.js';
@@ -86,6 +87,8 @@ export interface RunManagerDeps {
   approvalRepo: ApprovalRepo;
   fileChanges: FileChangeRepo;
   attachments: AttachmentRepo;
+  /** Screenshots and before/after comparisons. */
+  captures?: CaptureRepo;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
@@ -706,8 +709,10 @@ export class RunManager {
       status: 'complete',
       toolCallId: call.id,
     });
-    const images = (exec.images ?? []).map((img) =>
-      this.deps.attachments.create(img.data, img.info, img.name, run.sessionId),
+    const images = (exec.images ?? []).map(
+      (img) =>
+        (img.attachmentId ? this.deps.attachments.get(img.attachmentId) : null) ??
+        this.deps.attachments.create(img.data, img.info, img.name, run.sessionId),
     );
     if (images.length)
       this.deps.attachments.bind(
@@ -980,6 +985,20 @@ export class RunManager {
     }
   }
 
+  private captureStore(run: ActiveRun): CaptureStore {
+    const captures = this.deps.captures!;
+    const attachments = this.deps.attachments;
+    return {
+      latest: (page) => captures.latest({ sessionId: run.sessionId, ...page }),
+      image: (id) => {
+        const a = attachments.get(id);
+        return a && a.sessionId === run.sessionId ? attachments.data(id) : null;
+      },
+      store: (img) => attachments.create(img.data, img.info, img.name, run.sessionId).id,
+      record: (c) => captures.insert({ sessionId: run.sessionId, runId: run.id, ...c }),
+    };
+  }
+
   private toolContext(run: ActiveRun, project: ProjectRecord | null, callId: string): ToolContext {
     let streamed = 0;
     return {
@@ -988,6 +1007,7 @@ export class RunManager {
       ...(this.deps.processes ? { processes: this.deps.processes } : {}),
       ...(this.deps.codeMap ? { codeMap: this.deps.codeMap } : {}),
       ...(this.deps.capture ? { capture: this.deps.capture } : {}),
+      ...(this.deps.captures ? { captures: this.captureStore(run) } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,
@@ -1253,11 +1273,12 @@ export class RunManager {
       err ? { kind: err.kind, message: err.message, retryable: err.retryable } : undefined,
     );
     this.deps.sessions.touch(run.sessionId);
-    // Only runs that proposed actions get a report; plain answers have nothing to verify.
+    // Only runs that proposed actions or compared screenshots get a report; plain answers have
+    // nothing to verify.
+    const chain = taskRunIds(run.id, this.deps.runs);
     if (
-      taskRunIds(run.id, this.deps.runs).some(
-        (id) => this.deps.approvalRepo.listByRun(id).length > 0,
-      )
+      chain.some((id) => this.deps.approvalRepo.listByRun(id).length > 0) ||
+      (this.deps.captures?.comparisons(chain).length ?? 0) > 0
     ) {
       this.deps.runs.setReport(run.id, buildRunReport(run.id, this.deps));
     }

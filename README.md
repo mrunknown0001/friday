@@ -189,6 +189,13 @@ writes Word instead. Spreadsheet values are never written as formulas.
   - The desktop app uses its own built-in Chromium, in a hidden window with a separate, empty session.
   - The browser version uses an installed Chrome, Chromium or Edge, run headless with a throwaway profile. Set
     `FRIDAY_CHROME` to choose one; without a browser, the tool is not offered.
+- **Before and after:** around a UI change, Friday takes a screenshot first, makes the change, then takes another
+  with `compare`. It compares that with the latest earlier screenshot of the same page at the same size in the
+  conversation, and shows what changed: the share of pixels, the changed areas, and an image of the new page with
+  the changes tinted red and outlined. The run's verification report then shows **Before and after**: the page
+  before, after, and the difference side by side, each opening full size. A run that only compared screenshots
+  gets a report too. Pale changes, such as a light background colour, count; anti-aliasing and compression noise
+  don't. A screenshot the desktop app had to save as JPEG (over 4 MB) can't be compared.
 - **Live preview:** the monitor button in the conversation header (or the screen icon next to a running process's
   URL) opens your dev server next to the conversation. It has full, tablet and phone widths, reload, open in
   browser, and **Screenshot to message**, which adds the current page to the message you're writing. The page runs
