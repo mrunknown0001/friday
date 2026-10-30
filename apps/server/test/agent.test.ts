@@ -211,6 +211,8 @@ describe('tool executor', () => {
         'ci_failure',
         'review_changes',
         'report_findings',
+        'detect_tests',
+        'run_tests',
         'git_diff',
         'git_log',
         'git_show',

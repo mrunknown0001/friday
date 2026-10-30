@@ -9,6 +9,7 @@ import type {
   ReviewFinding,
   ReviewTarget,
   RunReport,
+  TestRunDto,
 } from '@friday/shared';
 import { z } from 'zod';
 import type { ImageInfo } from '../attachments/image.js';
@@ -52,6 +53,8 @@ export interface ToolContext {
   capture?: { engine: CaptureEngine; fridayPort: () => number | null };
   /** The code review in progress in this run (review_changes, report_findings). */
   reviews?: ReviewContext;
+  /** Test runs of this project (run_tests): recording them, and earlier results per test. */
+  tests?: TestRunContext;
   /** Screenshots taken in this conversation (absent when not stored, e.g. in tests). */
   captures?: CaptureStore;
   /** Symbol index of the project (code_map, find_symbol). */
@@ -134,6 +137,28 @@ export interface ReviewContext {
   setTarget(scope: ReviewScope): void;
   target(): ReviewScope | null;
   record(r: { target: ReviewTarget; summary: string; findings: ReviewFinding[] }): ReviewDto;
+}
+
+export interface TestHistoryRow {
+  key: string;
+  status: 'passed' | 'failed' | 'skipped' | 'flaky';
+  durationMs: number | null;
+  tree: string | null;
+}
+
+export type NewTestRun = Omit<
+  TestRunDto,
+  'id' | 'sessionId' | 'runId' | 'toolCallId' | 'projectId' | 'createdAt'
+>;
+
+export interface TestRunContext {
+  /** Earlier outcomes of these tests in this project's suite, newest first. */
+  history(suite: string, keys: string[]): TestHistoryRow[];
+  record(
+    run: NewTestRun,
+    results: Array<{ key: string; status: TestHistoryRow['status']; durationMs: number | null }>,
+    tree: string | null,
+  ): TestRunDto;
 }
 
 /** Screenshots in this conversation, for before/after comparisons. */

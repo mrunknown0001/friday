@@ -358,6 +358,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   const shown = d.argv ? displayArgv(d.argv) : (d.shellCommand ?? '');
   return (
     <div className="space-y-2">
+      {d.tests && <TestsInfo t={d.tests} />}
       <pre
         aria-label="Exact command"
         className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem] text-zinc-100"
@@ -421,6 +422,60 @@ function Details({ approval }: { approval: ApprovalDto }) {
         </ul>
       )}
     </div>
+  );
+}
+
+const listed = (files: string[]) =>
+  files.slice(0, 6).join(', ') + (files.length > 6 ? `, and ${files.length - 6} more` : '');
+
+/** What a run_tests approval tests, and what Friday does around the command. */
+function TestsInfo({
+  t,
+}: {
+  t: NonNullable<Extract<ApprovalDto['details'], { kind: 'command' }>['tests']>;
+}) {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+      <dt className="text-zinc-500">Tests</dt>
+      <dd className="text-zinc-200">
+        {t.framework} in{' '}
+        {t.suite === '.' ? 'the project root' : <span className="font-mono">{t.suite}</span>}:{' '}
+        {t.scope === 'changed'
+          ? t.testFiles.length
+            ? `${t.testFiles.length} test file${t.testFiles.length === 1 ? '' : 's'} related to the changes`
+            : `the tests ${t.framework} finds related to the changes`
+          : t.scope === 'files'
+            ? 'the chosen test files'
+            : 'the whole suite'}
+        {t.nameFilter ? `, names matching “${t.nameFilter}”` : ''}
+      </dd>
+      {t.changedFiles.length > 0 && (
+        <>
+          <dt className="text-zinc-500">Changed files</dt>
+          <dd className="font-mono text-zinc-400">{listed(t.changedFiles)}</dd>
+        </>
+      )}
+      {t.testFiles.length > 0 && (
+        <>
+          <dt className="text-zinc-500">Test files</dt>
+          <dd className="font-mono text-zinc-400">{listed(t.testFiles)}</dd>
+        </>
+      )}
+      <dt className="text-zinc-500">Report</dt>
+      <dd className="text-zinc-300">
+        Written to a temporary folder outside the project, read by Friday, then deleted
+        {t.coverage ? '; coverage is measured too' : ''}
+      </dd>
+      {t.retryFailures && (
+        <>
+          <dt className="text-zinc-500">If tests fail</dt>
+          <dd className="text-zinc-300">
+            The failed tests run once more, with the same command limited to them, to tell flaky
+            tests from real failures
+          </dd>
+        </>
+      )}
+    </dl>
   );
 }
 

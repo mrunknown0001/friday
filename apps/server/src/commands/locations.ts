@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isSecretPath, isWithin } from '../workspace/paths.js';
 
 const LOCATION =
-  /(?:^|[\s('"`[])((?:[A-Za-z]:)?[\w@.~/\\-]*[\w-]\.[A-Za-z][A-Za-z0-9]{0,5}):(\d{1,6})(?::(\d{1,5}))?/gm;
+  /(?:^|[\s('"`[])((?:file:\/\/)?(?:[A-Za-z]:)?[\w@.~/\\-]*[\w-]\.[A-Za-z][A-Za-z0-9]{0,5}):(\d{1,6})(?::(\d{1,5}))?/gm;
 const SKIP = /(^|\/)(node_modules|vendor|dist|build|\.git)\//;
 
 /**

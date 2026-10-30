@@ -291,6 +291,8 @@ export type ApprovalDetails =
       } | null;
       /** Set when the command keeps running in the background until stopped (start_process). */
       background?: { name: string } | null;
+      /** Set for run_tests: what is tested, and what Friday does around the command. */
+      tests?: TestCommandInfo | null;
     }
   | {
       kind: 'document';
@@ -813,6 +815,92 @@ export interface ReviewFinding {
   status: 'open' | 'fix_requested' | 'dismissed';
 }
 
+export type TestFramework = 'vitest' | 'jest' | 'node' | 'pytest' | 'go';
+
+/** What a run_tests approval covers beyond the command itself. */
+export interface TestCommandInfo {
+  framework: TestFramework;
+  /** The suite's folder, relative to the project root. */
+  suite: string;
+  scope: 'changed' | 'files' | 'all';
+  /** Changed files the related tests are chosen for (scope "changed"). */
+  changedFiles: string[];
+  /** Test files run (when Friday chose or was given them). */
+  testFiles: string[];
+  nameFilter: string | null;
+  coverage: boolean;
+  /** Failed tests are run once more, the same way, to tell flaky tests from real failures. */
+  retryFailures: boolean;
+}
+
+export interface TestLocation {
+  file: string;
+  line: number | null;
+}
+
+export interface TestFailure {
+  /** File and full name, e.g. "src/cart.test.ts › total › adds tax". */
+  name: string;
+  file: string | null;
+  /** First lines of the error, without the stack. */
+  message: string;
+  /** First project location in the error's stack (often the code under test). */
+  at: TestLocation | null;
+  /** Failed in an earlier run too (the same test, any code). */
+  failedBefore: number;
+}
+
+export interface TestTiming {
+  name: string;
+  file: string | null;
+  durationMs: number;
+  /** Median of this test's earlier passing runs. */
+  usualMs: number | null;
+}
+
+export interface FlakyTest {
+  name: string;
+  file: string | null;
+  /** Why it is considered flaky. */
+  evidence: 'passed_on_retry' | 'mixed_on_same_code';
+  detail: string;
+}
+
+export interface ChangedLineCoverage {
+  file: string;
+  /** Executable changed lines, and how many of them ran. */
+  lines: number;
+  covered: number;
+  /** Changed lines that never ran, as ranges. */
+  uncovered: Array<[number, number]>;
+  /** The file was not loaded by the tests at all. */
+  notLoaded: boolean;
+}
+
+export interface TestRunDto {
+  id: string;
+  sessionId: string | null;
+  runId: string;
+  toolCallId: string;
+  projectId: string;
+  suite: string;
+  framework: TestFramework;
+  scope: TestCommandInfo['scope'];
+  command: string;
+  status: 'passed' | 'failed' | 'error';
+  exitCode: number | null;
+  durationMs: number;
+  counts: { passed: number; failed: number; skipped: number; flaky: number };
+  /** Set when the command failed before any test ran (e.g. a syntax error or bad config). */
+  error: string | null;
+  failures: TestFailure[];
+  flaky: FlakyTest[];
+  slowest: TestTiming[];
+  /** Null when coverage was not requested; `available: false` when it could not be measured. */
+  coverage: { available: boolean; note: string | null; files: ChangedLineCoverage[] } | null;
+  createdAt: string;
+}
+
 export interface ReviewDto {
   id: string;
   sessionId: string;
@@ -868,6 +956,7 @@ export interface SessionDetailDto extends SessionSummaryDto {
   runs: RunDto[];
   deploymentPlans: DeploymentPlanDto[];
   reviews: ReviewDto[];
+  testRuns: TestRunDto[];
   /** Memories shown to the model, per run id. */
   memoryUsage: Record<string, MemoryRef[]>;
 }
@@ -905,6 +994,7 @@ export type RunEvent =
   | { seq: number; type: 'command_output'; callId: string; chunk: string }
   | { seq: number; type: 'deployment_plan'; plan: DeploymentPlanDto }
   | { seq: number; type: 'review'; review: ReviewDto }
+  | { seq: number; type: 'test_run'; testRun: TestRunDto }
   | { seq: number; type: 'memories_used'; memories: MemoryRef[] }
   | { seq: number; type: 'memory_saved'; memory: MemoryDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }

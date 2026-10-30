@@ -117,6 +117,7 @@ export async function sandboxRun(
   gitDir: boolean,
   instance: string,
   ports?: number[],
+  outputDir?: string,
 ): Promise<SandboxRun> {
   return {
     root,
@@ -131,6 +132,7 @@ export async function sandboxRun(
     uid: process.getuid?.() ?? 1000,
     gid: process.getgid?.() ?? 1000,
     ...(ports?.length ? { ports } : {}),
+    ...(outputDir ? { outputDir } : {}),
   };
 }
 

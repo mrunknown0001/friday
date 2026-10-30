@@ -448,6 +448,32 @@ narrows it.
 - For a pull request that isn't checked out, line numbers come from the pull request's diff, and the review says
   when your local files differ.
 
+### Test insights
+
+Ask Friday to run the tests (or it does so after a change). For **Vitest, Jest, `node --test`, pytest and Go** it
+uses `run_tests`, which it builds itself rather than running whatever the model asks for:
+
+- `detect_tests` finds each suite (a folder with a package.json, a pytest setup or a go.mod), its runner, and
+  whether coverage is available, without installing anything. A monorepo has one suite per package.
+- `run_tests` first runs the tests **related to your uncommitted changes**. Vitest and Jest find them from the
+  imports. For `node --test` and pytest, Friday picks the changed test files, the tests that import a changed file,
+  and the tests named after one. Go runs the changed packages. When those pass, it can run the whole suite or
+  chosen files.
+- You approve it like any command. The approval card shows the exact command, what is tested, and that the report
+  goes to a temporary folder outside the project.
+- **Failures:** the result is a **Tests** card listing each failure's first error and its `file:line` (opening the
+  file at that line). It also says when the same test failed in earlier runs.
+- **Flaky tests:** failed tests are **re-run once**. A test that then passes is reported as flaky, not broken, and
+  so is one that has passed and failed on the same code (HEAD plus the same uncommitted changes) in earlier runs.
+- **Slowest tests:** tests of 100 ms or more, and ones much slower than usual, compared with their earlier runs.
+- **Coverage of the lines you changed** (optional): which changed lines ran and which never did. It needs the
+  coverage tool the suite uses: built in for Jest, `node --test` and Go; `@vitest/coverage-v8` or `pytest-cov`
+  otherwise. Friday says so when it is missing, and doesn't install it.
+- A passing `run_tests` after the last change counts as verification in the run report, like a test command.
+
+Each test's outcome is kept per project and suite (the last 50 runs), which is how slow and flaky tests are
+recognised over time. Other test commands still work through `run_command`.
+
 ### Task worktrees
 
 Start a task in its own git worktree with the branch-plus button next to **New conversation**. Friday makes a

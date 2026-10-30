@@ -266,6 +266,8 @@ pasted, dropped or picked.
 | `commands/locations.ts`   | `file:line` extraction from tool output; verification-command classification.                                                                         |
 | `reports/runReport.ts`    | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                |
 | `tools/reviewTools.ts`    | `review_changes` (diff and changed line ranges per target) and `report_findings` (location and suggestion checks, refusals, `ReviewRepo`).            |
+| `testing/`                | Test insights: suite detection and related tests (`suites.ts`), changed lines and the code fingerprint (`changes.ts`), report parsers (`results.ts`). |
+| `tools/testTools.ts`      | `detect_tests` and approval-gated `run_tests`: builds the command, re-runs failures once, history (`TestRunRepo`), changed-line coverage.             |
 | `worktree/manager.ts`     | Task worktrees: `git worktree add` from the parent's HEAD, dependency links, accept (commit, then merge/squash/keep) and discard.                     |
 | `reports/export.ts`       | A conversation as Markdown (summary or full); `routes/export.ts` serves it, or prints it to PDF through the document renderer.                        |
 
