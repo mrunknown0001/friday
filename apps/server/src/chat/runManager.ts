@@ -1003,6 +1003,11 @@ export class RunManager {
       setNextSteps: (steps) => {
         run.modelSuggestions = steps;
       },
+      sessionReports: () =>
+        this.deps.runs
+          .listBySession(run.sessionId)
+          .reverse()
+          .map((r) => (r.id === run.id || !r.report ? buildRunReport(r.id, this.deps) : r.report)),
       ...(this.deps.memory && this.deps.memoryRepo
         ? { memory: this.memoryContext(run, project) }
         : {}),

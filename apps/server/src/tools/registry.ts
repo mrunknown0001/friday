@@ -21,6 +21,7 @@ import {
   gitShow,
   gitStatus,
 } from './gitTools.js';
+import { createPullRequest, gitPush } from './remoteGitTools.js';
 import { codeMapTool, findSymbol } from './codeMapTools.js';
 import { createDocument, createPresentation, createSpreadsheet } from './documentTools.js';
 import { viewImage } from './imageTools.js';
@@ -117,6 +118,8 @@ export const DEFAULT_TOOLS = [
   gitBranches,
   gitCommit,
   gitCreateBranch,
+  gitPush,
+  createPullRequest,
   inspectEnvironment,
   searchLogs,
   inspectDocker,

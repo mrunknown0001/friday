@@ -4,6 +4,7 @@ import {
   FileDiff,
   FileText,
   GitCommitHorizontal,
+  GitPullRequestArrow,
   KeyRound,
   Loader2,
   Server,
@@ -227,6 +228,85 @@ function FileDiffs({
   );
 }
 
+function GitRemoteDetails({ d }: { d: Extract<ApprovalDto['details'], { kind: 'git_remote' }> }) {
+  const pr = d.pullRequest;
+  const more = d.commitCount - d.commits.length;
+  return (
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        <dt className="text-zinc-500">Remote</dt>
+        <dd className="break-all font-mono text-zinc-300">
+          {d.remote} · {d.remoteUrl}
+        </dd>
+        <dt className="text-zinc-500">Push</dt>
+        <dd className="text-zinc-300">
+          {d.needsPush ? (
+            <>
+              <span className="font-mono text-zinc-100">{d.branch}</span> →{' '}
+              <span className="font-mono text-zinc-100">
+                {d.remote}/{d.branch}
+              </span>{' '}
+              {d.remoteHead ? '(update, fast-forward only)' : '(new branch on the remote)'}
+            </>
+          ) : (
+            'No: the remote branch is already up to date'
+          )}
+        </dd>
+        <dt className="text-zinc-500">Force</dt>
+        <dd className="text-zinc-300">Never: a push that would overwrite remote commits fails</dd>
+        {pr && (
+          <>
+            <dt className="text-zinc-500">Pull request</dt>
+            <dd className="text-zinc-300">
+              <span className="font-mono text-zinc-100">{pr.repo}</span>:{' '}
+              <span className="font-mono">{d.branch}</span> into{' '}
+              <span className="font-mono text-zinc-100">{pr.base}</span>
+              {pr.draft ? ' (draft)' : ''}
+            </dd>
+          </>
+        )}
+      </dl>
+      {d.needsPush && d.commits.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs text-zinc-500">
+            {d.commitCount} commit{d.commitCount === 1 ? '' : 's'} to push
+          </p>
+          <ul
+            aria-label="Commits to push"
+            className="max-h-40 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem]"
+          >
+            {d.commits.map((c) => (
+              <li key={c.sha} className="truncate text-zinc-300">
+                <span className="text-zinc-500">{c.sha.slice(0, 8)}</span> {c.subject}
+              </li>
+            ))}
+            {more > 0 && <li className="text-zinc-500">…and {more} more</li>}
+          </ul>
+        </div>
+      )}
+      {d.hooks.length > 0 && (
+        <p className="text-xs text-amber-300">
+          Repository hooks will run before the push: {d.hooks.join(', ')}.
+        </p>
+      )}
+      {pr && (
+        <div>
+          <p className="mb-1 text-xs text-zinc-500">Title and description, exactly as posted</p>
+          <div className="rounded-md border border-zinc-800 bg-zinc-950 p-2">
+            <p className="text-sm font-medium text-zinc-100">{pr.title}</p>
+            <pre
+              aria-label="Pull request description"
+              className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[0.8rem] text-zinc-300"
+            >
+              {pr.body || '(no description)'}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Details({ approval }: { approval: ApprovalDto }) {
   const d = approval.details;
   if (d.kind === 'git') {
@@ -265,6 +345,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   }
   if (d.kind === 'file_change') return <FileDiffs changes={d.changes} />;
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
+  if (d.kind === 'git_remote') return <GitRemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
   if (d.kind === 'document')
@@ -428,9 +509,11 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
       ? SquareTerminal
       : approval.details.kind === 'git'
         ? GitCommitHorizontal
-        : approval.details.kind === 'task_permissions'
-          ? KeyRound
-          : ShieldAlert;
+        : approval.details.kind === 'git_remote'
+          ? GitPullRequestArrow
+          : approval.details.kind === 'task_permissions'
+            ? KeyRound
+            : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);

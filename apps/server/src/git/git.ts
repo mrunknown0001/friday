@@ -11,15 +11,11 @@ import { isGitInternal, isSecretPath, WorkspaceError } from '../workspace/paths.
  * neutralizeRepoPrograms, and --no-ext-diff/--no-textconv on diff-producing commands keep git from
  * running repository-defined programs.
  */
-const SAFE_CONFIG = [
+const BASE_CONFIG = [
   '-c',
   'core.fsmonitor=false',
   '-c',
   'core.pager=cat',
-  '-c',
-  'core.sshCommand=false',
-  '-c',
-  'credential.helper=',
   '-c',
   'color.ui=false',
   '-c',
@@ -27,6 +23,124 @@ const SAFE_CONFIG = [
   '-c',
   'diff.noprefix=false',
 ];
+
+/** Everything except push: no credentials and no ssh at all. */
+const SAFE_CONFIG = [...BASE_CONFIG, '-c', 'core.sshCommand=false', '-c', 'credential.helper='];
+
+/**
+ * For commands that talk to a remote with the user's own credentials (push). The user-level and
+ * system credential helpers and SSH setup are trusted and stay active; the repository's own
+ * helpers, ssh command and pack programs are still blanked, and only https, ssh and local
+ * transports are allowed (no ext::, which runs commands).
+ */
+const REMOTE_CONFIG = [
+  ...BASE_CONFIG,
+  '-c',
+  'protocol.allow=never',
+  '-c',
+  'protocol.https.allow=always',
+  '-c',
+  'protocol.ssh.allow=always',
+  '-c',
+  'protocol.file.allow=always',
+  '-c',
+  'push.followTags=false',
+  '-c',
+  'push.recurseSubmodules=no',
+];
+
+/**
+ * Environment the user's credential helpers and SSH need (agent socket, WSL interop for a Windows
+ * credential manager, desktop keyring, gh's own token variables). Passed only to push and gh;
+ * Friday never reads any of them.
+ */
+const CREDENTIAL_ENV = [
+  'SSH_AUTH_SOCK',
+  'SSH_ASKPASS',
+  'GIT_ASKPASS',
+  'DISPLAY',
+  'WAYLAND_DISPLAY',
+  'DBUS_SESSION_BUS_ADDRESS',
+  'XDG_RUNTIME_DIR',
+  'XDG_CONFIG_HOME',
+  'WSL_INTEROP',
+  'WSL_DISTRO_NAME',
+  'WSLENV',
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_ENTERPRISE_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN',
+  'GH_HOST',
+  'GH_CONFIG_DIR',
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'NO_PROXY',
+  'https_proxy',
+  'http_proxy',
+  'no_proxy',
+];
+
+export function credentialEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(source))
+    if (v !== undefined && (CREDENTIAL_ENV.includes(k) || k.startsWith('GCM_'))) env[k] = v;
+  return env;
+}
+
+async function configValues(cwd: string, scope: string, key: string): Promise<string[]> {
+  const out = await new Promise<string>((resolve) =>
+    execFile(
+      'git',
+      ['config', scope, '--includes', '--null', '--get-all', key],
+      { cwd, env: { ...childEnv(), LC_ALL: 'C' }, timeout: 10_000 },
+      (err, stdout) => resolve(err ? '' : stdout),
+    ),
+  );
+  return out.split('\0').filter(Boolean);
+}
+
+/**
+ * Credential helpers the repository itself configures are programs chosen by whoever wrote the
+ * repo: reset each such key, then restore the user's and the system's own values for it.
+ */
+async function trustedCredentialHelpers(cwd: string): Promise<string[]> {
+  const keys = new Set<string>();
+  for (const scope of ['--local', '--worktree']) {
+    const out = await new Promise<string>((resolve) =>
+      execFile(
+        'git',
+        ['config', scope, '--includes', '--null', '--name-only', '--list'],
+        { cwd, env: { ...childEnv(), LC_ALL: 'C' }, timeout: 10_000 },
+        (err, stdout) => resolve(err ? '' : stdout),
+      ),
+    );
+    for (const key of out.split('\0'))
+      if (/^credential\.(.+\.)?helper$/i.test(key) || /^remote\..+\.mirror$/i.test(key))
+        keys.add(key);
+  }
+  // remote.<name>.receivepack can't be overridden this way (git uses the first value); push
+  // passes --receive-pack itself.
+  const args: string[] = [];
+  for (const key of keys) {
+    if (/^remote\./i.test(key)) {
+      args.push('-c', `${key}=false`);
+      continue;
+    }
+    args.push('-c', `${key}=`);
+    for (const scope of ['--system', '--global'])
+      for (const v of await configValues(cwd, scope, key)) args.push('-c', `${key}=${v}`);
+  }
+  return args;
+}
+
+/** The user's own ssh (their GIT_SSH_COMMAND or global core.sshCommand), never prompting. */
+async function sshCommand(cwd: string): Promise<string> {
+  const base =
+    process.env.GIT_SSH_COMMAND?.trim() ||
+    (await configValues(cwd, '--global', 'core.sshCommand')).at(-1)?.trim() ||
+    'ssh';
+  return `${base} -o BatchMode=yes`;
+}
 
 export interface GitResult {
   code: number;
@@ -67,21 +181,34 @@ async function neutralizeRepoPrograms(cwd: string): Promise<string[]> {
 export async function runGit(
   cwd: string,
   args: string[],
-  opts: { timeoutMs?: number; signal?: AbortSignal; allowHooks?: boolean } = {},
+  opts: {
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    allowHooks?: boolean;
+    /** Use the user's credential helpers and ssh (push only). */
+    credentials?: boolean;
+    /** Written to git's standard input. */
+    input?: string;
+  } = {},
 ): Promise<GitResult> {
   const config = [
-    ...SAFE_CONFIG,
+    ...(opts.credentials ? REMOTE_CONFIG : SAFE_CONFIG),
     ...(opts.allowHooks ? [] : ['-c', 'core.hooksPath=/dev/null']),
     ...(await neutralizeRepoPrograms(cwd)),
+    ...(opts.credentials ? await trustedCredentialHelpers(cwd) : []),
   ];
+  const remoteEnv = opts.credentials
+    ? { ...credentialEnv(), GIT_SSH_COMMAND: await sshCommand(cwd) }
+    : {};
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       'git',
       [...config, ...args],
       {
         cwd,
         env: {
           ...childEnv(),
+          ...remoteEnv,
           GIT_OPTIONAL_LOCKS: '0', // status must not write the index lock
           GIT_TERMINAL_PROMPT: '0',
           GIT_PAGER: 'cat',
@@ -103,6 +230,10 @@ export async function runGit(
         resolve({ code: err ? Number((err as { code?: number }).code) : 0, stdout, stderr });
       },
     );
+    // Nothing git runs may wait for input that never comes. A process that exits without reading
+    // its input is fine (EPIPE).
+    child.stdin?.on('error', () => undefined);
+    child.stdin?.end(opts.input ?? '');
   });
 }
 
@@ -283,17 +414,15 @@ export async function repoStatus(root: string, pathspecs: string[] = []): Promis
   return parseStatus(out);
 }
 
-/** Active hook scripts git would run on commit (non-sample files in the hooks directory). */
-export async function activeHooks(root: string): Promise<string[]> {
+const COMMIT_HOOKS = ['pre-commit', 'prepare-commit-msg', 'commit-msg', 'post-commit'];
+
+/** Active hook scripts git would run (non-sample files in the hooks directory); commit hooks by default. */
+export async function activeHooks(root: string, which: string[] = COMMIT_HOOKS): Promise<string[]> {
   const configured = (await runGit(root, ['config', '--get', 'core.hooksPath'])).stdout.trim();
   const dir = configured ? path.resolve(root, configured) : path.join(root, '.git', 'hooks');
   try {
     const names = await fs.readdir(dir);
-    return names.filter(
-      (n) =>
-        !n.endsWith('.sample') &&
-        ['pre-commit', 'prepare-commit-msg', 'commit-msg', 'post-commit'].includes(n),
-    );
+    return names.filter((n) => !n.endsWith('.sample') && which.includes(n));
   } catch {
     return [];
   }

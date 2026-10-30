@@ -221,8 +221,14 @@ approved), credentials never reach the model, and results from other systems are
 
 **Coding workflow**
 
-- ⬜ **Push and pull requests** (M). Friday pushes a branch and opens a GitHub pull request (title, description, the
-  run report as the body) after approval. It never pushes to the default branch and never force-pushes; it uses the
+- ✅ **Push and pull requests** (M). Done: `git_push` and `create_pull_request` (pushes first when needed), each
+  approved on a card with the destination, commits, hooks and exact text; the description ends with a verification
+  section from Friday's records of the run that made the commits. Never the default branch, `main` or `master`;
+  never forced; credential files never pushed; the user's own git credential helper/ssh and `gh` sign-in, which
+  Friday does not read. Verified live on 2026-10-30 with `claude-sonnet-4.6` against a local bare remote and a
+  stand-in `gh`: starting on `main`, Friday created a feature branch itself, committed, pushed and opened the pull
+  request. Original plan: Friday pushes a branch and opens a GitHub pull request (title, description, the run
+  report as the body) after approval. It never pushes to the default branch and never force-pushes; it uses the
   user's own `gh`/git credentials, which Friday does not read.
 - ⬜ **Worktree per task** (M). Each task can run in its own git worktree and branch, so the user's working tree
   stays untouched until they accept (merge) or discard the result. Uncommitted user changes are never discarded.
