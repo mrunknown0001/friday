@@ -14,6 +14,7 @@ import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
 import { MessageRepo } from './repositories/messages.js';
 import { MemoryRepo } from './repositories/memories.js';
+import type { CaptureEngine } from './browser/capture.js';
 import { CodeMap } from './codemap/index.js';
 import { McpManager } from './mcp/manager.js';
 import { McpServerRepo } from './repositories/mcp.js';
@@ -95,6 +96,10 @@ export interface Services {
   memory: MemoryService;
   processes: ProcessManager;
   codeMap: CodeMap;
+  /** Screenshots: the engine, and Friday's own port (never captured). */
+  capture: { engine: CaptureEngine; fridayPort: () => number | null } | null;
+  /** Set once the server listens (the port can be chosen by the OS). */
+  setListeningPort: (port: number) => void;
   mcpServers: McpServerRepo;
   mcp: McpManager;
   registry: ToolRegistry;
@@ -115,6 +120,8 @@ export interface ServiceOverrides {
   registry?: ToolRegistry;
   /** fetch used for MCP servers (tests). */
   mcpFetch?: typeof fetch;
+  /** Screenshot engine (desktop shell or installed Chrome); none by default. */
+  captureEngine?: CaptureEngine | null;
   runManager?: {
     checkpointIntervalMs?: number;
     retainFinishedMs?: number;
@@ -174,6 +181,10 @@ export function createServices(
   const approvals = new ApprovalService(approvalRepo, audit, config.approvalTtlMs);
   const memory = new MemoryService(memoryRepo, settings, redactor);
   const codeMap = new CodeMap(db);
+  let listeningPort: number | null = config.server.port || null;
+  const capture = overrides.captureEngine
+    ? { engine: overrides.captureEngine, fridayPort: () => listeningPort }
+    : null;
   const mcpServers = new McpServerRepo(db);
   const mcp = new McpManager(mcpServers, {
     redactor,
@@ -203,6 +214,7 @@ export function createServices(
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
     codeMap,
+    ...(capture ? { capture } : {}),
     mcp,
     memory,
     memoryRepo,
@@ -239,6 +251,11 @@ export function createServices(
     memory,
     processes,
     codeMap,
+    capture,
+    setListeningPort: (port: number) => {
+      listeningPort = port;
+      mcp.setRedirectBase(`http://127.0.0.1:${port}`);
+    },
     mcpServers,
     mcp,
     registry,

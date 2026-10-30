@@ -173,6 +173,19 @@ never start a process. The server's `onClose` stops everything. Startup's `reapO
 carry the marker. `run_command` and `start_process` share `prepareCommand` (folder, risk, sandbox checks). The system
 prompt lists each process's current status, so the model does not trust stale history.
 
+### Screenshots and preview (`browser/`, `tools/screenshotTool.ts`, `routes/preview.ts`)
+
+`detectCaptureEngine` picks the engine at startup. Under the desktop shell (`FRIDAY_DESKTOP_CAPTURE=1` and a parent
+port) it is `DesktopEngine`, which sends `{type: 'capture'}` over the utility-process channel. `apps/desktop/src/capture.ts`
+loads the page in an offscreen `BrowserWindow` using the `friday-capture` partition, sizes it for full-page captures
+and replies with a PNG (JPEG above 4 MB). Otherwise it is `ChromeEngine`, which spawns an installed browser headless
+with a temporary profile and drives it over the DevTools protocol with Node's built-in WebSocket. That uses `Fetch`
+interception for document requests, `Emulation` for size, `Page.getLayoutMetrics` for full page, and console,
+exception and network events as "problems". `screenshot` returns the image through `ToolOutput.images`. It is
+stored as an attachment of the tool message and sent in `tool_finished.attachments`, so the conversation shows it at
+once. The preview pane is an iframe (loopback `frame-src`). `POST /api/preview/screenshot` captures a page into a
+pending attachment for the composer. `GET /api/projects/:id/raw` serves image files for the file viewer.
+
 ### Connected apps (`mcp/`, `routes/mcp.ts`)
 
 `McpManager` wraps the official SDK (`@modelcontextprotocol/sdk`, pinned). Each server gets a `Client` over

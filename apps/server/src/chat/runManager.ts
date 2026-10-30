@@ -23,7 +23,7 @@ import type {
   ToolDefinition,
 } from '../providers/types.js';
 import { IMAGE_LIMITS } from '../attachments/image.js';
-import type { AttachmentRepo } from '../repositories/attachments.js';
+import { toAttachmentDto, type AttachmentRepo } from '../repositories/attachments.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
@@ -89,6 +89,7 @@ export interface RunManagerDeps {
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
+  capture?: ToolContext['capture'];
   /** Connected apps (MCP servers): their tools join each run's registry. */
   mcp?: McpManager;
   memory?: MemoryService;
@@ -704,12 +705,15 @@ export class RunManager {
       status: 'complete',
       toolCallId: call.id,
     });
-    if (exec.images?.length) {
-      const ids = exec.images.map(
-        (img) => this.deps.attachments.create(img.data, img.info, img.name, run.sessionId).id,
+    const images = (exec.images ?? []).map((img) =>
+      this.deps.attachments.create(img.data, img.info, img.name, run.sessionId),
+    );
+    if (images.length)
+      this.deps.attachments.bind(
+        images.map((a) => a.id),
+        run.sessionId,
+        message.id,
       );
-      this.deps.attachments.bind(ids, run.sessionId, message.id);
-    }
     this.deps.toolCalls.insert({
       sessionId: run.sessionId,
       runId: run.id,
@@ -731,6 +735,7 @@ export class RunManager {
       status: exec.status,
       summary: exec.summary,
       durationMs: exec.durationMs,
+      ...(images.length ? { attachments: images.map(toAttachmentDto) } : {}),
     });
   }
 
@@ -770,8 +775,14 @@ export class RunManager {
           ? []
           : registry
               .definitions(!!project)
-              // A model known not to read images is not offered the tool that shows it one.
-              .filter((t) => t.name !== 'view_image' || caps.imageInput !== 'unsupported');
+              // A model known not to read images is not offered the tools that show it one, and
+              // screenshots need a browser.
+              .filter(
+                (t) =>
+                  !['view_image', 'screenshot'].includes(t.name) ||
+                  (caps.imageInput !== 'unsupported' &&
+                    (t.name !== 'screenshot' || !!this.deps.capture)),
+              );
       // Memory: pinned, session notes, and the most relevant others for this request.
       const memoryRefs =
         this.deps.memory?.retrieve(
@@ -974,6 +985,7 @@ export class RunManager {
       ...(this.deps.devops ? { devops: this.deps.devops } : {}),
       ...(this.deps.processes ? { processes: this.deps.processes } : {}),
       ...(this.deps.codeMap ? { codeMap: this.deps.codeMap } : {}),
+      ...(this.deps.capture ? { capture: this.deps.capture } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,

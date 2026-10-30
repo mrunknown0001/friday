@@ -20,6 +20,7 @@ import {
   pullImage,
   suggestImage,
 } from '../../sandbox/docker.js';
+import { imageInfo } from '../../attachments/image.js';
 import { detectProject } from '../../workspace/detect.js';
 import { languageFor, loadFile } from '../../workspace/files.js';
 import {
@@ -34,6 +35,7 @@ import { parseInput } from '../validation.js';
 
 const idParams = z.object({ id: z.uuid() });
 const VIEWER_MAX_BYTES = 1024 * 1024;
+const RAW_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 const WORKSPACE_STATUS: Record<WorkspaceError['code'], number> = {
   outside_root: 403,
@@ -261,5 +263,39 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
         language: languageFor(target.rel),
       };
     });
+  });
+
+  /**
+   * An image file's bytes for the viewer. The type comes from the content (raster formats) or, for
+   * SVG, from the extension plus an <svg> root; SVG is served with a sandboxing CSP so any script
+   * in it can never run, even if the file is opened directly.
+   */
+  app.get('/api/projects/:id/raw', async (req, reply) => {
+    const { id } = parseInput(idParams, req.params);
+    const q = parseInput(z.object({ path: z.string().min(1).max(4096) }), req.query);
+    const project = requireProject(id);
+    const { data, mime } = await guarded(async () => {
+      await assertRootAvailable(project.rootPath);
+      const target = await resolveInside(project.rootPath, q.path);
+      const stat = await fs.stat(target.abs);
+      if (!stat.isFile()) throw new WorkspaceError('not_a_file', 'Not a file.');
+      if (stat.size > RAW_IMAGE_MAX_BYTES)
+        throw new WorkspaceError('too_large', 'Image too large to preview.');
+      const data = await fs.readFile(target.abs);
+      const info = imageInfo(data);
+      if (info) return { data, mime: info.mime as string };
+      if (/\.svg$/i.test(target.rel) && /<svg[\s>]/i.test(data.subarray(0, 4096).toString('utf8')))
+        return { data, mime: 'image/svg+xml' };
+      throw new WorkspaceError('unsupported', 'Not a PNG, JPEG, WebP, GIF or SVG image.');
+    });
+    reply
+      .header('Content-Type', mime)
+      .header('Content-Disposition', 'inline')
+      .header('Cache-Control', 'no-store')
+      .header(
+        'Content-Security-Policy',
+        "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+      );
+    return reply.send(data);
   });
 }

@@ -1,5 +1,5 @@
 import type { ProcessDto } from '@friday/shared';
-import { ExternalLink, Square, SquareTerminal, X } from 'lucide-react';
+import { ExternalLink, MonitorPlay, Square, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -25,22 +25,34 @@ export function crashed(p: ProcessDto): boolean {
   return p.status === 'exited' && p.stoppedBy === null && (p.exitCode !== 0 || p.error !== null);
 }
 
-function Urls({ urls }: { urls: string[] }) {
+function Urls({ urls, onPreview }: { urls: string[]; onPreview?: (url: string) => void }) {
   if (!urls.length) return null;
   return (
-    <span className="flex flex-wrap gap-x-2">
+    <span className="flex flex-wrap items-center gap-x-2">
       {urls.map((u) => (
         // Only local addresses are ever listed (the server filters them).
-        <a
-          key={u}
-          href={u}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 font-mono text-[11px] text-sky-300 hover:underline"
-        >
-          {u.replace(/^https?:\/\//, '')}
-          <ExternalLink className="h-3 w-3" aria-hidden />
-        </a>
+        <span key={u} className="inline-flex items-center gap-1">
+          {onPreview && (
+            <button
+              type="button"
+              onClick={() => onPreview(u)}
+              aria-label={`Preview ${u} in Friday`}
+              title="Preview in Friday"
+              className="rounded p-0.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+            >
+              <MonitorPlay className="h-3 w-3" />
+            </button>
+          )}
+          <a
+            href={u}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-mono text-[11px] text-sky-300 hover:underline"
+          >
+            {u.replace(/^https?:\/\//, '')}
+            <ExternalLink className="h-3 w-3" aria-hidden />
+          </a>
+        </span>
       ))}
     </span>
   );
@@ -51,10 +63,12 @@ export function ProcessList({
   processes,
   onStop,
   onDismiss,
+  onPreview,
 }: {
   processes: ProcessDto[];
   onStop: (p: ProcessDto) => void;
   onDismiss: (p: ProcessDto) => void;
+  onPreview?: (url: string) => void;
 }) {
   const [viewing, setViewing] = useState<string | null>(null);
   const shown = processes.find((p) => p.id === viewing) ?? null;
@@ -127,7 +141,7 @@ export function ProcessList({
               </div>
               {p.status === 'running' && (
                 <div className="pl-4">
-                  <Urls urls={p.urls} />
+                  <Urls urls={p.urls} {...(onPreview ? { onPreview } : {})} />
                 </div>
               )}
             </li>
