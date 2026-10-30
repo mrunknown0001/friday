@@ -21,6 +21,7 @@ import {
   suggestImage,
 } from '../../sandbox/docker.js';
 import { imageInfo } from '../../attachments/image.js';
+import { DesktopEngine } from '../../browser/capture.js';
 import { detectProject } from '../../workspace/detect.js';
 import { languageFor, loadFile } from '../../workspace/files.js';
 import {
@@ -36,6 +37,9 @@ import { parseInput } from '../validation.js';
 const idParams = z.object({ id: z.uuid() });
 const VIEWER_MAX_BYTES = 1024 * 1024;
 const RAW_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024;
+const DOCUMENTS = /\.(pdf|docx|xlsx|pptx)$/i;
+const OPENABLE = /\.(pdf|docx|xlsx|pptx|png|jpe?g|webp|gif|svg)$/i;
 
 const WORKSPACE_STATUS: Record<WorkspaceError['code'], number> = {
   outside_root: 403,
@@ -263,6 +267,64 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
         language: languageFor(target.rel),
       };
     });
+  });
+
+  /** Generated documents (and images) as downloads, for the browser version. */
+  app.get('/api/projects/:id/download', async (req, reply) => {
+    const { id } = parseInput(idParams, req.params);
+    const q = parseInput(z.object({ path: z.string().min(1).max(4096) }), req.query);
+    const project = requireProject(id);
+    const { data, name } = await guarded(async () => {
+      await assertRootAvailable(project.rootPath);
+      const target = await resolveInside(project.rootPath, q.path);
+      if (!OPENABLE.test(target.rel))
+        throw new WorkspaceError('unsupported', 'Only documents and images can be downloaded.');
+      const stat = await fs.stat(target.abs);
+      if (!stat.isFile()) throw new WorkspaceError('not_a_file', 'Not a file.');
+      if (stat.size > DOWNLOAD_MAX_BYTES) throw new WorkspaceError('too_large', 'File too large.');
+      return { data: await fs.readFile(target.abs), name: path.basename(target.rel) };
+    });
+    reply
+      .header('Content-Type', 'application/octet-stream')
+      .header(
+        'Content-Disposition',
+        `attachment; filename="${name.replace(/[^\w.-]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      )
+      .header('Cache-Control', 'no-store');
+    return reply.send(data);
+  });
+
+  /** Open a generated document in the system's default app (desktop app only; a user action). */
+  app.post('/api/projects/:id/open', async (req) => {
+    const { id } = parseInput(idParams, req.params);
+    const body = parseInput(z.object({ path: z.string().min(1).max(4096) }), req.body);
+    const project = requireProject(id);
+    const engine = s.capture?.engine;
+    if (!(engine instanceof DesktopEngine))
+      throw new HttpError(
+        409,
+        'not_desktop',
+        'Opening files needs the desktop app; download it instead.',
+      );
+    const abs = await guarded(async () => {
+      await assertRootAvailable(project.rootPath);
+      const target = await resolveInside(project.rootPath, body.path);
+      if (!DOCUMENTS.test(target.rel))
+        throw new WorkspaceError(
+          'unsupported',
+          'Only PDF, Word, Excel and PowerPoint files can be opened.',
+        );
+      if (!(await fs.stat(target.abs)).isFile())
+        throw new WorkspaceError('not_a_file', 'Not a file.');
+      return target.abs;
+    });
+    try {
+      await engine.openPath(abs);
+    } catch (err) {
+      throw new HttpError(502, 'open_failed', err instanceof Error ? err.message : String(err));
+    }
+    s.audit.record({ actor: 'user', action: 'document_opened', details: { path: body.path } });
+    return { opened: true };
   });
 
   /**

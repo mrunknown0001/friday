@@ -2,8 +2,9 @@ import type { ApprovalDto, ApprovalStatus, RiskLevel } from '@friday/shared';
 import {
   Check,
   FileDiff,
-  KeyRound,
+  FileText,
   GitCommitHorizontal,
+  KeyRound,
   Loader2,
   Server,
   ShieldAlert,
@@ -14,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { displayArgv } from '../lib/format';
 import { canAllowSimilar } from '../lib/taskPermission';
 import { DiffView } from './DiffView';
+import { DocumentActions } from './DocumentActions';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
 
@@ -98,6 +100,41 @@ function TaskPermissionDetails({
         undone. Deleting or moving files, git, remote servers, shell scripts and anything not listed
         here still ask you.
       </p>
+    </div>
+  );
+}
+
+const FORMAT_LABEL = { pdf: 'PDF', docx: 'Word', xlsx: 'Excel', pptx: 'PowerPoint' } as const;
+
+function DocumentDetails({
+  d,
+  projectId,
+}: {
+  d: Extract<ApprovalDto['details'], { kind: 'document' }>;
+  projectId: string | null;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <FileText className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
+        <span className="font-mono text-zinc-200">{d.path}</span>
+        <Badge>{FORMAT_LABEL[d.format]}</Badge>
+        <Badge tone={d.change === 'modify' ? 'warning' : 'neutral'}>
+          {d.change === 'modify' ? 'replaces the existing file' : 'new file'}
+        </Badge>
+      </div>
+      <p className="text-sm font-medium text-zinc-100">{d.title}</p>
+      <ul
+        aria-label="Document outline"
+        className="space-y-0.5 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-xs text-zinc-300"
+      >
+        {d.outline.map((line, i) => (
+          <li key={i} className="whitespace-pre-wrap">
+            {line}
+          </li>
+        ))}
+      </ul>
+      {projectId && <DocumentActions projectId={projectId} path={d.path} />}
     </div>
   );
 }
@@ -230,6 +267,13 @@ function Details({ approval }: { approval: ApprovalDto }) {
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
+  if (d.kind === 'document')
+    return (
+      <DocumentDetails
+        d={d}
+        projectId={approval.status === 'executed' ? approval.projectId : null}
+      />
+    );
   const shown = d.argv ? displayArgv(d.argv) : (d.shellCommand ?? '');
   return (
     <div className="space-y-2">

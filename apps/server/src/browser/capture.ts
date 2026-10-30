@@ -39,9 +39,20 @@ export interface CaptureResult {
 
 export class CaptureError extends Error {}
 
+export interface PrintOptions {
+  /** Shown in the page footer with the page number. */
+  footerHtml: string;
+  signal?: AbortSignal;
+}
+
 export interface CaptureEngine {
   readonly name: string;
   capture(url: string, opts: CaptureOptions): Promise<CaptureResult>;
+  /**
+   * Print a self-contained HTML document to PDF. Scripts are off and every network request is
+   * refused, so only the given HTML (and its inline styles) is rendered.
+   */
+  printPdf(html: string, opts: PrintOptions): Promise<Buffer>;
 }
 
 export const CAPTURE_LIMITS = {
@@ -219,7 +230,47 @@ export class ChromeEngine implements CaptureEngine {
     this.name = `chrome (${path.basename(executable)})`;
   }
 
-  async capture(url: string, opts: CaptureOptions): Promise<CaptureResult> {
+  capture(url: string, opts: CaptureOptions): Promise<CaptureResult> {
+    return this.withBrowser((cdp) => this.run(cdp, url, opts));
+  }
+
+  printPdf(html: string, opts: PrintOptions): Promise<Buffer> {
+    return this.withBrowser(async (cdp) => {
+      const { targetId } = (await cdp.send('Target.createTarget', { url: 'about:blank' })) as {
+        targetId: string;
+      };
+      const { sessionId } = (await cdp.send('Target.attachToTarget', {
+        targetId,
+        flatten: true,
+      })) as { sessionId: string };
+      const send = (method: string, params: Record<string, unknown> = {}) =>
+        cdp.send(method, params, sessionId);
+      // Nothing may be fetched: every request is refused.
+      cdp.on((m) => {
+        if (m.sessionId === sessionId && m.method === 'Fetch.requestPaused')
+          void send('Fetch.failRequest', {
+            requestId: (m.params as CdpEvent).requestId,
+            errorReason: 'BlockedByClient',
+          });
+      });
+      await send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+      await send('Emulation.setScriptExecutionDisabled', { value: true });
+      await send('Page.enable');
+      const tree = (await send('Page.getFrameTree')) as { frameTree: { frame: { id: string } } };
+      await send('Page.setDocumentContent', { frameId: tree.frameTree.frame.id, html });
+      await sleep(300, opts.signal);
+      const pdf = (await send('Page.printToPDF', {
+        printBackground: true,
+        preferCSSPageSize: true,
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: opts.footerHtml,
+      })) as { data: string };
+      return Buffer.from(pdf.data, 'base64');
+    });
+  }
+
+  private async withBrowser<T>(fn: (cdp: Cdp) => Promise<T>): Promise<T> {
     const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'friday-chrome-'));
     const child = spawn(
       this.executable,
@@ -254,7 +305,7 @@ export class ChromeEngine implements CaptureEngine {
         });
       });
       cdp = await Cdp.connect(wsUrl);
-      return await this.run(cdp, url, opts);
+      return await fn(cdp);
     } finally {
       cdp?.close();
       child.kill('SIGKILL');
@@ -414,7 +465,8 @@ interface ParentPort {
 }
 
 interface DesktopReply {
-  type: 'capture_result';
+  type: 'capture_result' | 'print_result' | 'open_result';
+  pdf?: string;
   id: string;
   ok: boolean;
   error?: string;
@@ -436,7 +488,12 @@ export class DesktopEngine implements CaptureEngine {
   constructor(private readonly port: ParentPort) {
     port.on('message', (e) => {
       const reply = e.data as DesktopReply;
-      if (reply?.type === 'capture_result') this.pending.get(reply.id)?.(reply);
+      if (
+        reply?.type === 'capture_result' ||
+        reply?.type === 'print_result' ||
+        reply?.type === 'open_result'
+      )
+        this.pending.get(reply.id)?.(reply);
     });
   }
 
@@ -488,9 +545,55 @@ export class DesktopEngine implements CaptureEngine {
       });
     });
   }
+
+  /** Open a document in the user's default app (the shell checks the type again). */
+  openPath(abs: string): Promise<void> {
+    const id = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new CaptureError('Opening the file took too long.'));
+      }, 15_000);
+      this.pending.set(id, (r) => {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        if (r.ok) resolve();
+        else reject(new CaptureError(r.error ?? 'The file could not be opened.'));
+      });
+      this.port.postMessage({ type: 'open_path', id, path: abs });
+    });
+  }
+
+  printPdf(html: string, opts: PrintOptions): Promise<Buffer> {
+    const id = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new CaptureError('Printing the PDF took too long.'));
+      }, 60_000);
+      opts.signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          this.pending.delete(id);
+          reject(new CaptureError('Cancelled.'));
+        },
+        { once: true },
+      );
+      this.pending.set(id, (r) => {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        if (!r.ok || !r.pdf) return reject(new CaptureError(r.error ?? 'Printing the PDF failed.'));
+        resolve(Buffer.from(r.pdf, 'base64'));
+      });
+      this.port.postMessage({ type: 'print', id, html, footerHtml: opts.footerHtml });
+    });
+  }
 }
 
-/** The desktop shell's engine when running inside it, else an installed browser, else none. */
+/** The desktop shell's engine when running inside it
+
+, else an installed browser, else none. */
 export async function detectCaptureEngine(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<CaptureEngine | null> {

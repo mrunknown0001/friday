@@ -1,4 +1,5 @@
-import { BrowserWindow, session, type Session, type UtilityProcess } from 'electron';
+import path from 'node:path';
+import { BrowserWindow, session, shell, type Session, type UtilityProcess } from 'electron';
 
 /**
  * Screenshots of local pages for the Friday server (its `screenshot` tool), taken with the app's
@@ -34,6 +35,56 @@ export function captureSession(): Session {
   s.on('will-download', (_event, item) => item.cancel());
   configured = s;
   return s;
+}
+
+let printing: Session | null = null;
+
+/** Printing documents to PDF: no network at all (the HTML is self-contained), no scripts. */
+export function printSession(): Session {
+  if (printing) return printing;
+  const s = session.fromPartition('friday-print');
+  s.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) =>
+    callback({ cancel: !details.url.startsWith('data:') }),
+  );
+  s.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  s.setPermissionCheckHandler(() => false);
+  s.on('will-download', (_event, item) => item.cancel());
+  printing = s;
+  return s;
+}
+
+interface PrintRequest {
+  type: 'print';
+  id: string;
+  html: string;
+  footerHtml: string;
+}
+
+async function printPdf(req: PrintRequest): Promise<Buffer> {
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      session: printSession(),
+      javascript: false,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  try {
+    await win.loadURL(
+      `data:text/html;charset=utf-8;base64,${Buffer.from(req.html).toString('base64')}`,
+    );
+    return await win.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate: req.footerHtml,
+    });
+  } finally {
+    win.destroy();
+  }
 }
 
 interface CaptureRequest {
@@ -153,6 +204,41 @@ async function capture(req: CaptureRequest) {
 /** Answer capture requests from the server (utility process). */
 export function serveCaptures(child: UtilityProcess): void {
   child.on('message', (message: unknown) => {
+    const open = message as { type?: string; id?: string; path?: string };
+    if (
+      open?.type === 'open_path' &&
+      typeof open.id === 'string' &&
+      typeof open.path === 'string'
+    ) {
+      const id = open.id;
+      // The server checked the file is inside a project; only documents are ever opened.
+      const allowed = path.isAbsolute(open.path) && /\.(pdf|docx|xlsx|pptx)$/i.test(open.path);
+      (allowed ? shell.openPath(open.path) : Promise.resolve('Only documents can be opened.')).then(
+        (error) =>
+          child.postMessage({ type: 'open_result', id, ok: !error, ...(error ? { error } : {}) }),
+      );
+      return;
+    }
+    const print = message as PrintRequest;
+    if (print?.type === 'print' && typeof print.id === 'string' && typeof print.html === 'string') {
+      printPdf(print).then(
+        (pdf) =>
+          child.postMessage({
+            type: 'print_result',
+            id: print.id,
+            ok: true,
+            pdf: pdf.toString('base64'),
+          }),
+        (err: unknown) =>
+          child.postMessage({
+            type: 'print_result',
+            id: print.id,
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+      );
+      return;
+    }
     const req = message as CaptureRequest;
     if (req?.type !== 'capture' || typeof req.id !== 'string' || typeof req.url !== 'string')
       return;

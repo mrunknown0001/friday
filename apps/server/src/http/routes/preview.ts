@@ -2,7 +2,7 @@ import type { AttachmentDto } from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { imageInfo, imageProblem } from '../../attachments/image.js';
-import { CaptureError } from '../../browser/capture.js';
+import { CaptureError, DesktopEngine } from '../../browser/capture.js';
 import { localPageUrl, PageUrlError } from '../../browser/urls.js';
 import { toAttachmentDto } from '../../repositories/attachments.js';
 import type { Services } from '../../services.js';
@@ -11,7 +11,11 @@ import { parseInput } from '../validation.js';
 
 /** The live preview pane: which screenshot engine exists, and "screenshot into the message". */
 export function registerPreviewRoutes(app: FastifyInstance, s: Services) {
-  app.get('/api/preview/status', async () => ({ screenshots: s.capture?.engine.name ?? null }));
+  app.get('/api/preview/status', async () => ({
+    screenshots: s.capture?.engine.name ?? null,
+    // Only the desktop app can hand a file to the system's default application.
+    openFiles: s.capture?.engine instanceof DesktopEngine,
+  }));
 
   /** Capture a local page as a pending attachment for the composer (a user action). */
   app.post('/api/preview/screenshot', async (req, reply) => {

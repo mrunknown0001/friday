@@ -230,6 +230,9 @@ describe('tool executor', () => {
         'code_map',
         'find_symbol',
         'screenshot',
+        'create_document',
+        'create_spreadsheet',
+        'create_presentation',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;

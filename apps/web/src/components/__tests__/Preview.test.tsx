@@ -48,7 +48,7 @@ describe('live preview', () => {
   });
 
   it('shows the page in a sandboxed frame and offers running dev servers', () => {
-    vi.spyOn(api, 'previewStatus').mockResolvedValue({ screenshots: null });
+    vi.spyOn(api, 'previewStatus').mockResolvedValue({ screenshots: null, openFiles: false });
     const onNavigate = vi.fn();
     const { rerender } = render(
       <PreviewPane url={null} processes={[devServer]} onNavigate={onNavigate} onClose={vi.fn()} />,
@@ -79,7 +79,7 @@ describe('live preview', () => {
   });
 
   it('sends a screenshot of the previewed page to the message being written', async () => {
-    vi.spyOn(api, 'previewStatus').mockResolvedValue({ screenshots: 'desktop' });
+    vi.spyOn(api, 'previewStatus').mockResolvedValue({ screenshots: 'desktop', openFiles: true });
     const capture = vi
       .spyOn(api, 'previewScreenshot')
       .mockResolvedValue({ attachment: shot, title: 'Shop', finalUrl: 'x', problems: [] });

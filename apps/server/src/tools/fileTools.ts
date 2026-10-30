@@ -26,7 +26,7 @@ const reason = z
   .describe('Why this change is needed. Shown to the user when they approve or reject it.');
 const relPath = z.string().min(1).max(1024).describe('Path relative to the project root.');
 
-async function root(ctx: ToolContext): Promise<string> {
+export async function root(ctx: ToolContext): Promise<string> {
   if (!ctx.project)
     throw new WorkspaceError('unsupported', 'This conversation is not attached to a project.');
   await assertRootAvailable(ctx.project.rootPath);
@@ -82,7 +82,13 @@ export function makeDiff(
  * is resolved again immediately before writing: if a folder on the path was swapped for a symlink
  * since the change was reviewed, the write could otherwise land outside the project.
  */
-async function atomicWrite(root: string, abs: string, content: string, mode?: number) {
+/** Write through the file's real folder (re-checked inside the project) via a temp file + rename. */
+export async function atomicWrite(
+  root: string,
+  abs: string,
+  content: string | Buffer,
+  mode?: number,
+) {
   await fs.mkdir(path.dirname(abs), { recursive: true });
   const realDir = await fs.realpath(path.dirname(abs));
   const relDir = path.relative(root, realDir);

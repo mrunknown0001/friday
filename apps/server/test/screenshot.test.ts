@@ -53,6 +53,9 @@ function png(width: number, height: number): Buffer {
 
 class FakeEngine implements CaptureEngine {
   readonly name = 'fake';
+  async printPdf() {
+    return Buffer.from('%PDF-1.7 fake');
+  }
   readonly calls: Array<{ url: string; opts: CaptureOptions }> = [];
   async capture(url: string, opts: CaptureOptions) {
     this.calls.push({ url, opts });
@@ -200,7 +203,7 @@ describe('preview and image routes', () => {
     const app = await buildApp(s, { logger: false });
     expect(
       (await app.inject({ method: 'GET', url: '/api/preview/status', headers: HEADERS })).json(),
-    ).toEqual({ screenshots: 'fake' });
+    ).toEqual({ screenshots: 'fake', openFiles: false });
     const res = await app.inject({
       method: 'POST',
       url: '/api/preview/screenshot',
@@ -224,7 +227,7 @@ describe('preview and image routes', () => {
     const none = await buildApp(testServices(), { logger: false });
     expect(
       (await none.inject({ method: 'GET', url: '/api/preview/status', headers: HEADERS })).json(),
-    ).toEqual({ screenshots: null });
+    ).toEqual({ screenshots: null, openFiles: false });
   });
 });
 
