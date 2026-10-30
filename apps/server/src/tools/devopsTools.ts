@@ -785,9 +785,9 @@ function requireHost(ctx: ToolContext, name: string): SshHostDto {
 }
 
 const RISK_ORDER: RiskLevel[] = ['none', 'low', 'medium', 'high', 'critical'];
-const atLeast = (r: RiskLevel, floor: RiskLevel): RiskLevel =>
+export const atLeast = (r: RiskLevel, floor: RiskLevel): RiskLevel =>
   RISK_ORDER.indexOf(r) >= RISK_ORDER.indexOf(floor) ? r : floor;
-const PRODUCTION_TTL_MS = 5 * 60_000;
+export const PRODUCTION_TTL_MS = 5 * 60_000;
 
 async function runRemote(ctx: ToolContext, host: SshHostDto, command: string, timeoutMs: number) {
   const r = await devops(ctx).ssh.run(host, command, {
@@ -820,7 +820,7 @@ async function runRemote(ctx: ToolContext, host: SshHostDto, command: string, ti
   };
 }
 
-const hostFingerprint = (h: SshHostDto) =>
+export const hostFingerprint = (h: SshHostDto) =>
   `${h.id}|${h.hostname}|${h.port}|${h.username}|${h.environment}|${h.trustedFingerprints.join(',')}`;
 
 export const remoteDiagnose = defineTool({

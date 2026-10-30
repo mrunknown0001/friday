@@ -26,6 +26,7 @@ import { ciFailure, ciRuns } from './ciTools.js';
 import { reportFindings, reviewChanges } from './reviewTools.js';
 import { detectTests, runTests } from './testTools.js';
 import { findReferencesTool, moveSymbol, renameSymbol } from './refactorTools.js';
+import { listSavedActions, runSavedAction } from './savedActionTools.js';
 import { codeMapTool, findSymbol } from './codeMapTools.js';
 import { createDocument, createPresentation, createSpreadsheet } from './documentTools.js';
 import { viewImage } from './imageTools.js';
@@ -133,6 +134,8 @@ export const DEFAULT_TOOLS = [
   findReferencesTool,
   renameSymbol,
   moveSymbol,
+  listSavedActions,
+  runSavedAction,
   inspectEnvironment,
   searchLogs,
   inspectDocker,

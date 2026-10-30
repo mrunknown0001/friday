@@ -359,6 +359,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
       <FileDiffs changes={d.changes} />
     );
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
+  if (d.kind === 'saved_action') return <SavedActionDetails d={d} />;
   if (d.kind === 'git_remote') return <GitRemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
@@ -557,6 +558,70 @@ function TestsInfo({
         </>
       )}
     </dl>
+  );
+}
+
+/** Every step of a saved action, exactly as it will run. */
+function SavedActionDetails({
+  d,
+}: {
+  d: Extract<ApprovalDto['details'], { kind: 'saved_action' }>;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-zinc-300">
+        Saved action <span className="font-medium text-zinc-100">“{d.action.name}”</span>, defined
+        by you in Project settings (declared risk: {d.action.risk})
+        {d.action.description ? `: ${d.action.description}` : '.'}
+      </p>
+      <ol aria-label="Steps" className="space-y-2">
+        {d.steps.map((s, i) => (
+          <li key={i} className="rounded-md border border-zinc-800 bg-zinc-950/60 p-2">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-mono text-zinc-500">{i + 1}.</span>
+              <span className="font-medium text-zinc-100">{s.title}</span>
+              {s.where.kind === 'local' ? (
+                <Badge tone="neutral">
+                  {s.where.sandbox ? `container ${s.where.sandbox.image}` : 'this machine'} ·{' '}
+                  {s.where.cwd === '.' ? 'project root' : s.where.cwd}
+                </Badge>
+              ) : (
+                <Badge tone={ENV_TONE[s.where.host.environment] ?? 'neutral'}>
+                  {s.where.host.name} · {s.where.host.environment}
+                </Badge>
+              )}
+              <span className="text-zinc-500">up to {s.timeoutSeconds}s</span>
+              {s.continueOnError && <span className="text-zinc-500">· continues if it fails</span>}
+            </div>
+            {s.where.kind === 'ssh' && (
+              <p className="mt-0.5 font-mono text-[11px] text-zinc-500">
+                {s.where.host.username}@{s.where.host.hostname}:{s.where.host.port}
+              </p>
+            )}
+            <pre
+              aria-label={`Command of step ${i + 1}`}
+              className="mt-1 overflow-x-auto whitespace-pre-wrap break-all rounded border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem] text-zinc-100"
+            >
+              <span className="select-none text-zinc-500">$ </span>
+              {s.command}
+            </pre>
+            {s.riskReasons.length > 0 && (
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-200/90">
+                {s.riskReasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ol>
+      <p className="text-xs text-zinc-400">
+        Steps run in order. The run stops at the first step that fails, unless that step is marked
+        to continue.
+        {d.productionHosts.length > 0 &&
+          ` It touches production (${d.productionHosts.join(', ')}).`}
+      </p>
+    </div>
   );
 }
 

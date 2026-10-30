@@ -526,6 +526,25 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX test_results_key ON test_results(test_key);
     `,
   },
+  {
+    version: 20,
+    name: 'saved_actions',
+    up: `
+      -- Saved actions (runbooks): named procedures the user defines per project. Only the user
+      -- creates or edits them (HTTP routes); the model can list and request to run them.
+      CREATE TABLE saved_actions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        risk TEXT NOT NULL,
+        steps TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (project_id, name)
+      );
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

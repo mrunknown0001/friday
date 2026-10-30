@@ -206,6 +206,18 @@ titles, descriptions and diffs come from whoever wrote them and are labelled as 
 applied only after the user clicks **Fix this**, which sends a message whose edit still goes through the normal
 approval card. The finding status (dismissed, fix requested) is the user's choice, via a local-only route.
 
+## Saved actions
+
+Only the user creates, changes or deletes saved actions, through local routes that need the browser client header.
+Each change is audit-logged. The model's tools can list them and request a run by name; the steps, commands,
+targets and timeouts come from the stored action, never from the model. Every run needs a fresh approval showing
+all steps. Saved actions can't be "allowed for similar actions", and task permissions don't cover them. The
+approval is bound to the action's stored version, the project sandbox settings and each SSH host's identity and
+trusted keys, so editing any of them makes a shown card stale. Local steps go through the same runner as
+`run_command` (filtered environment, sandbox when configured). Remote steps use the configured host only after its
+key is trusted. Production hosts need their name typed and get the short approval lifetime. The run's risk is at
+least the declared risk and is raised by what the commands and hosts imply.
+
 ## Rename and move
 
 `rename_symbol` and `move_symbol` are file changes like `edit_files`: one approval for the whole set, every file's

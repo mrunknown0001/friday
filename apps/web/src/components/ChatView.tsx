@@ -21,6 +21,7 @@ import {
   ListChecks,
   MonitorPlay,
   PanelRight,
+  Play,
   RotateCcw,
   Square,
   User,
@@ -35,6 +36,7 @@ import { AttachmentThumbs, DraftImages, type DraftImage } from './Attachments';
 import { ExportDialog } from './ExportDialog';
 import { ReviewActionsContext } from './ReviewCard';
 import { ReviewStartDialog } from './ReviewStartDialog';
+import { RunActionDialog } from './SavedActions';
 import { WorktreeBadge } from './WorktreeBadge';
 import { WorktreeDialog } from './WorktreeDialog';
 import { ATTACH_IMAGE_EVENT } from './PreviewPane';
@@ -361,6 +363,7 @@ export function ChatView(props: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [pickingAction, setPickingAction] = useState(false);
   const [worktreeAction, setWorktreeAction] = useState<'accept' | 'discard' | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -531,6 +534,25 @@ export function ChatView(props: Props) {
             >
               <ListChecks className="h-4 w-4" /> Review…
             </Button>
+          )}
+          {project?.available && canSend && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPickingAction(true)}
+              disabled={running}
+              title="Run one of this project's saved actions"
+            >
+              <Play className="h-4 w-4" /> Actions…
+            </Button>
+          )}
+          {pickingAction && project && (
+            <RunActionDialog
+              projectId={project.id}
+              canSend={canSend && !running}
+              onRun={(text) => void onSend(text)}
+              onClose={() => setPickingAction(false)}
+            />
           )}
           {reviewing && (
             <ReviewStartDialog

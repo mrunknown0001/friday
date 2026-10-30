@@ -315,9 +315,16 @@ approved), credentials never reach the model, and results from other systems are
 
 **Platform**
 
-- ⬜ **Saved actions (runbooks)** (M). The user defines a named procedure once (exact commands or steps, where it runs,
-  its risk), such as "deploy staging". Friday runs it on request with one approval per run that shows every step.
-  The model cannot edit saved actions.
+- ✅ **Saved actions (runbooks)** (M). Done: defined per project in Project settings: name, description, declared
+  risk, and ordered steps, each an exact command run in the project (sandbox respected) or on an SSH host, with a
+  timeout and continue-on-failure. The model can only `list_saved_actions` and `run_saved_action` by name. One
+  approval shows every step; production hosts need the host name typed; editing the action makes a shown card
+  stale. **Actions…** in the conversation header picks one. Verified live on 2026-10-30 with `claude-sonnet-4.6`:
+  an action created in the editor (tests, a build stamp, a count) ran from **Actions…** after approval, and each
+  step's result was reported. SSH steps are covered by tests with a stand-in `ssh` only, since there is no SSH
+  server here. Original plan: the user defines a named procedure once (exact commands or steps, where it runs, its
+  risk), such as "deploy staging". Friday runs it on request with one approval per run that shows every step. The
+  model cannot edit saved actions.
 - ✅ **Usage and cost view** (S). Done: Settings → Usage, with totals, tokens per day (hover or table), the top
   conversations and a by-model table, over 7, 30 or 90 days. Provider calls now record their conversation, and
   earlier calls were linked to theirs by run time. NoTokenLimit sends no usage on streamed replies (checked

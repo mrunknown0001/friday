@@ -262,6 +262,39 @@ export interface FileChangePreview {
   removed: number;
 }
 
+/** Where a saved action's step runs: in the project on this machine, or on a configured SSH host. */
+export type SavedActionTarget = { kind: 'local'; cwd: string } | { kind: 'ssh'; hostId: string };
+
+export interface SavedActionStep {
+  title: string;
+  target: SavedActionTarget;
+  /** Exactly as the user wrote it; run through the shell (/bin/sh locally, the remote shell over SSH). */
+  command: string;
+  timeoutSeconds: number;
+  /** Go on with the next step when this one fails (otherwise the run stops). */
+  continueOnError: boolean;
+}
+
+/** A named procedure the user defined once (a runbook), e.g. "deploy staging". */
+export interface SavedActionDto {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  /** The risk the user declared; Friday may rate a run higher from its commands and hosts. */
+  risk: Exclude<RiskLevel, 'none'>;
+  steps: SavedActionStep[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedActionInput {
+  name: string;
+  description: string;
+  risk: SavedActionDto['risk'];
+  steps: SavedActionStep[];
+}
+
 export interface RefactorMatch {
   path: string;
   line: number;
@@ -288,6 +321,35 @@ export interface RefactorInfo {
 }
 
 export type ApprovalDetails =
+  | {
+      kind: 'saved_action';
+      action: { id: string; name: string; description: string; risk: SavedActionDto['risk'] };
+      steps: Array<{
+        title: string;
+        command: string;
+        timeoutSeconds: number;
+        continueOnError: boolean;
+        riskReasons: string[];
+        where:
+          | {
+              kind: 'local';
+              cwd: string;
+              sandbox: { image: string; network: 'none' | 'bridge' } | null;
+            }
+          | {
+              kind: 'ssh';
+              host: {
+                name: string;
+                hostname: string;
+                port: number;
+                username: string;
+                environment: HostEnvironment;
+              };
+            };
+      }>;
+      /** Production hosts the run touches (their names must be typed to approve). */
+      productionHosts: string[];
+    }
   | {
       kind: 'file_change';
       changes: FileChangePreview[];

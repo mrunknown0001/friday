@@ -448,6 +448,25 @@ narrows it.
 - For a pull request that isn't checked out, line numbers come from the pull request's diff, and the review says
   when your local files differ.
 
+### Saved actions
+
+Define a procedure once in **Project settings › Saved actions**, such as "deploy staging" or "restart queue". An
+action has a name, a description, the risk you assign it, and ordered steps. Each step is an exact command that
+runs either **in the project on this machine** (in its folder, through the project sandbox if it has one) or **on a
+configured SSH host**. A step can be marked to continue when it fails; otherwise the run stops there.
+
+- Ask Friday to run one by name, or use **Actions…** in the conversation header. One approval shows every step:
+  the exact command, where it runs, its timeout and anything risky about it. Steps run in order, with their output
+  streamed, and the result lists each step's outcome.
+- **Commands are fixed:** the model can list actions and ask to run one, but it can't change a step or pass
+  arguments, and there is no tool to create or edit actions. Changing an action after its card was shown makes
+  the approval stale.
+- **Risk:** Friday rates a run at least as high as the risk you set, and higher when a command or host calls for
+  it.
+- **Production:** an action that touches a production host needs the host name typed to approve, like a remote
+  command. The action counts as the reviewed plan, so no separate deployment plan is needed.
+- A task worktree uses its project's actions. Changes are recorded in the audit log.
+
 ### Rename and move code
 
 Ask Friday to rename a function, class, type, constant or method, or to move a top-level TypeScript/JavaScript
