@@ -348,7 +348,7 @@ Read-only, no approval needed:
   database clients, PM2, Supervisor and Certbot. Environment variables are never included.
 - `search_logs`: the tail (last 4 MB) of a project log or of a log file you authorized in **Settings → Log sources**,
   optionally filtered, with secrets redacted.
-- `inspect_docker`: containers, images, compose services, container logs, and a reduced `docker inspect` that never
+- `inspect_docker`: containers, images, compose services (see also Docker Compose below), container logs, and a reduced `docker inspect` that never
   shows environment variable values.
 - `validate_config`: YAML/JSON syntax with line numbers, plus checks for GitHub Actions (missing `runs-on`, unpinned
   actions, script injection, `pull_request_target` checkouts, missing `permissions`) and Docker Compose (privileged
@@ -466,6 +466,23 @@ configured SSH host**. A step can be marked to continue when it fails; otherwise
 - **Production:** an action that touches a production host needs the host name typed to approve, like a remote
   command. The action counts as the reviewed plan, so no separate deployment plan is needed.
 - A task worktree uses its project's actions. Changes are recorded in the audit log.
+
+### Docker Compose
+
+Ask Friday about the project's compose services, or to bring them up, restart or take them down. It uses the
+project root's `compose.yaml` / `docker-compose.yml` (with its override file), or another compose file in the
+project when you name it.
+
+- **Status and logs** (`compose_status`) run freely: each service's state, health check result, restarts, and
+  whether its published ports accept connections.
+- **Changes** (`compose_control`: up, start, stop, restart, down) need approval. The card lists the services
+  (dependencies `up` starts are marked), the exact `docker compose` command, and anything risky in the compose
+  file. Afterwards Friday waits for the services to be running and healthy and reports each one.
+- **Only this project's containers:** the files and project name are pinned on every command. If containers with
+  the same project name came from another compose file, Friday refuses to act.
+- **Images** are never pulled or built unless you ask for it; a missing image is reported instead.
+- **Volumes** are deleted only when you ask, with `down`, at critical risk: the card lists the volumes, and you
+  type the project name to approve.
 
 ### Rename and move code
 

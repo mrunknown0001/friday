@@ -7,6 +7,7 @@ import type {
 } from '@friday/shared';
 import {
   Check,
+  Container,
   FileDiff,
   FileText,
   GitCommitHorizontal,
@@ -360,6 +361,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
     );
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
   if (d.kind === 'saved_action') return <SavedActionDetails d={d} />;
+  if (d.kind === 'compose') return <ComposeDetails d={d} />;
   if (d.kind === 'git_remote') return <GitRemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
@@ -625,6 +627,121 @@ function SavedActionDetails({
   );
 }
 
+const COMPOSE_VERB: Record<string, string> = {
+  up: 'Create and start',
+  start: 'Start',
+  stop: 'Stop',
+  restart: 'Restart',
+  down: 'Stop and remove',
+};
+
+function ComposeDetails({ d }: { d: Extract<ApprovalDto['details'], { kind: 'compose' }> }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-zinc-300">
+        {COMPOSE_VERB[d.action]} services of compose project{' '}
+        <code className="font-mono text-zinc-100">{d.project}</code> from{' '}
+        {d.files.map((f, i) => (
+          <span key={f}>
+            {i > 0 && ' + '}
+            <code className="font-mono text-zinc-100">{f}</code>
+          </span>
+        ))}
+        . Only this project's own containers are affected.
+      </p>
+      <ul aria-label="Services" className="space-y-1">
+        {d.services.map((s) => (
+          <li
+            key={s.name}
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-xs"
+          >
+            <span className="font-medium text-zinc-100">{s.name}</span>
+            <code className="font-mono text-zinc-400">{s.image}</code>
+            {s.dependency && <Badge tone="neutral">dependency</Badge>}
+            {s.build && <Badge tone="neutral">has build</Badge>}
+            {s.ports.length > 0 && (
+              <span className="font-mono text-zinc-500">{s.ports.join(', ')}</span>
+            )}
+            <span className="ml-auto text-zinc-500">now: {s.state}</span>
+          </li>
+        ))}
+      </ul>
+      <pre
+        aria-label="Exact command"
+        className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem] text-zinc-100"
+      >
+        <span className="select-none text-zinc-500">$ </span>
+        {displayArgv(d.argv)}
+      </pre>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        {d.action === 'up' && (
+          <>
+            <dt className="text-zinc-500">Images</dt>
+            <dd className={d.pull === 'never' && !d.build ? 'text-zinc-300' : 'text-amber-200'}>
+              {d.pull === 'never'
+                ? 'Not pulled'
+                : d.pull === 'missing'
+                  ? 'Pulled when not on this machine'
+                  : 'Pulled from their registries'}
+              {d.build ? '; services with a build section are built' : '; nothing is built'}
+            </dd>
+          </>
+        )}
+        {d.waitSeconds > 0 && (
+          <>
+            <dt className="text-zinc-500">Afterwards</dt>
+            <dd className="text-zinc-300">
+              Waits up to {d.waitSeconds}s for the services to be running and healthy, then checks
+              their published ports
+            </dd>
+          </>
+        )}
+      </dl>
+      {d.removeVolumes && (
+        <div className="rounded-md border border-red-900/70 bg-red-950/30 p-2 text-xs text-red-200">
+          <p className="font-medium">Deleted, with all their data:</p>
+          <ul aria-label="Volumes deleted" className="mt-1 list-disc pl-5 font-mono">
+            {d.volumes.map((v) => (
+              <li key={v.name}>
+                {v.name}
+                {!v.exists && (
+                  <span className="font-sans text-red-300/70"> (does not exist yet)</span>
+                )}
+              </li>
+            ))}
+            {d.anonymousVolumes > 0 && (
+              <li className="font-sans">
+                {d.anonymousVolumes} anonymous volume{d.anonymousVolumes === 1 ? '' : 's'} of the
+                containers
+              </li>
+            )}
+            {!d.volumes.length && !d.anonymousVolumes && (
+              <li className="font-sans">No volumes exist for this project.</li>
+            )}
+          </ul>
+        </div>
+      )}
+      {d.warnings.length > 0 && (
+        <ul
+          aria-label="Compose warnings"
+          className="list-disc space-y-0.5 pl-5 text-xs text-amber-200/90"
+        >
+          {d.warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
+      {d.riskReasons.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-200/90">
+          {d.riskReasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const ENV_TONE: Record<string, Tone> = {
   development: 'neutral',
   staging: 'warning',
@@ -714,7 +831,9 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
           ? GitPullRequestArrow
           : approval.details.kind === 'task_permissions'
             ? KeyRound
-            : ShieldAlert;
+            : approval.details.kind === 'compose'
+              ? Container
+              : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);
@@ -794,7 +913,15 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
           {approval.confirmationRequired && !rejecting && (
             <div className="rounded-md border border-red-900/70 bg-red-950/30 p-2">
               <label htmlFor={`confirm-${approval.id}`} className="mb-1 block text-xs text-red-200">
-                This affects <strong>production</strong>. Type{' '}
+                {approval.details.kind === 'compose' ? (
+                  <>
+                    This <strong>deletes volumes</strong> and their data. Type the project name
+                  </>
+                ) : (
+                  <>
+                    This affects <strong>production</strong>. Type
+                  </>
+                )}{' '}
                 <code className="font-mono">{approval.confirmationRequired}</code> to enable
                 approval.
               </label>

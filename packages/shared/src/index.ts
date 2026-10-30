@@ -322,6 +322,38 @@ export interface RefactorInfo {
 
 export type ApprovalDetails =
   | {
+      /** compose_control: bringing the project's compose services up or down. */
+      kind: 'compose';
+      action: ComposeAction;
+      /** Compose project name (typed to confirm removing volumes). */
+      project: string;
+      /** Project-relative compose files, the base file first. */
+      files: string[];
+      /** The exact docker arguments (no shell). */
+      argv: string[];
+      /** Services the action affects; `dependency` marks ones started only as dependencies. */
+      services: Array<{
+        name: string;
+        image: string;
+        build: boolean;
+        ports: string[];
+        /** Current state, e.g. "running, healthy" or "no container". */
+        state: string;
+        dependency: boolean;
+      }>;
+      pull: ComposePull;
+      build: boolean;
+      removeVolumes: boolean;
+      /** Named volumes deleted with removeVolumes (with whether each exists now). */
+      volumes: Array<{ name: string; exists: boolean }>;
+      anonymousVolumes: number;
+      /** Risky settings in the compose file (privileged, Docker socket, host networking). */
+      warnings: string[];
+      riskReasons: string[];
+      /** Seconds Friday waits afterwards for the services to be running and healthy. */
+      waitSeconds: number;
+    }
+  | {
       kind: 'saved_action';
       action: { id: string; name: string; description: string; risk: SavedActionDto['risk'] };
       steps: Array<{
@@ -482,6 +514,9 @@ export type ApprovalDetails =
       maxActions: number;
       minutes: number;
     };
+
+export type ComposeAction = 'up' | 'start' | 'stop' | 'restart' | 'down';
+export type ComposePull = 'never' | 'missing' | 'always';
 
 export type HostEnvironment = 'development' | 'staging' | 'production';
 

@@ -465,7 +465,7 @@ function checkWorkflow(doc: Document, text: string): Finding[] {
 
 const DB_PORTS = new Set(['3306', '5432', '6379', '27017', '9200', '11211']);
 
-function checkCompose(doc: Document): Finding[] {
+export function checkCompose(doc: Document): Finding[] {
   const f: Finding[] = [];
   const data = doc.toJS() as Record<string, Json> | null;
   if (!data?.services || typeof data.services !== 'object')
