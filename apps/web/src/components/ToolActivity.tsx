@@ -98,6 +98,16 @@ export function toolLabel(name: string, argsJson: string): string {
           : '';
       return `${str(a.action ?? a.view ?? 'status')}${svcs}${a.removeVolumes ? ' (remove volumes)' : ''}`;
     }
+    case 'dependency_report':
+      return str(a.path ?? a.ecosystem ?? '');
+    case 'dependency_changelog':
+      return `${str(a.name)}${a.to ? ` → ${str(a.to)}` : ''}`;
+    case 'upgrade_dependencies':
+      return Array.isArray(a.packages)
+        ? (a.packages as Array<{ name?: unknown; version?: unknown }>)
+            .map((p) => `${str(p.name)}@${str(p.version)}`)
+            .join(', ')
+        : '';
     case 'monitor_status':
       return a.name ? str(a.name) : '';
     case 'validate_config':

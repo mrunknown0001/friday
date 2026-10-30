@@ -29,6 +29,7 @@ import { findReferencesTool, moveSymbol, renameSymbol } from './refactorTools.js
 import { listSavedActions, runSavedAction } from './savedActionTools.js';
 import { composeControl, composeStatus } from './composeTools.js';
 import { monitorStatus } from './monitorTools.js';
+import { dependencyChangelog, dependencyReport, upgradeDependencies } from './dependencyTools.js';
 import { codeMapTool, findSymbol } from './codeMapTools.js';
 import { createDocument, createPresentation, createSpreadsheet } from './documentTools.js';
 import { viewImage } from './imageTools.js';
@@ -144,6 +145,9 @@ export const DEFAULT_TOOLS = [
   composeStatus,
   composeControl,
   monitorStatus,
+  dependencyReport,
+  dependencyChangelog,
+  upgradeDependencies,
   validateConfig,
   prepareDeploymentPlan,
   remoteDiagnose,

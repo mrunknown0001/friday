@@ -484,6 +484,25 @@ project when you name it.
 - **Volumes** are deleted only when you ask, with `down`, at critical risk: the card lists the volumes, and you
   type the project name to approve.
 
+### Dependency upgrades
+
+Ask Friday to check or upgrade the project's dependencies (npm with `package-lock.json`, including workspaces, and
+Composer with `composer.lock`):
+
+- **Report** (`dependency_report`, no approval): each direct dependency's locked version, the newest release on the
+  same major line and on any line, and known advisories (`npm audit` / `composer audit` on the lockfile), with
+  whether the recommended version fixes them. Recommended versions are **at least 14 days old**; newer releases are
+  listed as too recent. Only package names and versions go to the registries; nothing is installed.
+- **Release notes** (`dependency_changelog`, no approval): GitHub releases between two versions, or the
+  `CHANGELOG.md` where releases are missing, with breaking-change lines first. Fetched through `gh`.
+- **Upgrade** (`upgrade_dependencies`, approval): exact versions only. The card shows each package's version
+  change (patch, minor, major), its age, the advisories it fixes or still has, breaking-change lines from the
+  notes, and the exact `npm install` / `composer require` commands. They run like `run_command` (in the project
+  container if it has one), and install scripts may run. The manifest keeps its style (`^`, `~` or exact). The
+  manifest and lockfile changes are recorded, so you can undo them in the Changes panel. Friday then runs the tests.
+- A release younger than 14 days is refused unless you ask for it, and is marked on the card. pnpm, Yarn and Bun
+  projects are reported as not supported yet.
+
 ### Health monitors
 
 Open **Monitors** in the sidebar to watch things while Friday runs. Each monitor checks every few minutes (1 to

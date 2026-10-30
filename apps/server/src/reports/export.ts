@@ -144,6 +144,12 @@ function approvalAction(d: ApprovalDetails): string | null {
         .join('\n\n');
     case 'compose':
       return fenced(displayArgv(d.argv), 'sh');
+    case 'dependency_upgrade':
+      return [
+        ...d.packages.map((p) => `- ${p.name}: ${p.from} → ${p.to} (${p.change})`),
+        '',
+        fenced(d.commands.map(displayArgv).join('\n'), 'sh'),
+      ].join('\n');
   }
 }
 
