@@ -234,6 +234,24 @@ volumes is limited to `down` of the whole project, is rated critical, needs the 
 machine (privileged, the Docker socket, host networking) are listed and raise starts to high risk. Logs are
 redacted like any tool output.
 
+## Health monitors
+
+Monitors are created, changed and deleted only through local routes that need the browser client header, and
+each change is audit-logged; the model's only monitor tool, `monitor_status`, is read-only. Checks run on the
+server's timer without approval because the user configured exactly what runs:
+
+- URL checks are `GET` requests with Friday's own user agent and no cookies or credentials. URLs with a user name
+  or password are refused. Redirects are followed only to the same host (at most five). The body is read only
+  when a text must be matched, capped at 256 KB, and never stored.
+- SSH checks use only trusted hosts (refused at creation and at each check otherwise) and one fixed script built
+  in `monitors/checks.ts`: an echo marker, `systemctl is-active` and `df -P`. The unit name and path are
+  validated and shell-quoted.
+- Process and compose checks only read Friday's process list and the compose state (same ownership rules as
+  `compose_status`).
+
+Check messages are redacted and capped at 500 characters before they are stored or sent. The model sees a URL
+without its query string, which can hold tokens.
+
 ## Rename and move
 
 `rename_symbol` and `move_symbol` are file changes like `edit_files`: one approval for the whole set, every file's

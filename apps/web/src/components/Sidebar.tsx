@@ -1,5 +1,6 @@
 import type { ProjectDto, SessionSummaryDto } from '@friday/shared';
 import {
+  Activity,
   Brain,
   FolderPlus,
   FolderX,
@@ -34,6 +35,9 @@ interface Props {
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
   onOpenMemory: () => void;
+  onOpenMonitors: () => void;
+  /** Monitors currently down (shown as a badge). */
+  monitorsDown: number;
   settingsWarning: boolean;
 }
 
@@ -53,6 +57,8 @@ export function Sidebar({
   onDelete,
   onOpenSettings,
   onOpenMemory,
+  onOpenMonitors,
+  monitorsDown,
   settingsWarning,
 }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
@@ -265,6 +271,15 @@ export function Sidebar({
         <Button variant="ghost" className="w-full justify-start" onClick={onOpenMemory}>
           <Brain className="h-4 w-4" />
           Memory
+        </Button>
+        <Button variant="ghost" className="w-full justify-start" onClick={onOpenMonitors}>
+          <Activity className="h-4 w-4" />
+          Monitors
+          {monitorsDown > 0 && (
+            <Badge tone="danger" className="ml-auto">
+              {monitorsDown} down
+            </Badge>
+          )}
         </Button>
         <Button variant="ghost" className="w-full justify-start" onClick={onOpenSettings}>
           <Settings className="h-4 w-4" />

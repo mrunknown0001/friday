@@ -98,6 +98,8 @@ export function toolLabel(name: string, argsJson: string): string {
           : '';
       return `${str(a.action ?? a.view ?? 'status')}${svcs}${a.removeVolumes ? ' (remove volumes)' : ''}`;
     }
+    case 'monitor_status':
+      return a.name ? str(a.name) : '';
     case 'validate_config':
       return str(a.path);
     case 'prepare_deployment_plan':

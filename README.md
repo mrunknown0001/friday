@@ -484,6 +484,27 @@ project when you name it.
 - **Volumes** are deleted only when you ask, with `down`, at critical risk: the card lists the volumes, and you
   type the project name to approve.
 
+### Health monitors
+
+Open **Monitors** in the sidebar to watch things while Friday runs. Each monitor checks every few minutes (1 to
+1440):
+
+- **URL**: a plain `GET` (no cookies or credentials); healthy on any 2xx/3xx or the status you set, optionally only
+  when the response contains a text. Redirects are followed on the same host only.
+- **SSH host** (trusted hosts only): the host answers, and optionally a systemd service is active and a disk stays
+  under a usage limit. Only fixed read-only commands run (`systemctl is-active`, `df`).
+- **Background process**: a project's background process (started with `start_process`) with that name is
+  running.
+- **Compose service**: a service of the project's compose file is running, and healthy if it has a health check.
+
+A monitor counts as **down** after the number of failed checks in a row you set (2 by default), and as up again
+after one passing check. Both changes send a system notification (when notifications are on), and the sidebar
+shows how many are down. Each monitor keeps its latest checks and status changes. **Investigate** on a monitor
+that is down opens a conversation (in its project, if it has one) asking Friday to find out why, read-only first.
+
+Only you add, change, pause or delete monitors. Friday's `monitor_status` tool can read their status and history
+but not change them. A URL's query string is not shown to the model. Deleting a project deletes its monitors.
+
 ### Rename and move code
 
 Ask Friday to rename a function, class, type, constant or method, or to move a top-level TypeScript/JavaScript

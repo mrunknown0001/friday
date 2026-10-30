@@ -28,6 +28,7 @@ import type { CaptureRepo } from '../repositories/captures.js';
 import type { ReviewRepo } from '../repositories/reviews.js';
 import type { TestRunRepo } from '../repositories/testRuns.js';
 import type { SavedActionRepo } from '../repositories/savedActions.js';
+import type { MonitorRepo } from '../repositories/monitors.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
@@ -105,6 +106,8 @@ export interface RunManagerDeps {
   testRuns?: TestRunRepo;
   /** Saved actions (runbooks) per project. */
   savedActions?: SavedActionRepo;
+  /** Health monitors (read-only for the model). */
+  monitors?: MonitorRepo;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
@@ -1076,6 +1079,7 @@ export class RunManager {
         ? { tests: this.testRunContext(run, project, callId) }
         : {}),
       ...(this.deps.savedActions ? { savedActions: this.savedActionContext() } : {}),
+      ...(this.deps.monitors ? { monitors: this.deps.monitors } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,

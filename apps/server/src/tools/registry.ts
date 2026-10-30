@@ -28,6 +28,7 @@ import { detectTests, runTests } from './testTools.js';
 import { findReferencesTool, moveSymbol, renameSymbol } from './refactorTools.js';
 import { listSavedActions, runSavedAction } from './savedActionTools.js';
 import { composeControl, composeStatus } from './composeTools.js';
+import { monitorStatus } from './monitorTools.js';
 import { codeMapTool, findSymbol } from './codeMapTools.js';
 import { createDocument, createPresentation, createSpreadsheet } from './documentTools.js';
 import { viewImage } from './imageTools.js';
@@ -142,6 +143,7 @@ export const DEFAULT_TOOLS = [
   inspectDocker,
   composeStatus,
   composeControl,
+  monitorStatus,
   validateConfig,
   prepareDeploymentPlan,
   remoteDiagnose,

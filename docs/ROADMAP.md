@@ -332,9 +332,19 @@ approved), credentials never reach the model, and results from other systems are
   kept like SSH keys and never shown to the model. Schema browsing, and read-only queries with approval, row and time
   limits, and a read-only session or transaction. Writes stay disabled; the `database` category is enabled only for
   these tools.
-- ⬜ **Health monitors** (M). Scheduled checks of URLs, SSH hosts and background processes every N minutes. When
-  something breaks or recovers, a notification and a status panel show it. Checks are read-only and use authorized
-  hosts only.
+- ✅ **Health monitors** (M). Done: the user defines monitors in the **Monitors** panel (URL, SSH host, background
+  process, compose service), each checked every 1 to 1440 minutes while Friday runs. After N failed checks in a
+  row it is down, and after one passing check up again. Both send a notification, and the sidebar counts the ones
+  down. The panel shows recent checks, status changes, **Check now**, pause and **Investigate**, which opens a
+  conversation asking Friday to diagnose it. The model reads monitors with `monitor_status` only. SSH checks run
+  a fixed script on trusted hosts. Verified live on 2026-10-31: a local site going down (connection refused, down
+  after two failures, notice sent), a compose service, and a missing background process, all checked on
+  schedule; the panel was checked in Chromium. Investigate with `claude-sonnet-4.6` read the history with
+  `monitor_status`, ran read-only checks and asked before any change. Its guessed cause was wrong, because the
+  stopped test server was outside what Friday's tools can see. The URL's query string never reached the model. SSH
+  monitors are covered by tests only (no SSH server here). Original plan: scheduled checks of URLs, SSH hosts and background
+  processes every N minutes. When something breaks or recovers, a notification and a status panel show it.
+  Checks are read-only and use authorized hosts only.
 
 **Platform**
 

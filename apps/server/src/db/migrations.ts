@@ -545,6 +545,47 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 21,
+    name: 'health_monitors',
+    up: `
+      -- Health monitors: scheduled read-only checks the user defines (URLs, SSH hosts, background
+      -- processes, compose services). Only the user creates or edits them (HTTP routes).
+      CREATE TABLE monitors (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+        target TEXT NOT NULL,
+        interval_minutes INTEGER NOT NULL,
+        failures_before_alert INTEGER NOT NULL,
+        enabled INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'up', 'down')),
+        status_since TEXT,
+        last_checked_at TEXT,
+        last_message TEXT,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE monitor_checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+        checked_at TEXT NOT NULL,
+        ok INTEGER NOT NULL,
+        duration_ms INTEGER,
+        message TEXT NOT NULL
+      );
+      CREATE INDEX monitor_checks_by_monitor ON monitor_checks (monitor_id, id);
+      CREATE TABLE monitor_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+        at TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('up', 'down')),
+        message TEXT NOT NULL
+      );
+      CREATE INDEX monitor_events_by_monitor ON monitor_events (monitor_id, id);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {
