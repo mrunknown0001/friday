@@ -178,6 +178,7 @@ function ctx(root: string): ToolContext {
       createdAt: '',
       lastOpenedAt: null,
       sandbox: null,
+      worktree: null,
     },
     sessionId: 's',
     runId: 'r',

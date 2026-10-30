@@ -55,7 +55,7 @@ const WORKSPACE_STATUS: Record<WorkspaceError['code'], number> = {
 };
 
 /** Map workspace errors to HTTP errors; their messages are safe to show. */
-async function guarded<T>(fn: () => Promise<T>): Promise<T> {
+export async function guarded<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
@@ -202,6 +202,13 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
   app.delete('/api/projects/:id', async (req, reply) => {
     const { id } = parseInput(idParams, req.params);
     const project = requireProject(id);
+    const active = s.projects.worktrees(id).filter((w) => w.worktree?.status === 'active');
+    if (active.length)
+      throw new HttpError(
+        409,
+        'active_worktrees',
+        `This project has ${active.length} task worktree${active.length > 1 ? 's' : ''} in progress. Accept or discard ${active.length > 1 ? 'them' : 'it'} first.`,
+      );
     s.projects.delete(id);
     s.audit.record({
       actor: 'user',

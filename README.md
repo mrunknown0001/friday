@@ -427,6 +427,31 @@ Committing, creating branches, pushing and opening pull requests need approval, 
 covered by a task permission. Merge, rebase and reset are not tools: if you ask for one, the agent proposes it
 through `run_command`, where it is flagged as high risk (a force push there is flagged critical).
 
+### Task worktrees
+
+Start a task in its own git worktree with the branch-plus button next to **New conversation**. Friday makes a
+separate folder (in its data folder, `worktrees/`) on a new branch `friday/task-…`, from your project's last commit.
+The conversation works only there, so your own checkout, including uncommitted work, stays untouched while the task
+runs. The header shows the branch, with **Accept…** and **Discard…**.
+
+- Your uncommitted changes are not in the worktree; it starts from your last commit.
+- Dependency folders git ignores in your checkout (`node_modules`, `vendor`, `.venv`, up to three levels deep) are
+  **linked** into the worktree, so tests run immediately. They're shared, so installing packages inside the
+  worktree changes your checkout's copy too; Friday says so before proposing an install. The links are kept out of
+  git through the repository's local exclude file (`.git/info/exclude`); for your checkout that changes nothing,
+  because the same folders are already ignored there.
+- **Accept** first commits whatever the task left uncommitted (credential files are refused), then:
+  - **Merge into your branch** (a merge commit, keeping the task's commits), or **Squash** it into one commit. Both
+    land on the branch your checkout is on, and are refused if your checkout has uncommitted changes to tracked
+    files: commit or stash them first, Friday never touches them. A conflict undoes the attempt completely and
+    keeps the worktree, so you can ask Friday to bring it up to date there.
+  - **Keep the branch**, without touching your branch, to push it or open a pull request later.
+- **Discard** removes the worktree folder and its branch. Your checkout isn't touched.
+- Both remove only a folder Friday made inside its data folder and registered with git. They wait while a task is
+  still running, and stop the worktree's background processes. A project with a worktree in progress can't be
+  removed from Friday until you accept or discard it.
+- The conversation stays in the project's list with a branch icon, and its header says how it ended.
+
 ### Push and pull requests
 
 - `git_push` pushes the current branch to the remote branch of the same name (usually `origin`) and sets it as the

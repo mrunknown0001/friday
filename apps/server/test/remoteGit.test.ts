@@ -54,6 +54,7 @@ function ctx(root: string, extra: Partial<ToolContext> = {}): ToolContext {
       createdAt: '',
       lastOpenedAt: null,
       sandbox: null,
+      worktree: null,
     },
     sessionId: 's',
     runId: 'r',

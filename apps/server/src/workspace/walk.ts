@@ -125,7 +125,8 @@ export async function walk(root: string, startAbs: string, opts: WalkOptions): P
       }
       const abs = path.join(dir, d.name);
       const isDir = d.isDirectory();
-      if (isDir && DEFAULT_EXCLUDED_DIRS.has(d.name)) continue;
+      // A worktree's .git is a file pointing at the main repository: just as internal.
+      if (d.name === '.git' || (isDir && DEFAULT_EXCLUDED_DIRS.has(d.name))) continue;
       if (isIgnored(active, abs, isDir)) continue;
       const rel = toRel(root, abs);
       if (d.isSymbolicLink()) {

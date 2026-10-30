@@ -11,6 +11,7 @@ import { ApprovalService } from './approvals/service.js';
 import { ApprovalRepo } from './repositories/approvals.js';
 import { AttachmentRepo } from './repositories/attachments.js';
 import { CaptureRepo } from './repositories/captures.js';
+import { WorktreeManager } from './worktree/manager.js';
 import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
 import { MessageRepo } from './repositories/messages.js';
@@ -90,6 +91,7 @@ export interface Services {
   fileChanges: FileChangeRepo;
   attachments: AttachmentRepo;
   captures: CaptureRepo;
+  worktrees: WorktreeManager;
   sshHosts: SshHostRepo;
   ssh: SshService;
   logSources: LogSourceRepo;
@@ -249,6 +251,7 @@ export function createServices(
     fileChanges,
     attachments,
     captures,
+    worktrees: new WorktreeManager(projects, config.dataDir),
     sshHosts,
     ssh,
     logSources,

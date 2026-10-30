@@ -232,6 +232,7 @@ function ctx(root: string, pm: ProcessManager, projectId = 'p1'): ToolContext {
       createdAt: '',
       lastOpenedAt: null,
       sandbox: null,
+      worktree: null,
     },
     sessionId: 's1',
     runId: 'r1',
@@ -478,6 +479,7 @@ describe('process status in the system prompt', () => {
     createdAt: '',
     lastOpenedAt: null,
     sandbox: null,
+    worktree: null,
   };
   const base = {
     id: 'proc_1a2b3c4d',

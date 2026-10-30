@@ -9,7 +9,7 @@ import type {
   SettingsDto,
 } from '@friday/shared';
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AddProjectDialog } from './components/AddProjectDialog';
 import { MCP_UPDATED_EVENT } from './components/McpSettings';
 import { PreviewPane } from './components/PreviewPane';
@@ -52,6 +52,11 @@ export function App() {
   const [sessions, setSessions] = useState<SessionSummaryDto[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() => readStored(ACTIVE_KEY));
   const [projects, setProjects] = useState<ProjectDto[]>([]);
+  // For callbacks that must see the latest list without being recreated.
+  const projectsRef = useRef(projects);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
   const [projectId, setProjectId] = useState<string | null>(() => readStored(PROJECT_KEY));
   const [sidePanelOpen, setSidePanelOpen] = useState(() => readStored(PANEL_KEY) !== '0');
   const [addProjectOpen, setAddProjectOpen] = useState(false);
@@ -98,8 +103,10 @@ export function App() {
     try {
       const d = await api.session(id);
       setDetail(d);
-      // Keep the project switcher in sync with the conversation being shown.
-      setProjectId(d.projectId);
+      // Keep the project switcher in sync with the conversation being shown (a task worktree's
+      // conversation belongs under the project it came from).
+      const owner = projectsRef.current.find((p) => p.id === d.projectId);
+      setProjectId(owner?.worktree?.parentId ?? d.projectId);
       // Reattach to a run that is still in progress (e.g. after a page reload).
       const active =
         d.latestRun?.status === 'running' || d.latestRun?.status === 'awaiting_approval';
@@ -125,18 +132,21 @@ export function App() {
     void loadSessions();
   }, [projectId, loadSessions]);
 
-  // Background processes of the selected project; kept current by process_updated notices.
+  // The project the shown conversation works in: a task worktree, or the selected project.
+  const workProjectId = detail && detail.id === activeId ? detail.projectId : projectId;
+
+  // Background processes of that project; kept current by process_updated notices.
   useEffect(() => {
-    if (!projectId) return;
+    if (!workProjectId) return;
     let cancelled = false;
     api
-      .projectProcesses(projectId)
-      .then((r) => !cancelled && setProcesses({ projectId, list: r.processes }))
+      .projectProcesses(workProjectId)
+      .then((r) => !cancelled && setProcesses({ projectId: workProjectId, list: r.processes }))
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [workProjectId]);
 
   useEffect(() => {
     writeStored(ACTIVE_KEY, activeId);
@@ -223,7 +233,8 @@ export function App() {
       });
     }
   });
-  const project = projects.find((p) => p.id === projectId) ?? null;
+  const project = projects.find((p) => p.id === workProjectId) ?? null;
+  const selectedProject = projects.find((p) => p.id === projectId) ?? null;
 
   // Persisted approvals, overlaid with live updates from the current run.
   const approvals: ApprovalDto[] = (() => {
@@ -309,6 +320,24 @@ export function App() {
     setProjectId(id);
   };
 
+  const newWorktreeSession = async () => {
+    if (!projectId) return;
+    try {
+      const r = await api.createWorktree(projectId);
+      await loadProjects();
+      await loadSessions();
+      setActiveId(r.sessionId);
+    } catch (e) {
+      report(e);
+    }
+  };
+
+  const worktreeChanged = () => {
+    void loadProjects();
+    void loadSessions();
+    if (activeId) void loadDetail(activeId);
+  };
+
   const newSession = async () => {
     try {
       const s = await api.createSession(projectId);
@@ -381,6 +410,9 @@ export function App() {
         activeId={activeId}
         onSelect={setActiveId}
         onNew={() => void newSession()}
+        {...(selectedProject?.available && !selectedProject.worktree
+          ? { onNewWorktree: () => void newWorktreeSession() }
+          : {})}
         onRename={(id, title) =>
           void api
             .renameSession(id, title)
@@ -430,6 +462,7 @@ export function App() {
             ),
           ]}
           onRollback={rollback}
+          onWorktreeChanged={worktreeChanged}
           onOpenMemory={() => setMemoryOpen(true)}
           onRevokeTaskPermission={(id) =>
             api.revokeTaskPermission(id).then(() => undefined, report)
@@ -456,7 +489,7 @@ export function App() {
         <PreviewPane
           key={preview.url ?? ''}
           url={preview.url}
-          processes={processes && processes.projectId === projectId ? processes.list : []}
+          processes={processes && processes.projectId === workProjectId ? processes.list : []}
           onNavigate={(url) => setPreview({ open: true, url })}
           onClose={() => setPreview((p) => ({ ...p, open: false }))}
         />
@@ -468,7 +501,7 @@ export function App() {
           plan={live?.plan ?? shownDetail?.plan ?? null}
           changes={sessionChanges}
           onRevert={(c) => void revert(c)}
-          processes={processes && processes.projectId === projectId ? processes.list : []}
+          processes={processes && processes.projectId === workProjectId ? processes.list : []}
           onStopProcess={(p) => void api.stopProcess(p.id).catch(report)}
           onDismissProcess={(p) =>
             void api

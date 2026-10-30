@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SandboxSettings } from '@friday/shared';
+import type { SandboxSettings, WorktreeInfo } from '@friday/shared';
 import type { Db } from '../db/database.js';
 
 export interface ProjectRecord {
@@ -10,6 +10,7 @@ export interface ProjectRecord {
   createdAt: string;
   lastOpenedAt: string | null;
   sandbox: SandboxSettings | null;
+  worktree: WorktreeInfo | null;
 }
 
 interface ProjectRow {
@@ -19,6 +20,7 @@ interface ProjectRow {
   created_at: string;
   last_opened_at: string | null;
   sandbox: string | null;
+  worktree: string | null;
 }
 
 const toRecord = (r: ProjectRow): ProjectRecord => ({
@@ -28,6 +30,7 @@ const toRecord = (r: ProjectRow): ProjectRecord => ({
   createdAt: r.created_at,
   lastOpenedAt: r.last_opened_at,
   sandbox: r.sandbox ? (JSON.parse(r.sandbox) as SandboxSettings) : null,
+  worktree: r.worktree ? (JSON.parse(r.worktree) as WorktreeInfo) : null,
 });
 
 export class ProjectRepo {
@@ -39,6 +42,45 @@ export class ProjectRepo {
       .prepare('INSERT INTO projects (id, name, root_path, created_at) VALUES (?, ?, ?, ?)')
       .run(id, name, rootPath, new Date().toISOString());
     return this.get(id)!;
+  }
+
+  /** A worktree project: a child of `worktree.parentId`, with the parent's sandbox settings. */
+  createWorktree(
+    name: string,
+    rootPath: string,
+    worktree: WorktreeInfo,
+    sandbox: SandboxSettings | null,
+  ): ProjectRecord {
+    const id = randomUUID();
+    this.db
+      .prepare(
+        'INSERT INTO projects (id, name, root_path, created_at, parent_id, worktree, sandbox) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        id,
+        name,
+        rootPath,
+        new Date().toISOString(),
+        worktree.parentId,
+        JSON.stringify(worktree),
+        sandbox ? JSON.stringify(sandbox) : null,
+      );
+    return this.get(id)!;
+  }
+
+  setWorktree(id: string, worktree: WorktreeInfo): void {
+    this.db
+      .prepare('UPDATE projects SET worktree = ? WHERE id = ?')
+      .run(JSON.stringify(worktree), id);
+  }
+
+  /** Worktree projects made from this project, newest first. */
+  worktrees(parentId: string): ProjectRecord[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM projects WHERE parent_id = ? ORDER BY created_at DESC')
+        .all(parentId) as unknown as ProjectRow[]
+    ).map(toRecord);
   }
 
   get(id: string): ProjectRecord | null {

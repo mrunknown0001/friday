@@ -230,8 +230,14 @@ approved), credentials never reach the model, and results from other systems are
   request. Original plan: Friday pushes a branch and opens a GitHub pull request (title, description, the run
   report as the body) after approval. It never pushes to the default branch and never force-pushes; it uses the
   user's own `gh`/git credentials, which Friday does not read.
-- ⬜ **Worktree per task** (M). Each task can run in its own git worktree and branch, so the user's working tree
-  stays untouched until they accept (merge) or discard the result. Uncommitted user changes are never discarded.
+- ✅ **Worktree per task** (M). Done: "New task in a worktree" makes a worktree project (a child of the project, in
+  Friday's data folder, branch `friday/task-…`) bound to its conversation, with ignored dependency folders linked.
+  **Accept** commits pending changes, then merges, squashes or keeps the branch. Merge and squash are refused when
+  the user's checkout has uncommitted changes, and a conflict is fully undone. **Discard** removes the folder and
+  branch. Verified live on 2026-10-30 with `claude-sonnet-4.6`: the fix and test ran in the worktree with linked
+  `node_modules`, the user's checkout stayed untouched, and Accept → Merge from the UI landed it on `main`.
+  Original plan: each task can run in its own git worktree and branch, so the user's working tree stays untouched
+  until they accept (merge) or discard the result. Uncommitted user changes are never discarded.
 - ⬜ **Code review mode** (M). Review uncommitted changes, a branch or a pull request. Findings come with severity,
   `file:line` and a reason, plus suggested fixes the user applies one at a time (each a normal approved edit).
 - ⬜ **Safe rename and refactor** (M). Rename a symbol, or move a function, across the project using the code map and

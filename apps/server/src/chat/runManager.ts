@@ -1322,7 +1322,14 @@ export class RunManager {
     if (project && report?.status === 'unverified') {
       testCommand = await detectTestCommand(project.rootPath).catch(() => null);
     }
-    if (project && report && report.commits.length === 0 && report.files.some((f) => !f.reverted)) {
+    // In a task worktree, accepting it commits; no "review & commit" chip there.
+    if (
+      project &&
+      !project.worktree &&
+      report &&
+      report.commits.length === 0 &&
+      report.files.some((f) => !f.reverted)
+    ) {
       uncommitted = await assertRepoRoot(project.rootPath)
         .then(() => repoStatus(project.rootPath))
         .then((st) => st.entries.map((e) => e.path))

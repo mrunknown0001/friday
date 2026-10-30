@@ -129,6 +129,42 @@ export interface ProjectDto {
   available: boolean;
   /** Where run_command executes for this project; null = on this machine. */
   sandbox: SandboxSettings | null;
+  /** Set when this project is a git worktree Friday made for one task. */
+  worktree: WorktreeInfo | null;
+}
+
+/** A git worktree for one task: its own folder and branch, made from the parent project's HEAD. */
+export interface WorktreeInfo {
+  parentId: string;
+  branch: string;
+  /** The commit it started from, and the branch the parent was on then (null if detached). */
+  base: string;
+  baseBranch: string | null;
+  /** Dependency folders symlinked from the parent checkout (node_modules, vendor, .venv). */
+  linked: string[];
+  status: 'active' | 'accepted' | 'discarded';
+  outcome: {
+    mode: 'merge' | 'squash' | 'branch' | 'discard';
+    /** Merge: the branch it went into. Branch: the branch kept. */
+    branch: string | null;
+    /** The resulting commit (merge or squash), or the branch's last commit. */
+    commit: string | null;
+    at: string;
+  } | null;
+  createdAt: string;
+}
+
+/** What accepting or discarding a worktree would do, for the dialogs. */
+export interface WorktreeStatusDto {
+  project: ProjectDto;
+  /** Commits on the worktree branch since it started, newest first. */
+  commits: Array<{ sha: string; subject: string }>;
+  /** Files changed in the worktree but not committed yet (committed automatically on accept). */
+  uncommitted: Array<{ path: string; status: string }>;
+  /** The parent checkout: its current branch, and whether it has uncommitted changes to tracked files. */
+  target: { branch: string | null; head: string | null; dirty: string[] };
+  /** False while a task in this worktree is still running. */
+  idle: boolean;
 }
 
 /** Run a project's commands in a throwaway Docker container instead of on this machine. */

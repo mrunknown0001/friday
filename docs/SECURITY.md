@@ -198,6 +198,16 @@ neutral folder with prompts disabled and uses the user's own sign-in; Friday nev
 untrusted text (anyone who can push a branch controls what a log says). They are clipped and redacted like other
 tool output, and the system prompt treats them as data. GitHub masks repository secrets in logs.
 
+## Task worktrees
+
+| Threat                               | Mitigation                                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Losing the user's uncommitted work   | Worktrees start from the last commit and never touch the user's checkout while a task runs. Merge and squash are refused while the checkout has uncommitted changes to tracked files; a failed merge is undone with `merge --abort` / `reset --merge`, which is exact on a clean checkout. |
+| Deleting the wrong folder            | Accept and discard remove only a folder inside Friday's data folder that `git worktree list` reports for that repository, via `git worktree remove`. Dependency links are unlinked first, so removal never follows them.                                                                   |
+| Committing secrets on accept         | The automatic commit is refused when the worktree has credential files.                                                                                                                                                                                                                    |
+| The model accepting its own work     | Creating, accepting and discarding are user actions in the UI (HTTP routes behind the usual local-only guards), never model tools. The system prompt tells the model to stay on the task branch.                                                                                           |
+| Repository code running during setup | `git worktree add`, the automatic commit and the merge run with hooks disabled and the usual neutralized repository config.                                                                                                                                                                |
+
 ## Conversation export
 
 Exports are a user action from the UI (`GET /api/sessions/:id/export`), never a model tool, and are recorded as
