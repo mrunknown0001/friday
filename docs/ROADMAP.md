@@ -278,8 +278,11 @@ approved), credentials never reach the model, and results from other systems are
   an estimate from per-model prices the user enters, because NoTokenLimit publishes none. Original plan: tokens,
   calls and time per conversation, model and day, from Friday's own provider records (no prompt content), as a
   small chart in Settings.
-- ⬜ **Export conversations** (S). Export a conversation (messages, tool results, approvals and the run report) as
-  Markdown or PDF with the document generator; secrets are redacted as everywhere else.
+- ✅ **Export conversations** (S). Done: a download button in the conversation header, Markdown or PDF, summary
+  or full detail (tool results, approval reasons, diffs and commands), redacted, recorded in the audit log. Verified
+  live on 2026-10-30 by exporting the push-and-PR test conversation through the UI as a full PDF. Original plan:
+  export a conversation (messages, tool results, approvals and the run report) as Markdown or PDF with the
+  document generator; secrets are redacted as everywhere else.
 
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,

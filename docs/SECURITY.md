@@ -189,6 +189,14 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 hooks during `git_commit`. Only the environment variables credential helpers need (ssh agent, WSL interop, desktop
 keyring, `GH_*`/`GITHUB_TOKEN`, proxies) are passed to push and `gh`.
 
+## Conversation export
+
+Exports are a user action from the UI (`GET /api/sessions/:id/export`), never a model tool, and are recorded as
+`session_exported` in the audit log. The whole document passes through the redactor, both formats. A full export
+contains what Friday already stores and shows (tool results, diffs and commands); like a screenshot of the
+conversation, treat the file as sensitive as the project. The PDF is printed from escaped HTML with no scripts or
+external resources, like generated documents.
+
 ## Code map
 
 The index holds definition lines (signatures) from project source files, in the local database only. It applies

@@ -254,6 +254,7 @@ pasted, dropped or picked.
 | `tools/fileTools.ts`      | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                   |
 | `commands/locations.ts`   | `file:line` extraction from tool output; verification-command classification.                                                                         |
 | `reports/runReport.ts`    | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                |
+| `reports/export.ts`       | A conversation as Markdown (summary or full); `routes/export.ts` serves it, or prints it to PDF through the document renderer.                        |
 
 A _task_ is a run plus the unfinished runs (interrupted, failed, blocked, cancelled) it directly continues. Reports
 and rollback operate on the task. Checkpoints are written after every executed approval, not only at the end of a

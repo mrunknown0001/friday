@@ -15,6 +15,7 @@ import {
   FolderOpen,
   ImagePlus,
   Loader2,
+  FileDown,
   MonitorPlay,
   PanelRight,
   RotateCcw,
@@ -28,6 +29,7 @@ import { api } from '../lib/api';
 import { ACCEPTED, imageFiles, prepareImage } from '../lib/images';
 import { ApprovalCard } from './ApprovalCard';
 import { AttachmentThumbs, DraftImages, type DraftImage } from './Attachments';
+import { ExportDialog } from './ExportDialog';
 import { ATTACH_IMAGE_EVENT } from './PreviewPane';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
@@ -333,6 +335,7 @@ export function ChatView(props: Props) {
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   // Shown when the user has scrolled up; `unseen` marks new activity below since then.
@@ -457,11 +460,26 @@ export function ChatView(props: Props) {
             summarized history
           </Badge>
         )}
-        {props.onTogglePreview && (
+        {detail && (
           <Button
             variant="ghost"
             size="icon"
             className="ml-auto"
+            onClick={() => setExporting(true)}
+            aria-label="Export conversation"
+            title="Export"
+          >
+            <FileDown className="h-4 w-4" />
+          </Button>
+        )}
+        {exporting && detail && (
+          <ExportDialog sessionId={detail.id} onClose={() => setExporting(false)} />
+        )}
+        {props.onTogglePreview && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={detail ? undefined : 'ml-auto'}
             onClick={props.onTogglePreview}
             aria-pressed={!!props.previewOpen}
             aria-label="Toggle live preview"
@@ -473,7 +491,7 @@ export function ChatView(props: Props) {
         <Button
           variant="ghost"
           size="icon"
-          className={props.onTogglePreview ? undefined : 'ml-auto'}
+          className={props.onTogglePreview || detail ? undefined : 'ml-auto'}
           onClick={props.onToggleSidePanel}
           aria-pressed={props.sidePanelOpen}
           aria-label="Toggle plan and files panel"

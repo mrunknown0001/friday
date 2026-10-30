@@ -7,6 +7,7 @@ import { HttpError } from './http/errors.js';
 import { registerApprovalRoutes } from './http/routes/approvals.js';
 import { registerAttachmentRoutes } from './http/routes/attachments.js';
 import { registerDevopsRoutes } from './http/routes/devops.js';
+import { registerExportRoutes } from './http/routes/export.js';
 import { registerMcpRoutes } from './http/routes/mcp.js';
 import { registerMemoryRoutes } from './http/routes/memory.js';
 import { registerPreviewRoutes } from './http/routes/preview.js';
@@ -109,6 +110,7 @@ export async function buildApp(
   registerMemoryRoutes(app, services);
   registerMcpRoutes(app, services);
   registerUsageRoutes(app, services);
+  registerExportRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {
