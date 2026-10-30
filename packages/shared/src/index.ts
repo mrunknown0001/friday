@@ -262,8 +262,38 @@ export interface FileChangePreview {
   removed: number;
 }
 
+export interface RefactorMatch {
+  path: string;
+  line: number;
+  text: string;
+  /** Why Friday can't tell it is the same symbol. */
+  reason: string;
+}
+
+export interface RefactorInfo {
+  kind: 'rename' | 'move';
+  /** As written, e.g. "cartTotal" or "Cart.total". */
+  symbol: string;
+  /** "path:line" of the definition. */
+  definition: string;
+  /** The new name, or the file the symbol moves to. */
+  target: string;
+  /** Occurrences (rename) or import statements (move) changed. */
+  changed: number;
+  /** Text matches left unchanged because they may be a different symbol. */
+  notChanged: RefactorMatch[];
+  /** Uncertain matches the model checked and asked to change too. */
+  included: RefactorMatch[];
+  notes: string[];
+}
+
 export type ApprovalDetails =
-  | { kind: 'file_change'; changes: FileChangePreview[] }
+  | {
+      kind: 'file_change';
+      changes: FileChangePreview[];
+      /** Set for rename_symbol and move_symbol: what the multi-file change does. */
+      refactor?: RefactorInfo;
+    }
   | {
       kind: 'command';
       /** Exact argument vector when no shell is involved. */

@@ -448,6 +448,29 @@ narrows it.
 - For a pull request that isn't checked out, line numbers come from the pull request's diff, and the review says
   when your local files differ.
 
+### Rename and move code
+
+Ask Friday to rename a function, class, type, constant or method, or to move a top-level TypeScript/JavaScript
+definition into another file. The change is one multi-file diff you approve as a whole (and can undo per file):
+
+- `find_references` first finds the definition through the code map and every whole-word match of the name. It then
+  splits the matches into **the same symbol**: the definition's own file, files that import it (named imports,
+  re-exports through index files, namespace imports, `require`), `this`/`self` for members, the same Go package, and
+  the PHP namespace or `use`. Everything else is **may be something else**, with the reason: a comment, a string, a
+  file that doesn't import it, or a method call on a value whose type Friday can't check.
+- `rename_symbol` changes only the first group. The others are listed on the approval card and left alone, unless
+  the model checked one and named it. A new name that already appears in a file being changed is refused, and so
+  are reserved words and, in Go, a change of exported-ness.
+- `move_symbol` moves the definition with its doc comment. It brings the imports the definition needs (re-pointed
+  from the new file) and imports, from the old file, names it uses there (exporting them when they weren't). The old
+  file imports it back if it still uses it, and every file importing it from the old file, index re-exports
+  included, is updated. Namespace imports and `require` of the old file are listed to fix by hand, and a circular
+  import is pointed out.
+
+It reads code by patterns, not with a compiler, so it is careful rather than complete: imports are followed for
+TypeScript/JavaScript, Python, Go and PHP. In other languages, matches outside the definition's file are listed
+rather than changed. Run the tests or type checker afterwards; Friday suggests it.
+
 ### Test insights
 
 Ask Friday to run the tests (or it does so after a change). For **Vitest, Jest, `node --test`, pytest and Go** it

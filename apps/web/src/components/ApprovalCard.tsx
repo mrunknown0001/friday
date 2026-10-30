@@ -1,4 +1,10 @@
-import type { ApprovalDto, ApprovalStatus, RiskLevel } from '@friday/shared';
+import type {
+  ApprovalDto,
+  ApprovalStatus,
+  RefactorInfo,
+  RefactorMatch,
+  RiskLevel,
+} from '@friday/shared';
 import {
   Check,
   FileDiff,
@@ -343,7 +349,15 @@ function Details({ approval }: { approval: ApprovalDto }) {
       </div>
     );
   }
-  if (d.kind === 'file_change') return <FileDiffs changes={d.changes} />;
+  if (d.kind === 'file_change')
+    return d.refactor ? (
+      <div className="space-y-2">
+        <RefactorSummary r={d.refactor} />
+        <FileDiffs changes={d.changes} />
+      </div>
+    ) : (
+      <FileDiffs changes={d.changes} />
+    );
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
   if (d.kind === 'git_remote') return <GitRemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
@@ -420,6 +434,73 @@ function Details({ approval }: { approval: ApprovalDto }) {
             <li key={r}>{r}</li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function MatchList({ title, items }: { title: string; items: RefactorMatch[] }) {
+  return (
+    <section aria-label={title}>
+      <h3 className="mb-1 text-xs font-medium text-zinc-400">{title}</h3>
+      <ul className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950 p-2 text-xs">
+        {items.map((m) => (
+          <li key={`${m.path}:${m.line}:${m.reason}`}>
+            <span className="font-mono text-zinc-300">
+              {m.path}:{m.line}
+            </span>{' '}
+            <span className="text-zinc-500">{m.reason}</span>
+            <div className="truncate font-mono text-zinc-400" title={m.text}>
+              {m.text}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** What a rename or move changes, and the matches it leaves alone. */
+function RefactorSummary({ r }: { r: RefactorInfo }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-zinc-300">
+        {r.kind === 'rename' ? (
+          <>
+            Renames <code className="font-mono text-zinc-100">{r.symbol}</code> (defined at{' '}
+            <span className="font-mono">{r.definition}</span>) to{' '}
+            <code className="font-mono text-zinc-100">{r.target}</code>: {r.changed} occurrence
+            {r.changed === 1 ? '' : 's'} Friday tied to the definition through imports or the same
+            file.
+          </>
+        ) : (
+          <>
+            Moves <code className="font-mono text-zinc-100">{r.symbol}</code> from{' '}
+            <span className="font-mono">{r.definition}</span> to{' '}
+            <span className="font-mono">{r.target}</span>
+            {r.changed ? `, updating ${r.changed} import${r.changed === 1 ? '' : 's'}` : ''}.
+          </>
+        )}
+      </p>
+      {r.notes.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-200/90">
+          {r.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+      {r.included.length > 0 && (
+        <MatchList title="Also changed: uncertain matches the model checked" items={r.included} />
+      )}
+      {r.notChanged.length > 0 && (
+        <MatchList
+          title={
+            r.kind === 'rename'
+              ? 'Left unchanged: may be a different symbol'
+              : 'Not updated: check these by hand'
+          }
+          items={r.notChanged}
+        />
       )}
     </div>
   );
