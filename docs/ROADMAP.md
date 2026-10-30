@@ -292,6 +292,18 @@ approved), credentials never reach the model, and results from other systems are
 - ⬜ **Dependency upgrades** (M). A report of outdated and vulnerable packages, an upgrade plan with changelog
   highlights and breaking changes, then the upgrade and a test run, each step approved. It follows the
   "releases at least two weeks old" rule by default.
+- ⬜ **Playwright tests** (M, added 2026-10-31). Friday detects a project's `@playwright/test` setup and writes and
+  runs its specs: `run_tests` supports Playwright with its JSON reporter. Each failing test shows its first error
+  and `file:line`, plus the screenshot and trace Playwright saved, in the **Tests** card. It runs the specs related to
+  the changes first, and new or changed specs are normal approved edits. Browsers and `@playwright/test` are never
+  installed by Friday: it says what is missing. Separate from Browser flows, which stays the ad-hoc "click through
+  this page" check.
+- ⬜ **k6 load tests** (M, added 2026-10-31). Friday writes k6 scripts (virtual users, duration, thresholds) and runs
+  them with the installed `k6` binary. The approval card shows the target URL, virtual users, duration and
+  thresholds. The result summarises request rate, p95/p99 latency, error rate and which thresholds failed.
+  - Targets: localhost and the project's dev server freely. Other hosts only when the user listed them as load-test
+    targets in Settings. Production is refused unless it is listed and its name is typed to confirm.
+  - Never more than the virtual users and duration the approval showed.
 
 **DevOps**
 
@@ -341,4 +353,4 @@ approved), credentials never reach the model, and results from other systems are
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,
 test insights, safe rename, then saved actions, Docker Compose, health monitors, dependency upgrades, browser flows
-and the read-only database.
+and the read-only database, then (added 2026-10-31) Playwright tests and k6 load tests.
