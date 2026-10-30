@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { RunReport } from '@friday/shared';
 import { z } from 'zod';
 import { activeHooks, assertRepoRoot, git, repoStatus, runGit } from '../git/git.js';
-import { displayRemoteUrl, githubRepo, repoArg, runGh, type GitHubRepo } from '../git/github.js';
+import { displayRemoteUrl, ghReady, githubRepo, repoArg, runGh } from '../git/github.js';
 import { assertRootAvailable, isSecretPath, WorkspaceError } from '../workspace/paths.js';
 import { defineTool, type Proposal, type ToolContext, type ToolOutput } from './types.js';
 
@@ -282,20 +282,6 @@ async function prReport(p: PushPlan, base: string, ctx: ToolContext): Promise<st
     reports.find((r) => r.status !== 'no_changes' && r.commits.some(inBranch)) ??
     (reports[0]!.status !== 'no_changes' ? reports[0]! : null);
   return chosen ? reportSection(chosen) : null;
-}
-
-async function ghReady(repo: GitHubRepo, signal: AbortSignal): Promise<void> {
-  const auth = await runGh(['auth', 'status', '--hostname', repo.host], {
-    signal,
-    timeoutMs: 20_000,
-  });
-  if (auth.code !== 0)
-    throw new WorkspaceError(
-      'unsupported',
-      repo.host === 'github.com'
-        ? 'The GitHub CLI (gh) is not signed in. Run `gh auth login` in a terminal, then try again.'
-        : `${repo.host} is not a GitHub host the GitHub CLI (gh) is signed in to. Pull requests need GitHub; for GitHub Enterprise run \`gh auth login --hostname ${repo.host}\`.`,
-    );
 }
 
 export const createPullRequest = defineTool({

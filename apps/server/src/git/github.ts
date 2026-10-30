@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { childEnv } from '../commands/runner.js';
 import { WorkspaceError } from '../workspace/paths.js';
-import { credentialEnv, type GitResult } from './git.js';
+import { credentialEnv, git, runGit, type GitResult } from './git.js';
 
 /** A remote URL as shown to the user: any user name and password in it are removed. */
 export function displayRemoteUrl(url: string): string {
@@ -112,4 +112,73 @@ export function runGh(
     child.stdin.on('error', () => undefined); // gh may exit without reading its input
     child.stdin.end(opts.input ?? '');
   });
+}
+
+/** gh must be installed and signed in to the repository's host. */
+export async function ghReady(
+  repo: GitHubRepo,
+  signal: AbortSignal,
+  needs = 'Pull requests need GitHub',
+): Promise<void> {
+  const auth = await runGh(['auth', 'status', '--hostname', repo.host], {
+    signal,
+    timeoutMs: 20_000,
+  });
+  if (auth.code !== 0)
+    throw new WorkspaceError(
+      'unsupported',
+      repo.host === 'github.com'
+        ? 'The GitHub CLI (gh) is not signed in. Run `gh auth login` in a terminal, then try again.'
+        : `${repo.host} is not a GitHub host the GitHub CLI (gh) is signed in to. ${needs}; for GitHub Enterprise run \`gh auth login --hostname ${repo.host}\`.`,
+    );
+}
+
+/** The project's GitHub repository: from the current branch's remote, else origin, else the only remote. */
+export async function projectGitHubRepo(
+  root: string,
+): Promise<{ repo: GitHubRepo; remote: string }> {
+  const remotes = (await git(root, ['remote'])).split('\n').filter(Boolean);
+  const branch = (await runGit(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).stdout.trim();
+  const configured = branch
+    ? (await runGit(root, ['config', '--get', `branch.${branch}.remote`])).stdout.trim()
+    : '';
+  const remote =
+    (configured && remotes.includes(configured) ? configured : null) ??
+    (remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0]! : null);
+  if (!remote)
+    throw new WorkspaceError(
+      'unsupported',
+      remotes.length
+        ? `Can't tell which remote is the GitHub repository (remotes: ${remotes.join(', ')}).`
+        : 'This repository has no remote, so it has no GitHub Actions runs.',
+    );
+  const url = (await git(root, ['remote', 'get-url', remote])).trim();
+  const repo = githubRepo(url);
+  if (!repo)
+    throw new WorkspaceError(
+      'unsupported',
+      `The remote ${remote} (${displayRemoteUrl(url)}) is not a GitHub repository URL.`,
+    );
+  return { repo, remote };
+}
+
+/**
+ * A GET on GitHub's REST API through gh (read-only by construction: gh api's default method with
+ * no fields is GET). Returns the body text; null on 404/410 (not found, or logs expired).
+ */
+export async function ghApiGet(
+  repo: GitHubRepo,
+  path: string,
+  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<string | null> {
+  const r = await runGh(['api', '--hostname', repo.host, '--method', 'GET', path], {
+    ...opts,
+    timeoutMs: opts.timeoutMs ?? 60_000,
+  });
+  if (r.code === 0) return r.stdout;
+  if (/HTTP 40[4]|HTTP 410|Not Found|Gone/i.test(r.stderr)) return null;
+  throw new WorkspaceError(
+    'unsupported',
+    `GitHub API request failed: ${r.stderr.trim().split('\n')[0]?.slice(0, 300) || `exit ${r.code}`}`,
+  );
 }

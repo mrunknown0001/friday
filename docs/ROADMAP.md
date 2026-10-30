@@ -253,8 +253,13 @@ approved), credentials never reach the model, and results from other systems are
 
 **DevOps**
 
-- ⬜ **CI diagnosis** (S–M). Read the project's GitHub Actions runs and logs (read-only), find the first real
-  failure, relate it to the code, and propose a fix as a normal approved change.
+- ✅ **CI diagnosis** (S–M). Done: `ci_runs` and `ci_failure` (GET requests through the user's `gh` sign-in): the
+  failed jobs and steps, the first real error from the job log, annotations, the project files it points at
+  (runner paths made relative, package-relative paths matched by suffix), and how the run's commit relates to the
+  checkout. Verified live on 2026-10-30 with `claude-sonnet-4.6` on a real failed run of `vitest-dev/vitest`: it
+  found the off-by-one column in the failing snapshot and read the right test file first. Original plan: read the
+  project's GitHub Actions runs and logs (read-only), find the first real failure, relate it to the code, and
+  propose a fix as a normal approved change.
 - ⬜ **Docker Compose control** (M). For the project's compose file only: bring services up or down, restart them,
   tail logs and run health checks, each change with approval. It never touches other containers, and never
   removes volumes unless the user explicitly asks, at high risk.
