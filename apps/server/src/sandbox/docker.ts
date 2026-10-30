@@ -154,7 +154,11 @@ export interface SandboxRun {
   gid: number;
   /** Container ports to publish on 127.0.0.1 (same port number on the host). Needs a network. */
   ports?: number[];
+  /** An empty host folder mounted writable at OUTPUT_DIR (test reports written by the runner). */
+  outputDir?: string;
 }
+
+export const OUTPUT_DIR = '/friday-out';
 
 /** The exact `docker run` arguments for a sandboxed command (pure; tested directly). */
 export function dockerRunArgs(r: SandboxRun): string[] {
@@ -195,6 +199,9 @@ export function dockerRunArgs(r: SandboxRun): string[] {
   for (const port of r.ports ?? []) {
     // Loopback only: a dev server in the sandbox must never be reachable from the network.
     args.push('--publish', `127.0.0.1:${port}:${port}`);
+  }
+  if (r.outputDir) {
+    args.push('--mount', `type=bind,src=${mountable(r.outputDir)},dst=${OUTPUT_DIR}`);
   }
   if (r.gitDir) {
     args.push('--mount', `type=bind,src=${root}/.git,dst=${WORKSPACE}/.git,readonly`);

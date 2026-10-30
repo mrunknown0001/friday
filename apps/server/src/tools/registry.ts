@@ -24,6 +24,7 @@ import {
 import { createPullRequest, gitPush } from './remoteGitTools.js';
 import { ciFailure, ciRuns } from './ciTools.js';
 import { reportFindings, reviewChanges } from './reviewTools.js';
+import { detectTests, runTests } from './testTools.js';
 import { codeMapTool, findSymbol } from './codeMapTools.js';
 import { createDocument, createPresentation, createSpreadsheet } from './documentTools.js';
 import { viewImage } from './imageTools.js';
@@ -126,6 +127,8 @@ export const DEFAULT_TOOLS = [
   ciFailure,
   reviewChanges,
   reportFindings,
+  detectTests,
+  runTests,
   inspectEnvironment,
   searchLogs,
   inspectDocker,

@@ -45,6 +45,9 @@ function currentHash(abs: string): string | null {
   }
 }
 
+/** Tools whose approvals are commands (run_tests builds its own test command). */
+const COMMAND_TOOLS = new Set(['run_command', 'run_tests']);
+
 const exitCodeOf = (summary: string | null): number | null => {
   const m = /^exit code (\d+)/.exec(summary ?? '');
   return m ? Number(m[1]) : null;
@@ -84,7 +87,7 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
 
   const commands: RunReport['commands'] = approvals
     .filter(
-      (a) => a.toolName === 'run_command' && (a.status === 'executed' || a.status === 'failed'),
+      (a) => COMMAND_TOOLS.has(a.toolName) && (a.status === 'executed' || a.status === 'failed'),
     )
     .map((a) => {
       const d = a.details;
@@ -160,7 +163,7 @@ export function buildCheckpoint(
   const commands = deps.approvalRepo
     .listByRun(runId)
     .filter(
-      (a) => a.toolName === 'run_command' && (a.status === 'executed' || a.status === 'failed'),
+      (a) => COMMAND_TOOLS.has(a.toolName) && (a.status === 'executed' || a.status === 'failed'),
     );
   const last = commands.at(-1);
   return {

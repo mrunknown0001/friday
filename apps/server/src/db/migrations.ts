@@ -495,6 +495,37 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX reviews_session ON reviews(session_id, created_at);
     `,
   },
+  {
+    version: 19,
+    name: 'test_runs',
+    up: `
+      -- Test runs (run_tests): the summary shown to the user, and each test's outcome, kept per
+      -- project and suite so slow and flaky tests can be recognised across runs. "tree"
+      -- identifies the exact code tested (HEAD plus uncommitted changes), when it is a git repo.
+      CREATE TABLE test_runs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        run_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        suite TEXT NOT NULL,
+        framework TEXT NOT NULL,
+        tree TEXT,
+        data TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX test_runs_session ON test_runs(session_id, created_at);
+      CREATE INDEX test_runs_suite ON test_runs(project_id, suite, created_at);
+      CREATE TABLE test_results (
+        test_run_id TEXT NOT NULL REFERENCES test_runs(id) ON DELETE CASCADE,
+        test_key TEXT NOT NULL,
+        status TEXT NOT NULL,
+        duration_ms INTEGER,
+        PRIMARY KEY (test_run_id, test_key)
+      );
+      CREATE INDEX test_results_key ON test_results(test_key);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

@@ -206,6 +206,19 @@ titles, descriptions and diffs come from whoever wrote them and are labelled as 
 applied only after the user clicks **Fix this**, which sends a message whose edit still goes through the normal
 approval card. The finding status (dismissed, fix requested) is the user's choice, via a local-only route.
 
+## Test insights
+
+`run_tests` is a command like any other: it needs approval (or the user's decision on the card), and runs in the
+project sandbox when the project uses one. The model cannot supply a command. It picks a suite, a scope, test files
+inside the project and a name filter, and Friday builds the argv from the detected runner. Arguments are never put
+through a shell, and a file name that starts with `-` is passed as `./name`. A name filter can't start with `-` and
+is passed in the option's own argument (`--testNamePattern=…`, `-run=…`), so it can't add runner options. The runner's report goes to an empty
+temporary folder outside the project (mounted at `/friday-out` in the sandbox) and is deleted afterwards. Its
+contents are untrusted: size-limited, only parsed, and its paths are kept only when they point at existing,
+non-credential files in the project. Re-running failed tests uses the same program limited to those tests, as the
+approval card says. Error messages are redacted before they are stored or shown. Runners and coverage plugins are
+never installed.
+
 ## Task worktrees
 
 | Threat                               | Mitigation                                                                                                                                                                                                                                                                                 |

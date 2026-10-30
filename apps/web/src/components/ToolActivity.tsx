@@ -3,6 +3,7 @@ import type {
   AttachmentDto,
   DeploymentPlanDto,
   ReviewDto,
+  TestRunDto,
   ToolCallStatus,
 } from '@friday/shared';
 import { Ban, Check, ChevronRight, CircleSlash, Loader2, X } from 'lucide-react';
@@ -12,6 +13,7 @@ import { ApprovalCard } from './ApprovalCard';
 import { AttachmentThumbs } from './Attachments';
 import { DeploymentPlanCard } from './DeploymentPlanCard';
 import { ReviewCard } from './ReviewCard';
+import { TestRunCard } from './TestRunCard';
 import { isFailedCommand } from './RunRecord';
 
 export interface ToolItem {
@@ -29,6 +31,8 @@ export interface ToolItem {
   /** Plan recorded by this call (prepare_deployment_plan). Always shown, never collapsed. */
   deploymentPlan?: DeploymentPlanDto | undefined;
   review?: ReviewDto | undefined;
+  /** Results of a run_tests call. */
+  testRun?: TestRunDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
   /** Images the tool showed the model (view_image). */
@@ -123,6 +127,19 @@ export function toolLabel(name: string, argsJson: string): string {
       return str(a.path ?? '.');
     case 'find_symbol':
       return `${str(a.name)}${a.references ? ' +refs' : ''}`;
+    case 'detect_tests':
+      return '';
+    case 'run_tests': {
+      const scope =
+        a.scope === 'all'
+          ? 'all tests'
+          : a.scope === 'files'
+            ? Array.isArray(a.files)
+              ? (a.files as unknown[]).map(str).join(' ')
+              : 'chosen tests'
+            : 'tests related to the changes';
+      return `${scope}${a.suite && a.suite !== '.' ? ` in ${str(a.suite)}` : ''}${a.coverage ? ', with coverage' : ''}`;
+    }
     default:
       return Object.values(a).map(str).join(' ').slice(0, 80);
   }
@@ -209,6 +226,7 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
   if (items.length === 0) return null;
   const plans = items.flatMap((i) => (i.deploymentPlan ? [i.deploymentPlan] : []));
   const reviews = items.flatMap((i) => (i.review ? [i.review] : []));
+  const testRuns = items.flatMap((i) => (i.testRun ? [i.testRun] : []));
   return (
     <>
       <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
@@ -223,6 +241,9 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
       ))}
       {reviews.map((r) => (
         <ReviewCard key={r.id} review={r} />
+      ))}
+      {testRuns.map((t) => (
+        <TestRunCard key={t.id} run={t} />
       ))}
     </>
   );

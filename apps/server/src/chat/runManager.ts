@@ -26,6 +26,7 @@ import { IMAGE_LIMITS } from '../attachments/image.js';
 import { toAttachmentDto, type AttachmentRepo } from '../repositories/attachments.js';
 import type { CaptureRepo } from '../repositories/captures.js';
 import type { ReviewRepo } from '../repositories/reviews.js';
+import type { TestRunRepo } from '../repositories/testRuns.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
@@ -53,7 +54,13 @@ import {
   type ToolRegistry,
 } from '../tools/registry.js';
 import type { ReviewScope } from '../tools/reviewTools.js';
-import type { CaptureStore, Proposal, ReviewContext, ToolContext } from '../tools/types.js';
+import type {
+  CaptureStore,
+  Proposal,
+  ReviewContext,
+  TestRunContext,
+  ToolContext,
+} from '../tools/types.js';
 import { detectProject } from '../workspace/detect.js';
 import type { ToolEnvironment } from '../workspace/environment.js';
 import { assertRootAvailable, WorkspaceError } from '../workspace/paths.js';
@@ -93,6 +100,8 @@ export interface RunManagerDeps {
   captures?: CaptureRepo;
   /** Code reviews and their findings. */
   reviews?: ReviewRepo;
+  /** Test runs (run_tests) and each test's outcome. */
+  testRuns?: TestRunRepo;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
@@ -1011,6 +1020,23 @@ export class RunManager {
     };
   }
 
+  private testRunContext(run: ActiveRun, project: ProjectRecord, callId: string): TestRunContext {
+    const repo = this.deps.testRuns!;
+    return {
+      history: (suite, keys) => repo.history(project.id, suite, keys),
+      record: (dto, results, tree) => {
+        const testRun = repo.create(
+          { projectId: project.id, sessionId: run.sessionId, runId: run.id, toolCallId: callId },
+          dto,
+          results,
+          tree,
+        );
+        this.emit(run, { type: 'test_run', testRun });
+        return testRun;
+      },
+    };
+  }
+
   private captureStore(run: ActiveRun): CaptureStore {
     const captures = this.deps.captures!;
     const attachments = this.deps.attachments;
@@ -1035,6 +1061,9 @@ export class RunManager {
       ...(this.deps.capture ? { capture: this.deps.capture } : {}),
       ...(this.deps.captures ? { captures: this.captureStore(run) } : {}),
       ...(this.deps.reviews ? { reviews: this.reviewContext(run, callId) } : {}),
+      ...(this.deps.testRuns && project
+        ? { tests: this.testRunContext(run, project, callId) }
+        : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,

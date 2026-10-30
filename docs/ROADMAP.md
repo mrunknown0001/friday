@@ -264,8 +264,21 @@ approved), credentials never reach the model, and results from other systems are
   pale background (now 0.05) and solid red hiding the changed text (now a tint). Original plan: around a UI
   change, capture the page before and after, and show them side by side (with a highlighted difference) in the
   run report.
-- ⬜ **Test insights** (M). Detect the test framework, run the tests related to the changed files first, and
-  summarise failures (first error, `file:line`), slow and flaky tests, with optional coverage for the changed lines.
+- ✅ **Test insights** (M). Done: `detect_tests` (Vitest, Jest, `node --test`, pytest, Go suites, per package) and
+  `run_tests`, which builds the command itself and is approved like any command. It runs the tests related to the
+  uncommitted changes first. The **Tests** card shows the first error and `file:line` of each failure, flaky tests
+  (passed on a re-run, or passed and failed on the same code in earlier runs), the slowest tests against their usual
+  time, and coverage of the changed lines. Results are kept per suite. Verified live on 2026-10-30 with
+  `claude-sonnet-4.6`:
+  - It ran the tests related to a coupon change and found the percent bug at `test/cart.test.js:11`, with the
+    fixed-coupon lines never run.
+  - The model fixed the bug and added tests until every changed line ran.
+  - A whole-suite run reported a planted flaky test (passed on re-run) and a 150 ms test as slowest.
+
+  Pytest, Go and Jest are checked against fixture files only, since none is installed here. Original plan: detect
+  the test framework, run the tests related to the changed files first, and summarise failures (first error,
+  `file:line`), slow and flaky tests, with optional coverage for the changed lines.
+
 - ⬜ **Dependency upgrades** (M). A report of outdated and vulnerable packages, an upgrade plan with changelog
   highlights and breaking changes, then the upgrade and a test run, each step approved. It follows the
   "releases at least two weeks old" rule by default.

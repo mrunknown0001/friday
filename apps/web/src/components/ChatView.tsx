@@ -6,6 +6,7 @@ import type {
   MessageDto,
   ProjectDto,
   ReviewDto,
+  TestRunDto,
   RunDto,
   SessionDetailDto,
 } from '@friday/shared';
@@ -122,6 +123,14 @@ type Row =
   | { kind: 'tools'; items: ToolItem[]; key: string }
   | { kind: 'record'; runId: string; approvals: ApprovalDto[]; memories: MemoryRef[] };
 
+/** Cards recorded by tool calls (by call id), shown under the tool activity. */
+export interface CallCards {
+  reviews: Map<string, ReviewDto>;
+  testRuns: Map<string, TestRunDto>;
+}
+
+const NO_CARDS: CallCards = { reviews: new Map(), testRuns: new Map() };
+
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
 /** Tool results shown elsewhere (suggest_next_steps becomes chips) rather than as tool rows. */
 function isHiddenMessage(m: MessageDto): boolean {
@@ -133,7 +142,7 @@ export function toRows(
   approvals: Map<string, ApprovalDto>,
   plans: Map<string, DeploymentPlanDto>,
   memoryUsage: Record<string, MemoryRef[]>,
-  reviews: Map<string, ReviewDto> = new Map(),
+  cards: CallCards = NO_CARDS,
 ): Row[] {
   const rows: Row[] = [];
   for (const m of messages) {
@@ -155,7 +164,8 @@ export function toRows(
         truncated: m.tool?.truncated,
         approval: m.tool?.approvalId ? approvals.get(m.tool.approvalId) : undefined,
         deploymentPlan: m.toolCallId ? plans.get(m.toolCallId) : undefined,
-        review: m.toolCallId ? reviews.get(m.toolCallId) : undefined,
+        review: m.toolCallId ? cards.reviews.get(m.toolCallId) : undefined,
+        testRun: m.toolCallId ? cards.testRuns.get(m.toolCallId) : undefined,
         attachments: m.attachments,
       };
       const last = rows.at(-1);
@@ -279,12 +289,12 @@ function LiveOutput({
   live,
   byCall,
   plans,
-  reviews,
+  cards,
 }: {
   live: LiveRun;
   byCall: Map<string, ApprovalDto>;
   plans: Map<string, DeploymentPlanDto>;
-  reviews: Map<string, ReviewDto>;
+  cards: CallCards;
 }) {
   const groups: Array<{ kind: 'text'; text: string } | { kind: 'tools'; items: ToolItem[] }> = [];
   for (const b of live.blocks) {
@@ -302,7 +312,8 @@ function LiveOutput({
         attachments: b.attachments,
         approval: byCall.get(b.callId),
         deploymentPlan: plans.get(b.callId),
-        review: reviews.get(b.callId),
+        review: cards.reviews.get(b.callId),
+        testRun: cards.testRuns.get(b.callId),
       };
       const last = groups.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -455,10 +466,15 @@ export function ChatView(props: Props) {
   const byId = new Map(approvals.map((a) => [a.id, a]));
   const byCall = new Map(approvals.map((a) => [a.toolCallId, a]));
   const plansByCall = new Map(props.deploymentPlans.map((p) => [p.toolCallId, p]));
-  const reviewsByCall = new Map(
-    [...(detail?.reviews ?? []), ...(live?.reviews ?? [])].map((r) => [r.toolCallId, r]),
-  );
-  const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {}, reviewsByCall);
+  const cards: CallCards = {
+    reviews: new Map(
+      [...(detail?.reviews ?? []), ...(live?.reviews ?? [])].map((r) => [r.toolCallId, r]),
+    ),
+    testRuns: new Map(
+      [...(detail?.testRuns ?? []), ...(live?.testRuns ?? [])].map((r) => [r.toolCallId, r]),
+    ),
+  };
+  const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {}, cards);
   const pending = approvals.filter((a) => a.status === 'pending');
   const latest = detail?.latestRun;
   const showProblem =
@@ -615,12 +631,7 @@ export function ChatView(props: Props) {
               )}
               {running && <MemoriesUsed refs={live.memoriesUsed} />}
               {running && (
-                <LiveOutput
-                  live={live}
-                  byCall={byCall}
-                  plans={plansByCall}
-                  reviews={reviewsByCall}
-                />
+                <LiveOutput live={live} byCall={byCall} plans={plansByCall} cards={cards} />
               )}
               {pending.map((a) => (
                 <ApprovalCard
