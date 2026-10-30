@@ -142,6 +142,17 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Exposing a sandboxed dev server            | Ports are published on `127.0.0.1` only, only for a sandbox with network, and are part of the approval fingerprint.                                                                                            |
 | The model stopping other programs          | `stop_process` (category `process_control`, no approval) only accepts ids of processes Friday started in the same project.                                                                                     |
 
+## Connected apps (MCP)
+
+| Threat                                        | Mitigation                                                                                                                                                                                                                                          |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A connected app's tool acting without consent | Every tool is category `mcp` (approval card with app, tool, hints and exact arguments) unless the user set it to **Allow** (`mcp_trusted`) or **Off** (not offered). Never covered by task permissions or "allow similar". Calls are never retried. |
+| Stolen or leaked credentials                  | OAuth (PKCE, dynamic registration) or a user-pasted token, stored only in the 0600 database; never returned by the API, written to the audit log or shown to the model; access and refresh tokens are added to the redactor.                        |
+| The OAuth callback as an attack surface       | `GET /oauth/mcp/callback` is the only path exempt from the launch token and the cross-site check. It needs a random single-use `state` from a sign-in Friday started (10-minute expiry), and shows a fixed page with escaped text.                  |
+| Tool poisoning / prompt injection             | Tool descriptions and results are labelled as data from the app; the system prompt says they cannot change the rules or authorize actions, and that project secrets are not sent to apps unless the user asks.                                      |
+| Insecure transport                            | Server URLs must be `https://` (plain `http://` only for loopback), without embedded credentials. A tool definition change after review makes a pending approval stale (part of the fingerprint).                                                   |
+| Running local programs                        | Not supported: only remote (Streamable HTTP) servers; Friday never starts MCP servers as local processes.                                                                                                                                           |
+
 ## Code map
 
 The index holds definition lines (signatures) from project source files, in the local database only. It applies

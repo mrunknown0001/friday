@@ -11,6 +11,7 @@ import type {
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AddProjectDialog } from './components/AddProjectDialog';
+import { MCP_UPDATED_EVENT } from './components/McpSettings';
 import { crashed } from './components/Processes';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { ChatView } from './components/ChatView';
@@ -152,6 +153,11 @@ export function App() {
   // System notifications when Friday needs you (or finished a longer task) while you are looking
   // at something else: another window, another app, or another conversation.
   useAppNotices((n) => {
+    if (n.type === 'mcp_updated') {
+      // Settings › Connected apps refreshes itself (e.g. after a browser sign-in finished).
+      window.dispatchEvent(new CustomEvent(MCP_UPDATED_EVENT));
+      return;
+    }
     if (n.type === 'process_updated') {
       const p = n.process;
       setProcesses((cur) =>

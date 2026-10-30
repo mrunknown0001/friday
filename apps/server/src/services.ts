@@ -15,6 +15,8 @@ import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/d
 import { MessageRepo } from './repositories/messages.js';
 import { MemoryRepo } from './repositories/memories.js';
 import { CodeMap } from './codemap/index.js';
+import { McpManager } from './mcp/manager.js';
+import { McpServerRepo } from './repositories/mcp.js';
 import { MemoryService } from './memory/service.js';
 import { ProcessManager } from './processes/manager.js';
 import { SshService } from './ssh/ssh.js';
@@ -93,6 +95,8 @@ export interface Services {
   memory: MemoryService;
   processes: ProcessManager;
   codeMap: CodeMap;
+  mcpServers: McpServerRepo;
+  mcp: McpManager;
   registry: ToolRegistry;
   toolEnv: ToolEnvironment;
   capabilities: CapabilityRepo;
@@ -109,6 +113,8 @@ export interface ServiceOverrides {
   retryBaseDelayMs?: number;
   toolEnv?: ToolEnvironment;
   registry?: ToolRegistry;
+  /** fetch used for MCP servers (tests). */
+  mcpFetch?: typeof fetch;
   runManager?: {
     checkpointIntervalMs?: number;
     retainFinishedMs?: number;
@@ -168,6 +174,14 @@ export function createServices(
   const approvals = new ApprovalService(approvalRepo, audit, config.approvalTtlMs);
   const memory = new MemoryService(memoryRepo, settings, redactor);
   const codeMap = new CodeMap(db);
+  const mcpServers = new McpServerRepo(db);
+  const mcp = new McpManager(mcpServers, {
+    redactor,
+    redirectBase: `http://127.0.0.1:${config.server.port}`,
+    version: '0.1.0',
+    ...(overrides.mcpFetch ? { fetch: overrides.mcpFetch } : {}),
+    audit: (action, details) => audit.record({ actor: 'system', action, details }),
+  });
   const processes = new ProcessManager({
     instance: toolEnv.sandboxInstance,
     redact: (text) => redactor.redact(text),
@@ -189,6 +203,7 @@ export function createServices(
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
     codeMap,
+    mcp,
     memory,
     memoryRepo,
     capabilities,
@@ -224,6 +239,8 @@ export function createServices(
     memory,
     processes,
     codeMap,
+    mcpServers,
+    mcp,
     registry,
     toolEnv,
     capabilities,

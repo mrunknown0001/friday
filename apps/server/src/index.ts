@@ -75,6 +75,8 @@ async function main() {
   const parentPort = (process as { parentPort?: { postMessage(message: unknown): void } })
     .parentPort;
   parentPort?.postMessage({ type: 'listening', port });
+  // OAuth sign-ins for connected apps return to this server's actual port.
+  services.mcp.setRedirectBase(`http://127.0.0.1:${port}`);
   app.log.info(
     {
       apiKeyConfigured: services.provider.isConfigured(),

@@ -61,6 +61,15 @@ export class ToolRegistry {
     }
   }
 
+  /** This registry plus tools that exist only for one run (connected apps' tools). */
+  withExtra(specs: Array<ToolSpec<never>>): ToolRegistry {
+    if (!specs.length) return this;
+    return new ToolRegistry([
+      ...([...this.tools.values()] as unknown as Array<ToolSpec<never>>),
+      ...specs,
+    ]);
+  }
+
   get(name: string): ToolSpec<unknown> | undefined {
     return this.tools.get(name);
   }

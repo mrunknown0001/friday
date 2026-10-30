@@ -127,6 +127,8 @@ export interface ToolSpec<A = unknown> {
   risk: RiskLevel;
   requiresProject: boolean;
   schema: z.ZodType<A>;
+  /** JSON Schema sent to the model instead of one derived from `schema` (MCP tools). */
+  parameters?: Record<string, unknown>;
   /** Short label for the UI, e.g. "src/app.ts:1-120". */
   describeCall: (args: A) => string;
   /** Read-only and agent-state tools run directly. */
@@ -157,9 +159,8 @@ export function toToolDefinition(spec: ToolSpec<unknown>): ToolDefinition {
   return {
     name: spec.name,
     description: spec.description,
-    parameters: cleanSchema(z.toJSONSchema(spec.schema, { io: 'input' })) as Record<
-      string,
-      unknown
-    >,
+    parameters: cleanSchema(
+      spec.parameters ?? z.toJSONSchema(spec.schema, { io: 'input' }),
+    ) as Record<string, unknown>,
   };
 }

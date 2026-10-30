@@ -41,6 +41,7 @@ import {
 } from '../approvals/taskPermission.js';
 import type { FileChangeRepo } from '../repositories/fileChanges.js';
 import type { ApprovalRepo } from '../repositories/approvals.js';
+import type { McpManager } from '../mcp/manager.js';
 import type { Redactor } from '../security/redact.js';
 import {
   makeExecution,
@@ -88,6 +89,8 @@ export interface RunManagerDeps {
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
+  /** Connected apps (MCP servers): their tools join each run's registry. */
+  mcp?: McpManager;
   memory?: MemoryService;
   memoryRepo?: MemoryRepo;
   capabilities: CapabilityRepo;
@@ -126,6 +129,8 @@ interface ActiveRun {
   modelSuggestions: Array<{ label: string; prompt: string }>;
   /** Task permission the user approved for this run, if any (see request_task_permissions). */
   permission: TaskPermission | null;
+  /** Built-in tools plus the connected apps' tools as they were when the run started. */
+  registry: ToolRegistry;
 }
 
 /** Tools that only annotate the final answer: a turn of just these ends the run, no extra model call. */
@@ -377,6 +382,9 @@ export class RunManager {
       toolCalls: 0,
       modelSuggestions: [],
       permission: null,
+      registry: this.deps.mcp
+        ? this.deps.registry.withExtra(this.deps.mcp.toolSpecs())
+        : this.deps.registry,
     };
     this.runs.set(id, active);
     this.activeBySession.set(sessionId, id);
@@ -745,7 +753,8 @@ export class RunManager {
   // ---------------------------------------------------------------- the agent loop
 
   private async execute(run: ActiveRun, model: string): Promise<void> {
-    const { limits, registry } = this.deps;
+    const { limits } = this.deps;
+    const registry = run.registry;
     let iterations = 0;
     let toolCallsUsed = this.deps.toolCalls.countForRun(run.id);
     let consecutiveFailures = 0;
@@ -781,6 +790,11 @@ export class RunManager {
         memory: memoryPromptSection(memoryRefs),
         guidance: project ? await readGuidance(project.rootPath).catch(() => null) : null,
         processes: project ? (this.deps.processes?.list(project.id) ?? []) : [],
+        connectedApps: [
+          ...new Set(
+            tools.filter((t) => t.name.startsWith('mcp__')).map((t) => t.name.split('__')[1]!),
+          ),
+        ],
       });
 
       for (;;) {
@@ -1002,7 +1016,8 @@ export class RunManager {
     approvalId: string | null;
     outcome: 'none' | 'rejected' | 'expired';
   }> {
-    const { registry, limits, approvals } = this.deps;
+    const { limits, approvals } = this.deps;
+    const registry = run.registry;
     const ctx = {
       ...this.toolContext(run, project, call.id),
       earlierCallsThisTurn: earlierThisTurn,

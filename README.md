@@ -162,6 +162,26 @@ dialog suggests one for the project's stack (e.g. `node:22-bookworm-slim`), show
 your machine. Commands can still change files in the project folder, so review them as usual. Requires Docker (checked
 at startup and from the dialog).
 
+### Connected apps (MCP)
+
+Friday can use your other apps through their MCP servers, the way Claude does. In Settings › **Connected apps**,
+add an app with a short name and its MCP server URL (`https://`, or `http://` on localhost), then **Add and sign
+in**. Your browser opens the app's sign-in page, and the app sends you back to Friday when you're done. Friday
+uses the standard MCP flow: discovery, client registration and PKCE. If an app gives you an access token instead,
+paste it in the optional field.
+
+The app's tools are offered to Friday as `mcp__<app>__<tool>`. For each tool you choose how it may be used:
+
+- **Ask every time** (default): an approval card shows the app, the tool, its hints (read-only, may delete) and the
+  exact arguments.
+- **Allow without asking**: for tools you trust, such as read-only searches.
+- **Off**: Friday never sees the tool.
+
+You can also turn a whole app off, sign out, or remove it. Sign-ins and tokens are kept only in Friday's local
+database. They are never shown in the UI, the audit log or to the model, and tokens are redacted from tool results.
+Tool descriptions and results are treated as data from that app, not instructions. Friday connects only to remote
+(HTTP) servers; it does not start local MCP programs.
+
 ### Code map
 
 To find its way around large projects without reading files blindly, Friday keeps an index of the definitions in

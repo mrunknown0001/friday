@@ -7,6 +7,7 @@ import { HttpError } from './http/errors.js';
 import { registerApprovalRoutes } from './http/routes/approvals.js';
 import { registerAttachmentRoutes } from './http/routes/attachments.js';
 import { registerDevopsRoutes } from './http/routes/devops.js';
+import { registerMcpRoutes } from './http/routes/mcp.js';
 import { registerMemoryRoutes } from './http/routes/memory.js';
 import { registerProcessRoutes } from './http/routes/processes.js';
 import { registerProjectRoutes } from './http/routes/projects.js';
@@ -103,6 +104,7 @@ export async function buildApp(
   registerAttachmentRoutes(app, services);
   registerDevopsRoutes(app, services);
   registerMemoryRoutes(app, services);
+  registerMcpRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {

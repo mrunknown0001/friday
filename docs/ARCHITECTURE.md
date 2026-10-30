@@ -173,6 +173,21 @@ never start a process. The server's `onClose` stops everything. Startup's `reapO
 carry the marker. `run_command` and `start_process` share `prepareCommand` (folder, risk, sandbox checks). The system
 prompt lists each process's current status, so the model does not trust stale history.
 
+### Connected apps (`mcp/`, `routes/mcp.ts`)
+
+`McpManager` wraps the official SDK (`@modelcontextprotocol/sdk`, pinned). Each server gets a `Client` over
+`StreamableHTTPClientTransport`, with either an `Authorization: Bearer` header (static token) or an
+`OAuthClientProvider` backed by `mcp_servers.oauth` (migration 12). The provider stores the client registration
+(re-registered when the redirect URL's port changes), tokens, PKCE verifier and discovery state. A connection
+attempt that needs sign-in captures the authorization URL and returns it to Settings, which opens it in the browser
+(the desktop app hands it to the system browser). The app redirects to `/oauth/mcp/callback`, which matches the
+single-use `state` to a pending sign-in, exchanges the code with the SDK's `auth()`, connects and lists tools (all
+pages, at most 200). Tool lists are stored, so runs never wait on the network for them. Each run's registry is the
+built-in tools plus `mcpToolSpecs()` (`registry.withExtra`): tools named `mcp__<app>__<tool>` carry the server's
+`inputSchema` as their parameters (`ToolSpec.parameters`). Their category is `mcp` (prepare and approval card) or
+`mcp_trusted` (execute). Results become text, plus images through the `view_image` path; `isError` becomes a tool
+error. Changes are broadcast as `mcp_updated` notices.
+
 ### Code map (`codemap/`, `tools/codeMapTools.ts`)
 
 `codemap/extract.ts` finds definitions with per-language line patterns. A stack of open containers, tracked by
