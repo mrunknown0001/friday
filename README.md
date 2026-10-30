@@ -379,10 +379,34 @@ Friday keeps four kinds of memory in SQLite (with full-text search):
 ## Git
 
 Read-only inspection (`git_status`, `git_diff`, `git_log`, `git_show`, `git_branches`) runs without approval.
-Committing and creating branches need approval. Push, merge, rebase, and reset are not tools: if you ask for one, the
-agent proposes it through `run_command`, where it is flagged as high risk. Git tools only work when the project folder
-is the repository's top level, and they run with settings that stop a repository's own config from executing programs
-(`core.fsmonitor`, diff drivers, pagers).
+Committing, creating branches, pushing and opening pull requests need approval, every time: none of them can be
+covered by a task permission. Merge, rebase and reset are not tools: if you ask for one, the agent proposes it
+through `run_command`, where it is flagged as high risk (a force push there is flagged critical).
+
+### Push and pull requests
+
+- `git_push` pushes the current branch to the remote branch of the same name (usually `origin`) and sets it as the
+  upstream. `create_pull_request` opens a GitHub pull request for the current branch and pushes it first if the
+  remote doesn't have every commit yet.
+- **Never the default branch, never forced.** Friday refuses to push the remote's default branch, `main` or
+  `master`; ask it to create a feature branch first (it does this on its own). Pushes use an explicit refspec with
+  no `+` and no `--force`, so a push that would overwrite remote commits fails, and Friday tells you to pull or
+  rebase first. Commits that contain credential files (`.env`, keys, …) are not pushed.
+- **Your own sign-in.** Pushes use your git credential helper or ssh key; pull requests use the GitHub CLI (`gh`),
+  signed in with `gh auth login`. Friday never reads either credential. The repository's own config can't swap in a
+  credential helper or pack program, and only https, ssh and local remotes are allowed. ssh runs with
+  `BatchMode=yes`, so it fails rather than asking for a password.
+- **The approval card shows** the remote and its URL (without any embedded password), whether the branch is new
+  on the remote, the commits to push, any `pre-push` hooks that will run, and for a pull request the repository,
+  base branch, draft status, and the exact title and description.
+- **The description ends with a verification section** that Friday writes from its own records: whether tests,
+  builds or linters passed after the last change, and the files changed. It comes from the run in this
+  conversation that made the branch's commits, so "fix it and push" followed by "open a PR" still includes it. The
+  model's own claims are not used for it.
+- Pull requests need a GitHub remote (github.com, or a GitHub Enterprise host `gh` is signed in to). `FRIDAY_GH`
+  sets the path to `gh` if it isn't on `PATH`. Git tools only work when the project folder
+  is the repository's top level, and they run with settings that stop a repository's own config from executing programs
+  (`core.fsmonitor`, diff drivers, pagers).
 
 What Friday will not read, even inside a project: credential files (`.env`, `.env.*` except templates such as
 `.env.example`, private keys, `.npmrc`, `auth.json`, `*.tfstate`, `.ssh/`, `.aws/`, …) and `.git` internals.
@@ -480,6 +504,7 @@ Partial, cancelled, and failed responses are kept for display but are never fed 
 | `FRIDAY_TOOL_OUTPUT_CHARS`    | `20000`                           | Maximum characters of one tool result sent to the model         |
 | SSH known hosts               | `<data dir>/ssh/`                 | Per-host files built from the keys you trusted                  |
 | `FRIDAY_APPROVAL_TTL_MS`      | `900000`                          | How long an approval request stays valid (15 minutes)           |
+| `FRIDAY_GH`                   | `gh` on `PATH`                    | GitHub CLI used to open pull requests                           |
 
 ## Layout
 

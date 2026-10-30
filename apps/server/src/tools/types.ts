@@ -5,6 +5,7 @@ import type {
   PermissionCategory,
   PlanStep,
   RiskLevel,
+  RunReport,
 } from '@friday/shared';
 import { z } from 'zod';
 import type { ImageInfo } from '../attachments/image.js';
@@ -49,6 +50,11 @@ export interface ToolContext {
   codeMap?: CodeMap;
   /** Background processes (dev servers, watchers) started with start_process. */
   processes?: ProcessManager;
+  /**
+   * Verification reports of this conversation's runs from Friday's records, newest first; the
+   * current run's is built now (pull request descriptions).
+   */
+  sessionReports?: () => RunReport[];
   /** Record an applied file change for the change list and undo. */
   recordFileChange?: (change: AppliedFileChange) => void;
   /**

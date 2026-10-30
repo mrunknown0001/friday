@@ -220,10 +220,24 @@ describe('error interpretation helpers', () => {
       'go test ./...',
       'cargo check',
       'tsc --noEmit',
+      'node test.js',
+      'node tests/cart.test.mjs',
+      'python3 tests/test_cart.py',
+      'bun cart.spec.ts',
+      '/usr/bin/node test/run-all.js',
     ]) {
       expect(isVerificationCommand(c), c).toBe(true);
     }
-    for (const c of ['ls -la', 'npm install', 'git status', 'cat package.json', 'node server.js']) {
+    for (const c of [
+      'ls -la',
+      'npm install',
+      'git status',
+      'cat package.json',
+      'node server.js',
+      'node latest.js',
+      'cat test.js',
+      'python manage.py runserver',
+    ]) {
       expect(isVerificationCommand(c), c).toBe(false);
     }
   });

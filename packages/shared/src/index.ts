@@ -293,6 +293,35 @@ export type ApprovalDetails =
       hooks: string[];
     }
   | {
+      /** Pushing a branch, and optionally opening a pull request for it. */
+      kind: 'git_remote';
+      operation: 'push' | 'pull_request';
+      remote: string;
+      /** Where the push goes, with any user name or password removed. */
+      remoteUrl: string;
+      /** Local branch, pushed to the remote branch of the same name. */
+      branch: string;
+      head: string;
+      /** The remote branch as last fetched; null when it is not on the remote yet. */
+      remoteHead: string | null;
+      /** False when the remote branch already has every commit (a pull request only). */
+      needsPush: boolean;
+      /** Commits the remote does not have yet, newest first (at most 50). */
+      commits: Array<{ sha: string; subject: string }>;
+      commitCount: number;
+      /** pre-push hooks git will run. */
+      hooks: string[];
+      pullRequest: {
+        /** OWNER/REPO, or HOST/OWNER/REPO off github.com. */
+        repo: string;
+        base: string;
+        title: string;
+        /** The exact description, including the verification section Friday adds. */
+        body: string;
+        draft: boolean;
+      } | null;
+    }
+  | {
       kind: 'remote';
       host: {
         name: string;

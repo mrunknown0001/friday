@@ -67,7 +67,18 @@ export function assessCommand(
   if (has('crontab')) flag('high', 'Changes scheduled jobs.');
 
   if (exe === 'git' || has('git')) {
-    if (has('push')) flag('high', 'Pushes to a remote Git repository.');
+    if (has('push')) {
+      if (
+        w.some((x) =>
+          /^(-f|--force(-with-lease|-if-includes)?(=.*)?|--mirror|--delete|-d|\+.+)$/.test(x),
+        )
+      )
+        flag(
+          'critical',
+          'Force-pushes or deletes remote history. Use git_push, which never forces.',
+        );
+      else flag('high', 'Pushes to a remote Git repository. Prefer git_push.');
+    }
     if (has('reset') && has('--hard'))
       flag('high', 'Discards uncommitted changes (git reset --hard).');
     if (has('clean') && w.some((x) => /^-[a-z]*f/.test(x)))

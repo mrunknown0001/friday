@@ -34,10 +34,27 @@ export function extractLocations(output: string, root: string, cwd: string, max 
   return found;
 }
 
+const INTERPRETER = /^(node|deno|bun|tsx|ts-node|python3?|php|ruby)$/;
+const TEST_FILE =
+  /^(tests?|spec)([._-][\w.-]*)?\.(m?[jt]sx?|cjs|py|php|rb)$|[._-](test|spec)\.(m?[jt]sx?|cjs|py|php|rb)$|^test_[\w-]+\.py$/;
+
+const IN_TEST_DIR = /(^|\/)(tests?|spec|__tests__)\/[\w./-]+\.(m?[jt]sx?|cjs|py|php|rb)$/;
+
+/** A test file run directly, e.g. `node test.js`, `python tests/test_cart.py`, `bun cart.test.ts`. */
+function runsTestFile(c: string): boolean {
+  const words = c.split(/\s+/);
+  const exe = words[0]?.split('/').at(-1) ?? '';
+  return (
+    INTERPRETER.test(exe) &&
+    words.slice(1).some((w) => TEST_FILE.test(w.split('/').at(-1) ?? '') || IN_TEST_DIR.test(w))
+  );
+}
+
 /** Commands that check correctness: tests, builds, linters, type checkers. */
 export function isVerificationCommand(command: string): boolean {
   const c = command.toLowerCase();
   return (
+    runsTestFile(c.trim()) ||
     /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|build|lint|typecheck|type-check|check|verify|ci)\b/.test(
       c,
     ) ||

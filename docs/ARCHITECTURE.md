@@ -245,13 +245,15 @@ pasted, dropped or picked.
 
 ## Coding agent (Phase 4)
 
-| Module                  | Responsibility                                                                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `git/git.ts`            | Single entry point for git: hardened `-c` overrides, scrubbed env, `GIT_OPTIONAL_LOCKS=0`, porcelain v2 parsing, secret-diff hiding, repo-root check. |
-| `tools/gitTools.ts`     | Read-only git tools plus approval-gated `git_commit` and `git_create_branch`.                                                                         |
-| `tools/fileTools.ts`    | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                   |
-| `commands/locations.ts` | `file:line` extraction from tool output; verification-command classification.                                                                         |
-| `reports/runReport.ts`  | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                |
+| Module                    | Responsibility                                                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git/git.ts`              | Single entry point for git: hardened `-c` overrides, scrubbed env, `GIT_OPTIONAL_LOCKS=0`, porcelain v2 parsing, secret-diff hiding, repo-root check. |
+| `tools/gitTools.ts`       | Read-only git tools plus approval-gated `git_commit` and `git_create_branch`.                                                                         |
+| `git/github.ts`           | Remote URL parsing (credentials stripped for display) and the `gh` runner (neutral folder, explicit `--repo`, no prompts).                            |
+| `tools/remoteGitTools.ts` | Approval-gated `git_push` and `create_pull_request`: default-branch and force guards, push plan from local refs, report section from records.         |
+| `tools/fileTools.ts`      | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                   |
+| `commands/locations.ts`   | `file:line` extraction from tool output; verification-command classification.                                                                         |
+| `reports/runReport.ts`    | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                |
 
 A _task_ is a run plus the unfinished runs (interrupted, failed, blocked, cancelled) it directly continues. Reports
 and rollback operate on the task. Checkpoints are written after every executed approval, not only at the end of a

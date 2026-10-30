@@ -288,3 +288,74 @@ describe('RunRecord', () => {
     expect(within(record).queryByText('Still pending')).toBeNull();
   });
 });
+
+describe('ApprovalCard: push and pull request', () => {
+  const remote = (over: Record<string, unknown> = {}): ApprovalDto['details'] =>
+    ({
+      kind: 'git_remote',
+      operation: 'pull_request',
+      remote: 'origin',
+      remoteUrl: 'https://github.com/o/r.git',
+      branch: 'fix-cart',
+      head: 'a'.repeat(40),
+      remoteHead: null,
+      needsPush: true,
+      commits: [
+        { sha: 'b'.repeat(40), subject: 'Fix the cart total' },
+        { sha: 'c'.repeat(40), subject: 'Add a test' },
+      ],
+      commitCount: 3,
+      hooks: ['pre-push'],
+      pullRequest: {
+        repo: 'o/r',
+        base: 'main',
+        title: 'Fix the cart total',
+        body: 'Starts the loop at 0.\n\n## Verification\n\n✅ Verified',
+        draft: true,
+      },
+      ...over,
+    }) as ApprovalDto['details'];
+
+  it('shows where it goes, the commits, hooks, and the exact title and description', () => {
+    render(
+      <ApprovalCard
+        approval={approval({
+          toolName: 'create_pull_request',
+          category: 'git',
+          title: 'Open pull request: Fix the cart total',
+          details: remote(),
+        })}
+        onDecide={vi.fn()}
+      />,
+    );
+    const card = screen.getByRole('region', { name: /Open pull request/ });
+    expect(within(card).getByText(/origin · https:\/\/github.com\/o\/r.git/)).toBeTruthy();
+    expect(within(card).getByText(/\(new branch on the remote\)/)).toBeTruthy();
+    expect(within(card).getByText(/a push that would overwrite remote commits fails/)).toBeTruthy();
+    expect(within(card).getByText('3 commits to push')).toBeTruthy();
+    const commits = within(card).getByRole('list', { name: 'Commits to push' });
+    expect(within(commits).getByText(/Add a test/)).toBeTruthy();
+    expect(within(commits).getByText('…and 1 more')).toBeTruthy();
+    expect(within(card).getByText(/hooks will run before the push: pre-push/)).toBeTruthy();
+    expect(within(card).getByText('(draft)', { exact: false })).toBeTruthy();
+    expect(within(card).getByLabelText('Pull request description').textContent).toBe(
+      'Starts the loop at 0.\n\n## Verification\n\n✅ Verified',
+    );
+  });
+
+  it('says when nothing needs pushing', () => {
+    render(
+      <ApprovalCard
+        approval={approval({
+          toolName: 'create_pull_request',
+          category: 'git',
+          title: 'Open pull request: x',
+          details: remote({ needsPush: false, commits: [], commitCount: 0, hooks: [] }),
+        })}
+        onDecide={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('No: the remote branch is already up to date')).toBeTruthy();
+    expect(screen.queryByRole('list', { name: 'Commits to push' })).toBeNull();
+  });
+});
