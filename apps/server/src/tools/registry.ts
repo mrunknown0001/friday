@@ -23,6 +23,7 @@ import {
 } from './gitTools.js';
 import { codeMapTool, findSymbol } from './codeMapTools.js';
 import { viewImage } from './imageTools.js';
+import { screenshot } from './screenshotTool.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
 import { listProcesses, readProcessOutput, startProcess, stopProcess } from './processTools.js';
@@ -92,6 +93,7 @@ export const DEFAULT_TOOLS = [
   searchCode,
   findFiles,
   viewImage,
+  screenshot,
   updatePlan,
   requestTaskPermissions,
   writeFile,

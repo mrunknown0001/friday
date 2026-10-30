@@ -142,6 +142,16 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Exposing a sandboxed dev server            | Ports are published on `127.0.0.1` only, only for a sandbox with network, and are part of the approval fingerprint.                                                                                            |
 | The model stopping other programs          | `stop_process` (category `process_control`, no approval) only accepts ids of processes Friday started in the same project.                                                                                     |
 
+## Screenshots and live preview
+
+| Threat                                        | Mitigation                                                                                                                                                                                                                                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Friday's browser reaching the internet or LAN | Only `localhost`, `127.0.0.1` and `::1` pages; documents, frames and redirects elsewhere are blocked (DevTools `Fetch` interception, or `webRequest` in the desktop capture session). Friday's own port is refused.                                                                      |
+| A captured page using Friday's credentials    | Desktop: a hidden offscreen window in a separate in-memory session that never gets the launch token, has no permissions, cannot download or open windows. Chrome: a throwaway profile, deleted after each capture.                                                                       |
+| The live preview frame driving Friday         | CSP `frame-src` allows only loopback origins; the frame is sandboxed without top navigation; in the desktop app the launch token is added only to requests from Friday's own frame (verified: a framed page's request to the API gets 401), and frames cannot navigate off this machine. |
+| Scripts in project SVG files                  | The image endpoint serves SVG (and every image) with `Content-Security-Policy: sandbox; default-src 'none'`.                                                                                                                                                                             |
+| Page text steering the model                  | Screenshot results say the page's text is data, not instructions.                                                                                                                                                                                                                        |
+
 ## Connected apps (MCP)
 
 | Threat                                        | Mitigation                                                                                                                                                                                                                                          |

@@ -162,6 +162,24 @@ dialog suggests one for the project's stack (e.g. `node:22-bookworm-slim`), show
 your machine. Commands can still change files in the project folder, so review them as usual. Requires Docker (checked
 at startup and from the dialog).
 
+### Screenshots and live preview
+
+- **Screenshots:** Friday can open a page on this machine (for example a dev server it started with `start_process`)
+  and look at it with the `screenshot` tool, to check how a UI change actually renders. The result includes the page
+  title, HTTP status, console errors, uncaught exceptions and failed requests, and the image is shown in the
+  conversation. Only `localhost` / `127.0.0.1` pages, never Friday itself; links, redirects and frames to other
+  sites are blocked. It needs no approval, like reading files.
+  - The desktop app uses its own built-in Chromium, in a hidden window with a separate, empty session.
+  - The browser version uses an installed Chrome, Chromium or Edge, run headless with a throwaway profile. Set
+    `FRIDAY_CHROME` to choose one; without a browser, the tool is not offered.
+- **Live preview:** the monitor button in the conversation header (or the screen icon next to a running process's
+  URL) opens your dev server next to the conversation. It has full, tablet and phone widths, reload, open in
+  browser, and **Screenshot to message**, which adds the current page to the message you're writing. The page runs
+  sandboxed in its own origin and can reach neither Friday's UI nor, in the desktop app, Friday's launch token.
+  Pages that refuse to be framed show blank; open them in the browser instead.
+- **Image files:** PNG, JPEG, WebP, GIF and SVG files in the file tree open as images. SVG is shown with scripts
+  disabled.
+
 ### Connected apps (MCP)
 
 Friday can use your other apps through their MCP servers, the way Claude does. In Settings › **Connected apps**,

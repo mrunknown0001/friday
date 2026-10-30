@@ -14,6 +14,7 @@ import {
   type MenuItemConstructorOptions,
   type UtilityProcess,
 } from 'electron';
+import { captureSession, isLocalUrl, serveCaptures } from './capture.js';
 
 /**
  * Friday desktop shell. The agent runs in the same local server as the web version, started here
@@ -148,8 +149,11 @@ async function startServer(): Promise<void> {
       FRIDAY_DATA_DIR: paths.dataDir,
       FRIDAY_ENV_FILE: paths.envFile,
       FRIDAY_WEB_DIST: paths.webDist,
+      // Screenshots are taken by this process with the app's own Chromium (see capture.ts).
+      FRIDAY_DESKTOP_CAPTURE: '1',
     },
   });
+  serveCaptures(child);
   child.stdout?.pipe(log);
   child.stderr?.pipe(log);
   server = child;
@@ -163,10 +167,14 @@ async function startServer(): Promise<void> {
 
   port = await waitForListening(child);
   origin = `http://127.0.0.1:${port}`;
-  // Add the launch token to every request the app makes to its own server, and nowhere else.
+  // Add the launch token to every request the app makes to its own server, and nowhere else:
+  // not to requests a page embedded in the app (the live preview of a dev server) makes to it.
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: [`${origin}/*`] },
     (details, callback) => {
+      const frameUrl = details.frame?.url;
+      if (frameUrl && frameUrl.startsWith('http') && !frameUrl.startsWith(`${origin}/`))
+        return callback({ requestHeaders: details.requestHeaders });
       callback({ requestHeaders: { ...details.requestHeaders, [TOKEN_HEADER]: token } });
     },
   );
@@ -282,6 +290,16 @@ function isExternalWebUrl(url: string): boolean {
 
 function lockDownContents(): void {
   app.on('web-contents-created', (_event, contents) => {
+    // The hidden screenshot window has its own, stricter session rules (capture.ts).
+    if (contents.session === captureSession()) {
+      contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      contents.on('will-attach-webview', (event) => event.preventDefault());
+      return;
+    }
+    // Frames inside the app (the live preview) stay on this machine.
+    contents.on('will-frame-navigate', (details) => {
+      if (!details.isMainFrame && !isLocalUrl(details.url)) details.preventDefault();
+    });
     // Links to other sites open in the system browser; the app window never leaves the app.
     contents.setWindowOpenHandler(({ url }) => {
       if (isExternalWebUrl(url)) void shell.openExternal(url);

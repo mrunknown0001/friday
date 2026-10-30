@@ -183,7 +183,11 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
 
 ### Queued (requested 2026-10-30)
 
-- ⬜ **Screenshots for preview.** Friday captures a page itself, for example a dev server started with
+- ✅ **Screenshots for preview.** Done: `screenshot` tool (desktop: built-in Chromium; browser version: installed
+  Chrome/Chromium/Edge over DevTools), live preview pane with widths and Screenshot to message, and image files in
+  the viewer. Verified live on 2026-10-30 with `claude-sonnet-4.6`: Friday started the dev server, captured it by
+  process id and reported the page's HTTP 500 and console error; in the desktop app, a framed page's request to
+  Friday's API got no launch token, and the built-in capture worked. Original plan: Friday captures a page itself, for example a dev server started with
   `start_process`, and looks at the result (and shows it in the conversation), so it can check a UI change without
   you pasting screenshots. Local URLs only (`localhost`/`127.0.0.1`); viewport and full-page options. Builds on
   background processes and image input. Open question: which browser engine (the desktop app's built-in Chromium,

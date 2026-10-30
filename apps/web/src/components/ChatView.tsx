@@ -1,4 +1,5 @@
 import type {
+  AttachmentDto,
   ApprovalDto,
   DeploymentPlanDto,
   MemoryRef,
@@ -14,6 +15,7 @@ import {
   FolderOpen,
   ImagePlus,
   Loader2,
+  MonitorPlay,
   PanelRight,
   RotateCcw,
   Square,
@@ -26,6 +28,7 @@ import { api } from '../lib/api';
 import { ACCEPTED, imageFiles, prepareImage } from '../lib/images';
 import { ApprovalCard } from './ApprovalCard';
 import { AttachmentThumbs, DraftImages, type DraftImage } from './Attachments';
+import { ATTACH_IMAGE_EVENT } from './PreviewPane';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
 import { SuggestionChips } from './SuggestionChips';
@@ -45,6 +48,8 @@ interface Props {
   blockedReason: string | null;
   sidePanelOpen: boolean;
   onToggleSidePanel: () => void;
+  previewOpen?: boolean;
+  onTogglePreview?: () => void;
   onSend: (text: string, attachmentIds?: string[]) => Promise<boolean>;
   onStop: () => void;
   onRetry: () => void;
@@ -280,6 +285,7 @@ function LiveOutput({
         summary: b.summary,
         durationMs: b.durationMs,
         terminal: b.output || undefined,
+        attachments: b.attachments,
         approval: byCall.get(b.callId),
         deploymentPlan: plans.get(b.callId),
       };
@@ -384,6 +390,20 @@ export function ChatView(props: Props) {
         );
     }
   };
+  // A screenshot from the preview pane joins the message being written.
+  useEffect(() => {
+    const onAttach = (e: Event) => {
+      const attachment = (e as CustomEvent<AttachmentDto>).detail;
+      setImages((list) =>
+        list.length >= MAX_IMAGES
+          ? list
+          : [...list, { key: attachment.id, name: 'screenshot.png', status: 'ready', attachment }],
+      );
+    };
+    window.addEventListener(ATTACH_IMAGE_EVENT, onAttach);
+    return () => window.removeEventListener(ATTACH_IMAGE_EVENT, onAttach);
+  }, []);
+
   const removeImage = (d: DraftImage) => {
     setImages((list) => list.filter((x) => x.key !== d.key));
     if (d.attachment) void api.removeAttachment(d.attachment.id).catch(() => undefined);
@@ -437,10 +457,23 @@ export function ChatView(props: Props) {
             summarized history
           </Badge>
         )}
+        {props.onTogglePreview && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            onClick={props.onTogglePreview}
+            aria-pressed={!!props.previewOpen}
+            aria-label="Toggle live preview"
+            title="Live preview"
+          >
+            <MonitorPlay className="h-4 w-4" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
-          className="ml-auto"
+          className={props.onTogglePreview ? undefined : 'ml-auto'}
           onClick={props.onToggleSidePanel}
           aria-pressed={props.sidePanelOpen}
           aria-label="Toggle plan and files panel"

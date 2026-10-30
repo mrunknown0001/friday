@@ -5,6 +5,7 @@ import { buildApp } from './app.js';
 import { ConfigError, loadConfig, resolveEnvFile } from './config.js';
 import { openDatabase } from './db/database.js';
 import { acquireDataDirLock } from './db/lock.js';
+import { detectCaptureEngine } from './browser/capture.js';
 import { reapOrphans } from './processes/manager.js';
 import { cleanupSandboxes, instanceLabel } from './sandbox/docker.js';
 import { createServices } from './services.js';
@@ -28,7 +29,8 @@ async function main() {
   const leftoverSandboxes = toolEnv.docker ? await cleanupSandboxes(toolEnv.sandboxInstance) : 0;
   // Background processes (dev servers) a crash of this instance left running.
   const leftoverProcesses = await reapOrphans(toolEnv.sandboxInstance);
-  const services = createServices(config, db, { toolEnv });
+  const captureEngine = await detectCaptureEngine();
+  const services = createServices(config, db, { toolEnv, captureEngine });
 
   const interrupted = services.runs.markInterrupted();
   // Approvals cannot survive a restart: the run that would execute them is gone.
@@ -75,8 +77,8 @@ async function main() {
   const parentPort = (process as { parentPort?: { postMessage(message: unknown): void } })
     .parentPort;
   parentPort?.postMessage({ type: 'listening', port });
-  // OAuth sign-ins for connected apps return to this server's actual port.
-  services.mcp.setRedirectBase(`http://127.0.0.1:${port}`);
+  // OAuth sign-ins return to this port, and screenshots never capture Friday itself.
+  services.setListeningPort(port);
   app.log.info(
     {
       apiKeyConfigured: services.provider.isConfigured(),
@@ -90,6 +92,7 @@ async function main() {
       docker: toolEnv.docker ?? 'not reachable (command sandbox unavailable)',
       leftoverSandboxes,
       leftoverProcesses,
+      screenshots: captureEngine?.name ?? 'no browser found (install Chrome or set FRIDAY_CHROME)',
     },
     'Friday server ready',
   );

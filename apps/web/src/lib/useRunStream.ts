@@ -1,5 +1,6 @@
 import type {
   ApprovalDto,
+  AttachmentDto,
   DeploymentPlanDto,
   MemoryDto,
   MemoryRef,
@@ -24,6 +25,8 @@ export type LiveBlock =
       durationMs: number | null;
       /** Live terminal output for commands. */
       output: string;
+      /** Images the tool produced (screenshots). */
+      attachments?: AttachmentDto[];
     };
 
 export interface LiveRun {
@@ -137,7 +140,13 @@ export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
     case 'tool_finished':
       next.blocks = prev.blocks.map((b) =>
         b.kind === 'tool' && b.callId === event.callId
-          ? { ...b, status: event.status, summary: event.summary, durationMs: event.durationMs }
+          ? {
+              ...b,
+              status: event.status,
+              summary: event.summary,
+              durationMs: event.durationMs,
+              ...(event.attachments ? { attachments: event.attachments } : {}),
+            }
           : b,
       );
       // Calls skipped before starting (limits, cancellation) have no tool_started event.

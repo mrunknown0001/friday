@@ -103,6 +103,8 @@ export function toolLabel(name: string, argsJson: string): string {
       return '';
     case 'view_image':
       return str(a.path);
+    case 'screenshot':
+      return `${str(a.url ?? a.process_id)}${a.path ? str(a.path) : ''}${a.full_page ? ' (full page)' : ''}`;
     case 'code_map':
       return str(a.path ?? '.');
     case 'find_symbol':
@@ -180,7 +182,8 @@ function ToolRow({ item }: { item: ToolItem }) {
           {item.truncated && '\n[output was truncated before being sent to the model]'}
         </pre>
       )}
-      {shown && item.attachments && (
+      {/* Screenshots are the point of the call: always visible, like an attached image. */}
+      {(shown || item.name === 'screenshot') && item.attachments && (
         <AttachmentThumbs attachments={item.attachments} className="mx-2 mb-1" />
       )}
     </li>

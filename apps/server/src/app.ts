@@ -9,6 +9,7 @@ import { registerAttachmentRoutes } from './http/routes/attachments.js';
 import { registerDevopsRoutes } from './http/routes/devops.js';
 import { registerMcpRoutes } from './http/routes/mcp.js';
 import { registerMemoryRoutes } from './http/routes/memory.js';
+import { registerPreviewRoutes } from './http/routes/preview.js';
 import { registerProcessRoutes } from './http/routes/processes.js';
 import { registerProjectRoutes } from './http/routes/projects.js';
 import { registerProviderRoutes } from './http/routes/provider.js';
@@ -100,6 +101,7 @@ export async function buildApp(
   registerSessionRoutes(app, services);
   registerProjectRoutes(app, services);
   registerProcessRoutes(app, services);
+  registerPreviewRoutes(app, services);
   registerApprovalRoutes(app, services);
   registerAttachmentRoutes(app, services);
   registerDevopsRoutes(app, services);

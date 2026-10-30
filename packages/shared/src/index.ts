@@ -717,6 +717,8 @@ export type RunEvent =
       status: ToolCallStatus;
       summary: string;
       durationMs: number;
+      /** Images the tool produced (screenshot, view_image), shown right away. */
+      attachments?: AttachmentDto[];
     }
   | { seq: number; type: 'plan_updated'; plan: PlanStep[] }
   | { seq: number; type: 'approval_requested'; approval: ApprovalDto }

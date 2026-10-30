@@ -229,6 +229,7 @@ describe('tool executor', () => {
         'view_image',
         'code_map',
         'find_symbol',
+        'screenshot',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;
@@ -248,6 +249,7 @@ describe('tool executor', () => {
         'remember',
         'remote_command',
         'remote_diagnose',
+        'screenshot',
         'search_logs',
         'search_memory',
         'suggest_next_steps',

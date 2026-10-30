@@ -153,6 +153,45 @@ function TreeNode({
   );
 }
 
+/** Image files open as images (the server checks the bytes; SVG is shown as an image only). */
+export const IMAGE_FILE = /\.(png|jpe?g|webp|gif|svg)$/i;
+
+function ImageFileViewer({
+  projectId,
+  path,
+  onClose,
+}: {
+  projectId: string;
+  path: string;
+  onClose: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  return (
+    <Dialog open onClose={onClose} title={path}>
+      {failed ? (
+        <p className="text-sm text-zinc-400">This image cannot be shown.</p>
+      ) : (
+        <div className="grid place-items-center rounded-md border border-zinc-800 bg-[repeating-conic-gradient(#27272a_0%_25%,#18181b_0%_50%)] bg-[length:16px_16px] p-2">
+          <img
+            src={api.projectRawUrl(projectId, path)}
+            alt={path}
+            onError={() => setFailed(true)}
+            onLoad={(e) =>
+              setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+            }
+            className="max-h-[70vh] max-w-full object-contain"
+          />
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-zinc-500">
+        {size ? `${size.w}×${size.h} px. ` : ''}Read-only view. Friday can look at this image with
+        view_image.
+      </p>
+    </Dialog>
+  );
+}
+
 function FileViewer({
   projectId,
   path,
@@ -288,6 +327,7 @@ export function SidePanel({
   processes = [],
   onStopProcess = () => undefined,
   onDismissProcess = () => undefined,
+  onPreview,
 }: {
   project: ProjectDto | null;
   plan: PlanStep[] | null;
@@ -296,6 +336,7 @@ export function SidePanel({
   processes?: ProcessDto[];
   onStopProcess?: (p: ProcessDto) => void;
   onDismissProcess?: (p: ProcessDto) => void;
+  onPreview?: (url: string) => void;
 }) {
   const [root, setRoot] = useState<TreeEntryDto[] | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -343,7 +384,12 @@ export function SidePanel({
           <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
             Processes
           </h2>
-          <ProcessList processes={processes} onStop={onStopProcess} onDismiss={onDismissProcess} />
+          <ProcessList
+            processes={processes}
+            onStop={onStopProcess}
+            onDismiss={onDismissProcess}
+            {...(onPreview ? { onPreview } : {})}
+          />
         </section>
       )}
       <section className="flex min-h-0 flex-1 flex-col py-3">
@@ -376,9 +422,13 @@ export function SidePanel({
           Respects .gitignore; dependency and build folders are hidden.
         </p>
       </section>
-      {viewing && project && (
-        <FileViewer projectId={project.id} path={viewing} onClose={() => setViewing(null)} />
-      )}
+      {viewing &&
+        project &&
+        (IMAGE_FILE.test(viewing) ? (
+          <ImageFileViewer projectId={project.id} path={viewing} onClose={() => setViewing(null)} />
+        ) : (
+          <FileViewer projectId={project.id} path={viewing} onClose={() => setViewing(null)} />
+        ))}
     </aside>
   );
 }

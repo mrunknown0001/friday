@@ -12,6 +12,7 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AddProjectDialog } from './components/AddProjectDialog';
 import { MCP_UPDATED_EVENT } from './components/McpSettings';
+import { PreviewPane } from './components/PreviewPane';
 import { crashed } from './components/Processes';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { ChatView } from './components/ChatView';
@@ -20,6 +21,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { SidePanel } from './components/SidePanel';
 import { Sidebar } from './components/Sidebar';
 import { api } from './lib/api';
+import { cn } from './lib/cn';
 import { notify } from './lib/notifications';
 import { useAppNotices } from './lib/useAppNotices';
 import { useRunStream } from './lib/useRunStream';
@@ -57,6 +59,10 @@ export function App() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [detail, setDetail] = useState<SessionDetailDto | null>(null);
   const [changes, setChanges] = useState<{ sessionId: string; list: FileChangeDto[] } | null>(null);
+  const [preview, setPreview] = useState<{ open: boolean; url: string | null }>({
+    open: false,
+    url: null,
+  });
   const [processes, setProcesses] = useState<{ projectId: string; list: ProcessDto[] } | null>(
     null,
   );
@@ -397,12 +403,14 @@ export function App() {
         onOpenMemory={() => setMemoryOpen(true)}
         settingsWarning={!!blockedReason}
       />
-      <div className="relative flex min-w-0 flex-1">
+      <div className={cn('relative flex flex-[1_1_0]', preview.open ? 'min-w-[400px]' : 'min-w-0')}>
         <ChatView
           detail={shownDetail}
           project={project}
           live={live}
           sidePanelOpen={sidePanelOpen}
+          previewOpen={preview.open}
+          onTogglePreview={() => setPreview((p) => ({ ...p, open: !p.open }))}
           onToggleSidePanel={() => {
             writeStored(PANEL_KEY, sidePanelOpen ? '0' : '1');
             setSidePanelOpen(!sidePanelOpen);
@@ -444,8 +452,18 @@ export function App() {
           </div>
         )}
       </div>
+      {preview.open && (
+        <PreviewPane
+          key={preview.url ?? ''}
+          url={preview.url}
+          processes={processes && processes.projectId === projectId ? processes.list : []}
+          onNavigate={(url) => setPreview({ open: true, url })}
+          onClose={() => setPreview((p) => ({ ...p, open: false }))}
+        />
+      )}
       {sidePanelOpen && (
         <SidePanel
+          onPreview={(url) => setPreview({ open: true, url })}
           project={project}
           plan={live?.plan ?? shownDetail?.plan ?? null}
           changes={sessionChanges}
