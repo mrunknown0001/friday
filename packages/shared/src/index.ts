@@ -722,6 +722,25 @@ export interface RunReport {
     afterLastChange: boolean;
   }>;
   commits: string[];
+  /** Screenshots compared before and after a change (absent in reports saved before this). */
+  visuals?: VisualComparison[];
+}
+
+/** A page captured before and after a change, with the difference highlighted. */
+export interface VisualComparison {
+  url: string;
+  width: number;
+  height: number;
+  fullPage: boolean;
+  before: AttachmentDto;
+  after: AttachmentDto;
+  /** Null when nothing visible changed. */
+  diff: AttachmentDto | null;
+  /** Share of pixels that changed, 0–1. */
+  changedRatio: number;
+  /** Number of separate changed areas. */
+  regions: number;
+  createdAt: string;
 }
 
 /** A suggested follow-up shown as a chip after a run. */

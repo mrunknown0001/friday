@@ -161,6 +161,7 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | The live preview frame driving Friday         | CSP `frame-src` allows only loopback origins; the frame is sandboxed without top navigation; in the desktop app the launch token is added only to requests from Friday's own frame (verified: a framed page's request to the API gets 401), and frames cannot navigate off this machine. |
 | Scripts in project SVG files                  | The image endpoint serves SVG (and every image) with `Content-Security-Policy: sandbox; default-src 'none'`.                                                                                                                                                                             |
 | Page text steering the model                  | Screenshot results say the page's text is data, not instructions.                                                                                                                                                                                                                        |
+| Comparing with another conversation's images  | A comparison only uses earlier captures from the same conversation, and the image is read only if its attachment belongs to that conversation. Untrusted PNG data is decoded with size limits (8-bit, at most 2560×8000) and fails closed.                                               |
 
 ## Connected apps (MCP)
 

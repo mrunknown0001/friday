@@ -10,6 +10,7 @@ import { CapabilityRepo } from './repositories/capabilities.js';
 import { ApprovalService } from './approvals/service.js';
 import { ApprovalRepo } from './repositories/approvals.js';
 import { AttachmentRepo } from './repositories/attachments.js';
+import { CaptureRepo } from './repositories/captures.js';
 import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
 import { MessageRepo } from './repositories/messages.js';
@@ -88,6 +89,7 @@ export interface Services {
   approvals: ApprovalService;
   fileChanges: FileChangeRepo;
   attachments: AttachmentRepo;
+  captures: CaptureRepo;
   sshHosts: SshHostRepo;
   ssh: SshService;
   logSources: LogSourceRepo;
@@ -161,6 +163,7 @@ export function createServices(
   const approvalRepo = new ApprovalRepo(db);
   const fileChanges = new FileChangeRepo(db);
   const attachments = new AttachmentRepo(db);
+  const captures = new CaptureRepo(db, attachments);
   const sshHosts = new SshHostRepo(db);
   const ssh = new SshService(
     sshHosts,
@@ -212,6 +215,7 @@ export function createServices(
     approvalRepo,
     fileChanges,
     attachments,
+    captures,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
     codeMap,
@@ -244,6 +248,7 @@ export function createServices(
     approvals,
     fileChanges,
     attachments,
+    captures,
     sshHosts,
     ssh,
     logSources,

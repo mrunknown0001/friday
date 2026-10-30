@@ -199,6 +199,15 @@ stored as an attachment of the tool message and sent in `tool_finished.attachmen
 once. The preview pane is an iframe (loopback `frame-src`). `POST /api/preview/screenshot` captures a page into a
 pending attachment for the composer. `GET /api/projects/:id/raw` serves image files for the file viewer.
 
+Before and after (`visual/`, `repositories/captures.ts`): each screenshot is stored at once through
+`ToolContext.captures`, and recorded in `page_captures` (migration 16) with its URL and size. Its `ToolImage`
+carries the `attachmentId`, so the tool message binds the stored image rather than storing it again. With
+`compare`, the tool looks up the latest earlier capture of the same page and size in the conversation. It decodes
+both images with `visual/png.ts`, a minimal PNG codec on `zlib` (8-bit, non-interlaced). `visual/diff.ts` compares
+them by YIQ colour distance (threshold 0.05) and groups changed 8×8 blocks into regions. The tool then stores the
+highlighted image and records the comparison. `buildRunReport` adds `visuals` from the task's captures, and runs
+that compared screenshots get a report even without approvals.
+
 ### Connected apps (`mcp/`, `routes/mcp.ts`)
 
 `McpManager` wraps the official SDK (`@modelcontextprotocol/sdk`, pinned). Each server gets a `Client` over

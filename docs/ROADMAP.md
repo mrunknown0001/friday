@@ -243,8 +243,13 @@ approved), credentials never reach the model, and results from other systems are
 - ⬜ **Browser flows** (L). Friday drives a local page (navigate, click, type, wait for text) to test a UI flow end to
   end, with a screenshot and console errors at each step. Local pages only, on the existing capture engines; a flow
   is a list of steps the user sees before it runs.
-- ⬜ **Before/after visuals** (S–M). Around a UI change, capture the page before and after, and show them side by
-  side (with a highlighted difference) in the run report.
+- ✅ **Before/after visuals** (S–M). Done: `screenshot` with `compare` diffs against the latest earlier capture of
+  the same page and size (built-in PNG codec and YIQ diff, no new packages), returns the changed share, the areas,
+  and a highlighted image, and the run report shows before, after and difference side by side. Verified live on
+  2026-10-30 with `claude-sonnet-4.6` restyling a cart total. That run showed pixelmatch's default threshold missing a
+  pale background (now 0.05) and solid red hiding the changed text (now a tint). Original plan: around a UI
+  change, capture the page before and after, and show them side by side (with a highlighted difference) in the
+  run report.
 - ⬜ **Test insights** (M). Detect the test framework, run the tests related to the changed files first, and
   summarise failures (first error, `file:line`), slow and flaky tests, with optional coverage for the changed lines.
 - ⬜ **Dependency upgrades** (M). A report of outdated and vulnerable packages, an upgrade plan with changelog

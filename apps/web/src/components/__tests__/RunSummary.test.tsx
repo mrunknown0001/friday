@@ -157,3 +157,70 @@ describe('ApprovalCard: git', () => {
     expect(screen.getByText('high risk')).toBeTruthy();
   });
 });
+
+describe('RunSummary: before and after', () => {
+  const img = (id: string, name: string) => ({
+    id,
+    name,
+    mime: 'image/png' as const,
+    size: 1000,
+    width: 1280,
+    height: 800,
+    createdAt: '',
+  });
+
+  it('shows the page before, after and the difference, each opening full size', async () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    render(
+      <RunSummary
+        run={run(
+          report({
+            status: 'verified',
+            visuals: [
+              {
+                url: 'http://localhost:5173/cart?step=2',
+                width: 1280,
+                height: 800,
+                fullPage: false,
+                before: img('b1', 'screenshot.png'),
+                after: img('a1', 'screenshot.png'),
+                diff: img('d1', 'difference.png'),
+                changedRatio: 0.032,
+                regions: 2,
+                createdAt: '',
+              },
+              {
+                url: 'http://localhost:5173/',
+                width: 390,
+                height: 844,
+                fullPage: true,
+                before: img('b2', 'screenshot.png'),
+                after: img('a2', 'screenshot.png'),
+                diff: null,
+                changedRatio: 0,
+                regions: 0,
+                createdAt: '',
+              },
+            ],
+          }),
+        )}
+        approvals={[]}
+        onRollback={vi.fn()}
+      />,
+    );
+    const card = screen.getByRole('group', { name: 'Verification report' });
+    expect(within(card).getByText('Before and after')).toBeTruthy();
+    expect(within(card).getByText('/cart?step=2')).toBeTruthy();
+    expect(within(card).getByText('3.2% changed in 2 areas')).toBeTruthy();
+    expect(within(card).getByText('no visible change')).toBeTruthy();
+    expect(within(card).getByText('390px wide, full page')).toBeTruthy();
+    expect(within(card).getByText('nothing changed')).toBeTruthy();
+    const diff = within(card).getByAltText('Difference: /cart?step=2') as HTMLImageElement;
+    expect(diff.src).toContain('/api/attachments/d1');
+
+    await userEvent.click(within(card).getByRole('button', { name: 'View after of /cart?step=2' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+});
