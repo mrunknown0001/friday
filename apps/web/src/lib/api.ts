@@ -32,6 +32,7 @@ import type {
   SessionDetailDto,
   SessionSummaryDto,
   SettingsDto,
+  ReviewDto,
   UsageSummaryDto,
   WorktreeStatusDto,
 } from '@friday/shared';
@@ -171,6 +172,8 @@ export const api = {
     }),
   discardWorktree: (projectId: string) =>
     request<{ project: ProjectDto }>('POST', `/api/projects/${projectId}/worktree/discard`),
+  setFindingStatus: (reviewId: string, n: number, status: 'open' | 'fix_requested' | 'dismissed') =>
+    request<ReviewDto>('PATCH', `/api/reviews/${reviewId}/findings/${n}`, { status }),
   previewStatus: () =>
     request<{ screenshots: string | null; openFiles: boolean }>('GET', '/api/preview/status'),
   openProjectFile: (id: string, path: string) =>

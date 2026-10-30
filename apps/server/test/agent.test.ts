@@ -209,6 +209,8 @@ describe('tool executor', () => {
         'create_pull_request',
         'ci_runs',
         'ci_failure',
+        'review_changes',
+        'report_findings',
         'git_diff',
         'git_log',
         'git_show',

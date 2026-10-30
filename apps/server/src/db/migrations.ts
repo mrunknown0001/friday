@@ -477,6 +477,24 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX projects_parent ON projects(parent_id);
     `,
   },
+  {
+    version: 18,
+    name: 'reviews',
+    up: `
+      -- Code reviews: what was reviewed and the findings, each with the user's decision on it.
+      CREATE TABLE reviews (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        target TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        findings TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX reviews_session ON reviews(session_id, created_at);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

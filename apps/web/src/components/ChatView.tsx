@@ -5,6 +5,7 @@ import type {
   MemoryRef,
   MessageDto,
   ProjectDto,
+  ReviewDto,
   RunDto,
   SessionDetailDto,
 } from '@friday/shared';
@@ -16,6 +17,7 @@ import {
   ImagePlus,
   Loader2,
   FileDown,
+  ListChecks,
   MonitorPlay,
   PanelRight,
   RotateCcw,
@@ -30,6 +32,8 @@ import { ACCEPTED, imageFiles, prepareImage } from '../lib/images';
 import { ApprovalCard } from './ApprovalCard';
 import { AttachmentThumbs, DraftImages, type DraftImage } from './Attachments';
 import { ExportDialog } from './ExportDialog';
+import { ReviewActionsContext } from './ReviewCard';
+import { ReviewStartDialog } from './ReviewStartDialog';
 import { WorktreeBadge } from './WorktreeBadge';
 import { WorktreeDialog } from './WorktreeDialog';
 import { ATTACH_IMAGE_EVENT } from './PreviewPane';
@@ -129,6 +133,7 @@ export function toRows(
   approvals: Map<string, ApprovalDto>,
   plans: Map<string, DeploymentPlanDto>,
   memoryUsage: Record<string, MemoryRef[]>,
+  reviews: Map<string, ReviewDto> = new Map(),
 ): Row[] {
   const rows: Row[] = [];
   for (const m of messages) {
@@ -150,6 +155,7 @@ export function toRows(
         truncated: m.tool?.truncated,
         approval: m.tool?.approvalId ? approvals.get(m.tool.approvalId) : undefined,
         deploymentPlan: m.toolCallId ? plans.get(m.toolCallId) : undefined,
+        review: m.toolCallId ? reviews.get(m.toolCallId) : undefined,
         attachments: m.attachments,
       };
       const last = rows.at(-1);
@@ -273,10 +279,12 @@ function LiveOutput({
   live,
   byCall,
   plans,
+  reviews,
 }: {
   live: LiveRun;
   byCall: Map<string, ApprovalDto>;
   plans: Map<string, DeploymentPlanDto>;
+  reviews: Map<string, ReviewDto>;
 }) {
   const groups: Array<{ kind: 'text'; text: string } | { kind: 'tools'; items: ToolItem[] }> = [];
   for (const b of live.blocks) {
@@ -294,6 +302,7 @@ function LiveOutput({
         attachments: b.attachments,
         approval: byCall.get(b.callId),
         deploymentPlan: plans.get(b.callId),
+        review: reviews.get(b.callId),
       };
       const last = groups.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -340,6 +349,7 @@ export function ChatView(props: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [worktreeAction, setWorktreeAction] = useState<'accept' | 'discard' | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -445,297 +455,340 @@ export function ChatView(props: Props) {
   const byId = new Map(approvals.map((a) => [a.id, a]));
   const byCall = new Map(approvals.map((a) => [a.toolCallId, a]));
   const plansByCall = new Map(props.deploymentPlans.map((p) => [p.toolCallId, p]));
-  const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {});
+  const reviewsByCall = new Map(
+    [...(detail?.reviews ?? []), ...(live?.reviews ?? [])].map((r) => [r.toolCallId, r]),
+  );
+  const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {}, reviewsByCall);
   const pending = approvals.filter((a) => a.status === 'pending');
   const latest = detail?.latestRun;
   const showProblem =
     !running && latest && ['failed', 'cancelled', 'interrupted', 'blocked'].includes(latest.status);
 
+  const reviewActions = {
+    projectId: project?.available ? project.id : null,
+    canSend: canSend && !running,
+    send: (text: string) => onSend(text),
+  };
+
   return (
-    <main className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-5">
-        <h1 className="truncate text-sm font-medium text-zinc-200">{detail?.title ?? 'Friday'}</h1>
-        {project && !project.worktree && (
-          <Badge tone="info" title={project.rootPath}>
-            <FolderOpen className="h-3 w-3" /> {project.name}
-          </Badge>
-        )}
-        {project?.worktree && (
-          <WorktreeBadge
-            project={project}
-            onAccept={() => setWorktreeAction('accept')}
-            onDiscard={() => setWorktreeAction('discard')}
-            busy={running}
-          />
-        )}
-        {worktreeAction && project?.worktree && (
-          <WorktreeDialog
-            project={project}
-            action={worktreeAction}
-            defaultMessage={detail?.title ?? 'Task'}
-            onClose={() => setWorktreeAction(null)}
-            onDone={() => props.onWorktreeChanged?.()}
-          />
-        )}
-        {detail?.hasSummary && (
-          <Badge title="Older messages were summarized to fit the model context window.">
-            summarized history
-          </Badge>
-        )}
-        {detail && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            onClick={() => setExporting(true)}
-            aria-label="Export conversation"
-            title="Export"
-          >
-            <FileDown className="h-4 w-4" />
-          </Button>
-        )}
-        {exporting && detail && (
-          <ExportDialog sessionId={detail.id} onClose={() => setExporting(false)} />
-        )}
-        {props.onTogglePreview && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={detail ? undefined : 'ml-auto'}
-            onClick={props.onTogglePreview}
-            aria-pressed={!!props.previewOpen}
-            aria-label="Toggle live preview"
-            title="Live preview"
-          >
-            <MonitorPlay className="h-4 w-4" />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={props.onTogglePreview || detail ? undefined : 'ml-auto'}
-          onClick={props.onToggleSidePanel}
-          aria-pressed={props.sidePanelOpen}
-          aria-label="Toggle plan and files panel"
-          title="Plan and files"
-        >
-          <PanelRight className="h-4 w-4" />
-        </Button>
-      </header>
-
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <div
-          ref={scrollRef}
-          onScroll={(e) => {
-            const near = isNearBottom(e.currentTarget);
-            stickToBottom.current = near;
-            setAwayFromBottom(!near);
-            if (near) setUnseen(false);
-          }}
-          className="flex-1 overflow-y-auto"
-          aria-live="polite"
-        >
-          <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-6">
-            {rows.length === 0 && !running && (
-              <div className="mt-16 text-center text-zinc-400">
-                <p className="text-lg font-medium text-zinc-200">What are we working on?</p>
-                <p className="mt-2 text-sm">
-                  {project
-                    ? `Friday can read and search ${project.name} on its own. Editing files, running commands and committing each wait for your approval.`
-                    : 'No project is selected, so Friday cannot see your code. Choose or add a project in the sidebar to let it read your files.'}
-                </p>
-              </div>
-            )}
-            {rows.map((r) =>
-              r.kind === 'user' ? (
-                <UserRow key={r.m.id} m={r.m} />
-              ) : r.kind === 'assistant' ? (
-                <AssistantRow
-                  key={r.m.id}
-                  content={r.m.content}
-                  footer={<MessageFooter m={r.m} />}
-                />
-              ) : r.kind === 'record' ? (
-                <div key={`rec-${r.runId}`} className="space-y-2">
-                  <MemoriesUsed refs={r.memories} />
-                  {r.approvals.length > 0 && (
-                    <RunSummary
-                      run={runsById.get(r.runId)}
-                      approvals={r.approvals}
-                      onRollback={onRollback}
-                    />
-                  )}
-                </div>
-              ) : (
-                <ToolActivity key={r.key} items={r.items} />
-              ),
-            )}
-            {running && <MemoriesUsed refs={live.memoriesUsed} />}
-            {running && <LiveOutput live={live} byCall={byCall} plans={plansByCall} />}
-            {pending.map((a) => (
-              <ApprovalCard
-                key={a.id}
-                approval={a}
-                onDecide={(decision, note, confirmation, allowSimilar) =>
-                  onDecide(a, decision, note, confirmation, allowSimilar)
-                }
-                onCancelRun={running ? onStop : undefined}
-              />
-            ))}
-            {showProblem && <RunProblem run={latest} onRetry={onRetry} disabled={!canSend} />}
-            {!running && latest?.status === 'completed' && latest.suggestions && (
-              <SuggestionChips
-                steps={latest.suggestions}
-                disabled={submitting || !canSend}
-                onPrompt={(prompt) => {
-                  stickToBottom.current = true;
-                  setSubmitting(true);
-                  void onSend(prompt).finally(() => setSubmitting(false));
-                }}
-                onOpenMemory={props.onOpenMemory}
-              />
-            )}
-          </div>
-        </div>
-        {awayFromBottom && (
-          <button
-            type="button"
-            onClick={scrollToBottom}
-            aria-label={unseen ? 'Scroll to latest (new activity)' : 'Scroll to latest'}
-            title="Scroll to latest"
-            className={cn(
-              'absolute bottom-4 left-1/2 flex h-9 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900/95 text-xs text-zinc-200 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:bg-zinc-800',
-              unseen ? 'px-3' : 'w-9',
-            )}
-          >
-            <ArrowDown className="h-4 w-4" aria-hidden />
-            {unseen && (
-              <>
-                New activity
-                <span className="h-1.5 w-1.5 rounded-full bg-sky-400" aria-hidden />
-              </>
-            )}
-          </button>
-        )}
-      </div>
-
-      <div className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-5 py-3">
-        <div className="mx-auto max-w-3xl">
-          {running && live.taskPermission && (
-            <TaskPermissionBanner
-              permission={live.taskPermission}
-              onRevoke={() => props.onRevokeTaskPermission(live.runId)}
+    <ReviewActionsContext.Provider value={reviewActions}>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-5">
+          <h1 className="truncate text-sm font-medium text-zinc-200">
+            {detail?.title ?? 'Friday'}
+          </h1>
+          {project && !project.worktree && (
+            <Badge tone="info" title={project.rootPath}>
+              <FolderOpen className="h-3 w-3" /> {project.name}
+            </Badge>
+          )}
+          {project?.worktree && (
+            <WorktreeBadge
+              project={project}
+              onAccept={() => setWorktreeAction('accept')}
+              onDiscard={() => setWorktreeAction('discard')}
+              busy={running}
             />
           )}
-          {blockedReason && (
-            <div className="mb-2 flex items-center justify-between gap-3 rounded-md border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
-              <span>{blockedReason}</span>
-              <Button size="sm" variant="secondary" onClick={onOpenSettings}>
-                Open settings
-              </Button>
-            </div>
+          {worktreeAction && project?.worktree && (
+            <WorktreeDialog
+              project={project}
+              action={worktreeAction}
+              defaultMessage={detail?.title ?? 'Task'}
+              onClose={() => setWorktreeAction(null)}
+              onDone={() => props.onWorktreeChanged?.()}
+            />
           )}
-          <div
-            onDragOver={(e) => {
-              if (!Array.from(e.dataTransfer.types).includes('Files')) return;
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              const files = imageFiles(e.dataTransfer.files);
-              setDragging(false);
-              if (!files.length) return;
-              e.preventDefault();
-              addImages(files);
-            }}
-            className={cn(
-              'rounded-xl border bg-zinc-900 p-2 focus-within:border-zinc-600',
-              dragging ? 'border-sky-500' : 'border-zinc-800',
-            )}
+          {detail?.hasSummary && (
+            <Badge title="Older messages were summarized to fit the model context window.">
+              summarized history
+            </Badge>
+          )}
+          {project?.available && canSend && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto"
+              onClick={() => setReviewing(true)}
+              disabled={running}
+              title="Review uncommitted changes, this branch, or a pull request"
+            >
+              <ListChecks className="h-4 w-4" /> Review…
+            </Button>
+          )}
+          {reviewing && (
+            <ReviewStartDialog
+              onClose={() => setReviewing(false)}
+              onStart={(text) => {
+                setReviewing(false);
+                void onSend(text);
+              }}
+            />
+          )}
+          {detail && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={project?.available && canSend ? undefined : 'ml-auto'}
+              onClick={() => setExporting(true)}
+              aria-label="Export conversation"
+              title="Export"
+            >
+              <FileDown className="h-4 w-4" />
+            </Button>
+          )}
+          {exporting && detail && (
+            <ExportDialog sessionId={detail.id} onClose={() => setExporting(false)} />
+          )}
+          {props.onTogglePreview && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={detail ? undefined : 'ml-auto'}
+              onClick={props.onTogglePreview}
+              aria-pressed={!!props.previewOpen}
+              aria-label="Toggle live preview"
+              title="Live preview"
+            >
+              <MonitorPlay className="h-4 w-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={props.onTogglePreview || detail ? undefined : 'ml-auto'}
+            onClick={props.onToggleSidePanel}
+            aria-pressed={props.sidePanelOpen}
+            aria-label="Toggle plan and files panel"
+            title="Plan and files"
           >
-            <DraftImages images={images} onRemove={removeImage} />
-            {images.length > 0 && (
-              <p className="px-1 pb-1 text-[11px] text-zinc-500">
-                Images are sent to the model provider with your message. Don’t attach screenshots
-                that show passwords, keys or other secrets.
-              </p>
-            )}
-            <div className="flex items-end gap-2">
-              <label htmlFor="composer" className="sr-only">
-                Message
-              </label>
-              <input
-                ref={fileInput}
-                type="file"
-                accept={ACCEPTED.join(',')}
-                multiple
-                hidden
-                onChange={(e) => {
-                  addImages(imageFiles(e.target.files));
-                  e.target.value = '';
-                }}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => fileInput.current?.click()}
-                disabled={images.length >= MAX_IMAGES}
-                aria-label="Attach images"
-                title={`Attach images (or paste / drop them), up to ${MAX_IMAGES}`}
-              >
-                <ImagePlus className="h-4 w-4" />
-              </Button>
-              <textarea
-                id="composer"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onPaste={(e) => {
-                  const files = imageFiles(e.clipboardData.items);
-                  if (!files.length) return;
-                  // Only images are taken over; pasted text still goes into the message.
-                  if (!e.clipboardData.getData('text/plain')) e.preventDefault();
-                  addImages(files);
-                }}
-                onKeyDown={onKeyDown}
-                rows={Math.min(10, Math.max(1, draft.split('\n').length))}
-                placeholder={
-                  project
-                    ? `Ask about ${project.name}… (Shift+Enter for a new line)`
-                    : 'Ask about code, DevOps, deployments… (Shift+Enter for a new line)'
-                }
-                className="max-h-64 min-h-[2.25rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.94rem] outline-none placeholder:text-zinc-500"
-              />
-              {running ? (
-                <Button
-                  key="stop"
-                  variant="danger"
-                  size="md"
-                  onClick={onStop}
-                  aria-label="Stop generating"
-                >
-                  <Square className="h-3.5 w-3.5 fill-current" /> Stop
-                </Button>
-              ) : (
-                <Button
-                  key="send"
-                  variant="primary"
-                  size="icon"
-                  onClick={() => void submit()}
-                  disabled={(!draft.trim() && !ready.length) || uploading || submitting || !canSend}
-                  aria-label="Send message"
-                >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowUp className="h-4 w-4" />
-                  )}
-                </Button>
+            <PanelRight className="h-4 w-4" />
+          </Button>
+        </header>
+
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={scrollRef}
+            onScroll={(e) => {
+              const near = isNearBottom(e.currentTarget);
+              stickToBottom.current = near;
+              setAwayFromBottom(!near);
+              if (near) setUnseen(false);
+            }}
+            className="flex-1 overflow-y-auto"
+            aria-live="polite"
+          >
+            <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-6">
+              {rows.length === 0 && !running && (
+                <div className="mt-16 text-center text-zinc-400">
+                  <p className="text-lg font-medium text-zinc-200">What are we working on?</p>
+                  <p className="mt-2 text-sm">
+                    {project
+                      ? `Friday can read and search ${project.name} on its own. Editing files, running commands and committing each wait for your approval.`
+                      : 'No project is selected, so Friday cannot see your code. Choose or add a project in the sidebar to let it read your files.'}
+                  </p>
+                </div>
+              )}
+              {rows.map((r) =>
+                r.kind === 'user' ? (
+                  <UserRow key={r.m.id} m={r.m} />
+                ) : r.kind === 'assistant' ? (
+                  <AssistantRow
+                    key={r.m.id}
+                    content={r.m.content}
+                    footer={<MessageFooter m={r.m} />}
+                  />
+                ) : r.kind === 'record' ? (
+                  <div key={`rec-${r.runId}`} className="space-y-2">
+                    <MemoriesUsed refs={r.memories} />
+                    {r.approvals.length > 0 && (
+                      <RunSummary
+                        run={runsById.get(r.runId)}
+                        approvals={r.approvals}
+                        onRollback={onRollback}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <ToolActivity key={r.key} items={r.items} />
+                ),
+              )}
+              {running && <MemoriesUsed refs={live.memoriesUsed} />}
+              {running && (
+                <LiveOutput
+                  live={live}
+                  byCall={byCall}
+                  plans={plansByCall}
+                  reviews={reviewsByCall}
+                />
+              )}
+              {pending.map((a) => (
+                <ApprovalCard
+                  key={a.id}
+                  approval={a}
+                  onDecide={(decision, note, confirmation, allowSimilar) =>
+                    onDecide(a, decision, note, confirmation, allowSimilar)
+                  }
+                  onCancelRun={running ? onStop : undefined}
+                />
+              ))}
+              {showProblem && <RunProblem run={latest} onRetry={onRetry} disabled={!canSend} />}
+              {!running && latest?.status === 'completed' && latest.suggestions && (
+                <SuggestionChips
+                  steps={latest.suggestions}
+                  disabled={submitting || !canSend}
+                  onPrompt={(prompt) => {
+                    stickToBottom.current = true;
+                    setSubmitting(true);
+                    void onSend(prompt).finally(() => setSubmitting(false));
+                  }}
+                  onOpenMemory={props.onOpenMemory}
+                />
               )}
             </div>
           </div>
+          {awayFromBottom && (
+            <button
+              type="button"
+              onClick={scrollToBottom}
+              aria-label={unseen ? 'Scroll to latest (new activity)' : 'Scroll to latest'}
+              title="Scroll to latest"
+              className={cn(
+                'absolute bottom-4 left-1/2 flex h-9 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900/95 text-xs text-zinc-200 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:bg-zinc-800',
+                unseen ? 'px-3' : 'w-9',
+              )}
+            >
+              <ArrowDown className="h-4 w-4" aria-hidden />
+              {unseen && (
+                <>
+                  New activity
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" aria-hidden />
+                </>
+              )}
+            </button>
+          )}
         </div>
-      </div>
-    </main>
+
+        <div className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-5 py-3">
+          <div className="mx-auto max-w-3xl">
+            {running && live.taskPermission && (
+              <TaskPermissionBanner
+                permission={live.taskPermission}
+                onRevoke={() => props.onRevokeTaskPermission(live.runId)}
+              />
+            )}
+            {blockedReason && (
+              <div className="mb-2 flex items-center justify-between gap-3 rounded-md border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+                <span>{blockedReason}</span>
+                <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+                  Open settings
+                </Button>
+              </div>
+            )}
+            <div
+              onDragOver={(e) => {
+                if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                const files = imageFiles(e.dataTransfer.files);
+                setDragging(false);
+                if (!files.length) return;
+                e.preventDefault();
+                addImages(files);
+              }}
+              className={cn(
+                'rounded-xl border bg-zinc-900 p-2 focus-within:border-zinc-600',
+                dragging ? 'border-sky-500' : 'border-zinc-800',
+              )}
+            >
+              <DraftImages images={images} onRemove={removeImage} />
+              {images.length > 0 && (
+                <p className="px-1 pb-1 text-[11px] text-zinc-500">
+                  Images are sent to the model provider with your message. Don’t attach screenshots
+                  that show passwords, keys or other secrets.
+                </p>
+              )}
+              <div className="flex items-end gap-2">
+                <label htmlFor="composer" className="sr-only">
+                  Message
+                </label>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept={ACCEPTED.join(',')}
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    addImages(imageFiles(e.target.files));
+                    e.target.value = '';
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={images.length >= MAX_IMAGES}
+                  aria-label="Attach images"
+                  title={`Attach images (or paste / drop them), up to ${MAX_IMAGES}`}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                </Button>
+                <textarea
+                  id="composer"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onPaste={(e) => {
+                    const files = imageFiles(e.clipboardData.items);
+                    if (!files.length) return;
+                    // Only images are taken over; pasted text still goes into the message.
+                    if (!e.clipboardData.getData('text/plain')) e.preventDefault();
+                    addImages(files);
+                  }}
+                  onKeyDown={onKeyDown}
+                  rows={Math.min(10, Math.max(1, draft.split('\n').length))}
+                  placeholder={
+                    project
+                      ? `Ask about ${project.name}… (Shift+Enter for a new line)`
+                      : 'Ask about code, DevOps, deployments… (Shift+Enter for a new line)'
+                  }
+                  className="max-h-64 min-h-[2.25rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.94rem] outline-none placeholder:text-zinc-500"
+                />
+                {running ? (
+                  <Button
+                    key="stop"
+                    variant="danger"
+                    size="md"
+                    onClick={onStop}
+                    aria-label="Stop generating"
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" /> Stop
+                  </Button>
+                ) : (
+                  <Button
+                    key="send"
+                    variant="primary"
+                    size="icon"
+                    onClick={() => void submit()}
+                    disabled={
+                      (!draft.trim() && !ready.length) || uploading || submitting || !canSend
+                    }
+                    aria-label="Send message"
+                  >
+                    {submitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ArrowUp className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </ReviewActionsContext.Provider>
   );
 }

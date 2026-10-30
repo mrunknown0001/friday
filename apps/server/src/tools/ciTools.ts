@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { firstFailure, relativizeRunnerPaths, type Failure } from '../ci/logs.js';
 import { extractLocations } from '../commands/locations.js';
 import { assertRepoRoot, runGit } from '../git/git.js';
-import { ghApiGet, ghReady, projectGitHubRepo, type GitHubRepo } from '../git/github.js';
+import {
+  ghApiGet,
+  ghReady,
+  parseGitHubJson,
+  projectGitHubRepo,
+  type GitHubRepo,
+} from '../git/github.js';
 import { assertRootAvailable, isSecretPath, WorkspaceError } from '../workspace/paths.js';
 import { defineTool, type ToolContext } from './types.js';
 
@@ -55,7 +61,7 @@ async function setup(ctx: ToolContext) {
 
 async function getJson<T>(repo: GitHubRepo, path: string, signal: AbortSignal): Promise<T | null> {
   const body = await ghApiGet(repo, `repos/${repo.owner}/${repo.name}/${path}`, { signal });
-  return body === null ? null : (JSON.parse(body) as T);
+  return body === null ? null : parseGitHubJson<T>(body);
 }
 
 const when = (iso: string) => `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;

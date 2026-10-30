@@ -427,6 +427,27 @@ Committing, creating branches, pushing and opening pull requests need approval, 
 covered by a task permission. Merge, rebase and reset are not tools: if you ask for one, the agent proposes it
 through `run_command`, where it is flagged as high risk (a force push there is flagged critical).
 
+### Code review
+
+**Review…** in the conversation header (or just asking, e.g. "review my changes" or "review PR #12") reviews
+**uncommitted changes**, **this branch** against its base (the remote's default branch unless you name one), or a
+**GitHub pull request**, read through `gh` with your sign-in. An optional focus ("security", "error handling")
+narrows it.
+
+- `review_changes` gives the model the diff (new files included, credential files hidden) and records which lines
+  changed. `report_findings` finishes the review, and the findings appear as a **Code review** card, most severe
+  first.
+- Each finding has a severity (critical, high, medium, low, nit), `file:line` (opens the file at that line), the
+  reason (the concrete failure, not a vague concern), and usually an exact suggested change shown as a diff.
+- **Friday checks each location**: whether the line is in the changed lines, elsewhere in the file, or doesn't exist,
+  and whether the suggested text to replace is really in the file. Findings that point at nothing are flagged.
+  Friday refuses to record a review the model wrote before it saw the diff, or one where most findings don't match
+  the code. Both happened in testing; the model then re-read the diff and reported correctly.
+- **Fix this** asks Friday to make exactly that change, as a normal edit you approve; **Dismiss** hides a finding
+  (**Restore** brings it back). Nothing is changed during the review itself.
+- For a pull request that isn't checked out, line numbers come from the pull request's diff, and the review says
+  when your local files differ.
+
 ### Task worktrees
 
 Start a task in its own git worktree with the branch-plus button next to **New conversation**. Friday makes a

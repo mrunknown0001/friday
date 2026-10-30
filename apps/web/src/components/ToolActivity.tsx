@@ -1,10 +1,17 @@
-import type { ApprovalDto, AttachmentDto, DeploymentPlanDto, ToolCallStatus } from '@friday/shared';
+import type {
+  ApprovalDto,
+  AttachmentDto,
+  DeploymentPlanDto,
+  ReviewDto,
+  ToolCallStatus,
+} from '@friday/shared';
 import { Ban, Check, ChevronRight, CircleSlash, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn';
 import { ApprovalCard } from './ApprovalCard';
 import { AttachmentThumbs } from './Attachments';
 import { DeploymentPlanCard } from './DeploymentPlanCard';
+import { ReviewCard } from './ReviewCard';
 import { isFailedCommand } from './RunRecord';
 
 export interface ToolItem {
@@ -21,6 +28,7 @@ export interface ToolItem {
   approval?: ApprovalDto | undefined;
   /** Plan recorded by this call (prepare_deployment_plan). Always shown, never collapsed. */
   deploymentPlan?: DeploymentPlanDto | undefined;
+  review?: ReviewDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
   /** Images the tool showed the model (view_image). */
@@ -200,6 +208,7 @@ function ToolRow({ item }: { item: ToolItem }) {
 export function ToolActivity({ items }: { items: ToolItem[] }) {
   if (items.length === 0) return null;
   const plans = items.flatMap((i) => (i.deploymentPlan ? [i.deploymentPlan] : []));
+  const reviews = items.flatMap((i) => (i.review ? [i.review] : []));
   return (
     <>
       <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
@@ -211,6 +220,9 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
       </div>
       {plans.map((p) => (
         <DeploymentPlanCard key={p.id} plan={p} />
+      ))}
+      {reviews.map((r) => (
+        <ReviewCard key={r.id} review={r} />
       ))}
     </>
   );

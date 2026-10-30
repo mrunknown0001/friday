@@ -5,6 +5,7 @@ import type {
   MemoryDto,
   MemoryRef,
   PlanStep,
+  ReviewDto,
   RunDto,
   RunEvent,
   RunPhase,
@@ -40,6 +41,8 @@ export interface LiveRun {
   approvals: Record<string, ApprovalDto>;
   /** Deployment plans recorded during this run. */
   deploymentPlans: DeploymentPlanDto[];
+  /** Code reviews reported during this run. */
+  reviews: ReviewDto[];
   /** Memories shown to the model for this run. */
   memoriesUsed: MemoryRef[];
   /** Memories the agent saved or proposed during this run. */
@@ -62,6 +65,7 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'task_permission',
   'command_output',
   'deployment_plan',
+  'review',
   'memories_used',
   'memory_saved',
   'message_saved',
@@ -76,6 +80,7 @@ export const initial = (runId: string): LiveRun => ({
   plan: null,
   approvals: {},
   deploymentPlans: [],
+  reviews: [],
   memoriesUsed: [],
   memoriesSaved: [],
   taskPermission: null,
@@ -126,6 +131,9 @@ export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
         ...prev.memoriesSaved.filter((m) => m.id !== event.memory.id),
         event.memory,
       ];
+      break;
+    case 'review':
+      next.reviews = [...prev.reviews.filter((r) => r.id !== event.review.id), event.review];
       break;
     case 'deployment_plan':
       next.deploymentPlans = [

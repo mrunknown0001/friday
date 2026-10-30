@@ -779,6 +779,51 @@ export interface VisualComparison {
   createdAt: string;
 }
 
+export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'nit';
+
+/** What a code review looked at. */
+export interface ReviewTarget {
+  kind: 'uncommitted' | 'branch' | 'pull_request' | 'other';
+  /** e.g. "uncommitted changes", "feature-x against main", "pull request #12". */
+  label: string;
+  base: string | null;
+  head: string | null;
+  /** The pull request's page, for pull requests. */
+  url: string | null;
+}
+
+export interface ReviewFinding {
+  /** 1-based, in the order shown (most severe first). */
+  n: number;
+  severity: FindingSeverity;
+  title: string;
+  file: string;
+  line: number | null;
+  /** Model-written: why this is a problem, with the concrete failure. */
+  reason: string;
+  /** An exact edit: replace old_text (copied from the file) with new_text. */
+  suggestion: { oldText: string; newText: string; applies: boolean | null } | null;
+  /** A described fix, when there is no exact edit. */
+  fix: string | null;
+  /**
+   * Checked by Friday: the line is inside the reviewed change, elsewhere in the file, or the file
+   * or line does not exist ("unchecked" when it could not be checked).
+   */
+  location: 'in_change' | 'outside_change' | 'not_found' | 'unchecked';
+  status: 'open' | 'fix_requested' | 'dismissed';
+}
+
+export interface ReviewDto {
+  id: string;
+  sessionId: string;
+  runId: string;
+  toolCallId: string;
+  target: ReviewTarget;
+  summary: string;
+  findings: ReviewFinding[];
+  createdAt: string;
+}
+
 /** A suggested follow-up shown as a chip after a run. */
 export interface NextStep {
   label: string;
@@ -822,6 +867,7 @@ export interface SessionDetailDto extends SessionSummaryDto {
   /** Every run in the session, oldest first (for per-run reports). */
   runs: RunDto[];
   deploymentPlans: DeploymentPlanDto[];
+  reviews: ReviewDto[];
   /** Memories shown to the model, per run id. */
   memoryUsage: Record<string, MemoryRef[]>;
 }
@@ -858,6 +904,7 @@ export type RunEvent =
   | { seq: number; type: 'task_permission'; permission: TaskPermissionDto }
   | { seq: number; type: 'command_output'; callId: string; chunk: string }
   | { seq: number; type: 'deployment_plan'; plan: DeploymentPlanDto }
+  | { seq: number; type: 'review'; review: ReviewDto }
   | { seq: number; type: 'memories_used'; memories: MemoryRef[] }
   | { seq: number; type: 'memory_saved'; memory: MemoryDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }

@@ -25,6 +25,7 @@ import type {
 import { IMAGE_LIMITS } from '../attachments/image.js';
 import { toAttachmentDto, type AttachmentRepo } from '../repositories/attachments.js';
 import type { CaptureRepo } from '../repositories/captures.js';
+import type { ReviewRepo } from '../repositories/reviews.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
@@ -51,7 +52,8 @@ import {
   type ToolExecution,
   type ToolRegistry,
 } from '../tools/registry.js';
-import type { CaptureStore, Proposal, ToolContext } from '../tools/types.js';
+import type { ReviewScope } from '../tools/reviewTools.js';
+import type { CaptureStore, Proposal, ReviewContext, ToolContext } from '../tools/types.js';
 import { detectProject } from '../workspace/detect.js';
 import type { ToolEnvironment } from '../workspace/environment.js';
 import { assertRootAvailable, WorkspaceError } from '../workspace/paths.js';
@@ -89,6 +91,8 @@ export interface RunManagerDeps {
   attachments: AttachmentRepo;
   /** Screenshots and before/after comparisons. */
   captures?: CaptureRepo;
+  /** Code reviews and their findings. */
+  reviews?: ReviewRepo;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
@@ -131,6 +135,8 @@ interface ActiveRun {
   toolCalls: number;
   /** Latest follow-ups the model proposed with suggest_next_steps. */
   modelSuggestions: Array<{ label: string; prompt: string }>;
+  /** What review_changes gathered in this run, for report_findings to check locations against. */
+  reviewScope?: ReviewScope;
   /** Task permission the user approved for this run, if any (see request_task_permissions). */
   permission: TaskPermission | null;
   /** Built-in tools plus the connected apps' tools as they were when the run started. */
@@ -985,6 +991,26 @@ export class RunManager {
     }
   }
 
+  private reviewContext(run: ActiveRun, callId: string): ReviewContext {
+    const reviews = this.deps.reviews!;
+    return {
+      setTarget: (scope) => {
+        run.reviewScope = scope;
+      },
+      target: () => run.reviewScope ?? null,
+      record: (r) => {
+        const review = reviews.create({
+          sessionId: run.sessionId,
+          runId: run.id,
+          toolCallId: callId,
+          ...r,
+        });
+        this.emit(run, { type: 'review', review });
+        return review;
+      },
+    };
+  }
+
   private captureStore(run: ActiveRun): CaptureStore {
     const captures = this.deps.captures!;
     const attachments = this.deps.attachments;
@@ -1008,6 +1034,7 @@ export class RunManager {
       ...(this.deps.codeMap ? { codeMap: this.deps.codeMap } : {}),
       ...(this.deps.capture ? { capture: this.deps.capture } : {}),
       ...(this.deps.captures ? { captures: this.captureStore(run) } : {}),
+      ...(this.deps.reviews ? { reviews: this.reviewContext(run, callId) } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,
