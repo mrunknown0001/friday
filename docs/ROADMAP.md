@@ -248,9 +248,19 @@ approved), credentials never reach the model, and results from other systems are
   Approve applied the one-line fix. Original plan: review uncommitted changes, a branch or a pull request.
   Findings come with severity, `file:line` and a reason, plus suggested fixes the user applies one at a time (each
   a normal approved edit).
-- ⬜ **Safe rename and refactor** (M). Rename a symbol, or move a function, across the project using the code map and
-  references, shown as one multi-file diff to approve. Text matches that may not be the same symbol are listed
-  separately.
+- ✅ **Safe rename and refactor** (M). Done: `find_references` splits a symbol's matches into the same symbol (same
+  file, imports and re-exports, `this`/self, Go packages, PHP namespaces) and text matches that may be something else,
+  with reasons. `rename_symbol` and `move_symbol` (TS/JS) are one multi-file diff to approve. Uncertain matches are
+  listed and left alone unless the model names them. A move brings the imports along, re-points importers and
+  index re-exports, and flags namespace imports and circular imports. Verified live on 2026-10-30 with
+  `claude-sonnet-4.6` on a TypeScript project:
+  - it renamed `cartTotal` through a re-export and a namespace import, leaving a same-named function in another file,
+    a comment, a string and the README;
+  - it moved the function to a new file, then fixed the circular import and namespace import the card pointed out;
+  - `tsc` passed, and a second rename went through the new re-export.
+
+  Original plan: rename a symbol, or move a function, across the project using the code map and references, shown
+  as one multi-file diff to approve. Text matches that may not be the same symbol are listed separately.
 
 **Testing and UI**
 

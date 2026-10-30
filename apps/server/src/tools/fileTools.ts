@@ -117,7 +117,7 @@ const sizeRisk = (p: FileChangePreview): RiskLevel =>
   p.added + p.removed > 400 ? 'high' : 'medium';
 
 /** A computed, not-yet-applied change to one text file. */
-interface FilePlan {
+export interface FilePlan {
   rel: string;
   /** Canonical project root the plan was made for. */
   root: string;
@@ -129,7 +129,7 @@ interface FilePlan {
   fingerprint: string;
 }
 
-async function planWrite(root: string, p: string, content: string): Promise<FilePlan> {
+export async function planWrite(root: string, p: string, content: string): Promise<FilePlan> {
   const target = await resolveForWrite(root, p);
   const before = target.exists ? await readText(target.abs, target.rel) : null;
   if (before?.text === content) {
@@ -153,6 +153,25 @@ const editSchema = z.object({
   replace_all: z.boolean().default(false),
 });
 type Edit = z.infer<typeof editSchema>;
+
+/**
+ * A plan computed from text read earlier: refused when the file no longer has exactly that text,
+ * so offsets found in it still apply.
+ */
+export async function planFromText(
+  root: string,
+  p: string,
+  expectedBefore: string,
+  after: string,
+): Promise<FilePlan> {
+  const plan = await planWrite(root, p, after);
+  if ((plan.before?.text ?? null) !== expectedBefore)
+    throw new WorkspaceError(
+      'unsupported',
+      `"${plan.rel}" changed while the refactoring was being prepared; try again.`,
+    );
+  return plan;
+}
 
 async function planEdit(root: string, p: string, edits: Edit[]): Promise<FilePlan> {
   const target = await resolveForWrite(root, p);
@@ -212,6 +231,27 @@ async function applyPlan(plan: FilePlan, ctx: ToolContext): Promise<void> {
 async function undoPlan(plan: FilePlan): Promise<void> {
   if (plan.before) await atomicWrite(plan.root, plan.abs, plan.before.text, plan.mode);
   else await fs.rm(plan.abs, { force: true });
+}
+
+/** Apply plans all-or-nothing: on a failure, files already written are restored. */
+export async function applyAll(plans: FilePlan[], execCtx: ToolContext): Promise<void> {
+  const done: FilePlan[] = [];
+  const recorded: Parameters<NonNullable<ToolContext['recordFileChange']>>[0][] = [];
+  // Collect change records and only persist them once every file is written.
+  const batchCtx: ToolContext = { ...execCtx, recordFileChange: (c) => recorded.push(c) };
+  try {
+    for (const plan of plans) {
+      await applyPlan(plan, batchCtx);
+      done.push(plan);
+    }
+  } catch (err) {
+    for (const plan of done.reverse()) await undoPlan(plan).catch(() => undefined);
+    throw new WorkspaceError(
+      'unsupported',
+      `Applying the change set failed (${err instanceof Error ? err.message : String(err)}); the ${done.length} file(s) already written were restored.`,
+    );
+  }
+  for (const c of recorded) execCtx.recordFileChange?.(c);
 }
 
 const counts = (p: FileChangePreview) => `+${p.added} −${p.removed}`;
@@ -326,23 +366,7 @@ export const editFiles = defineTool({
       details: { kind: 'file_change', changes: plans.map((p) => p.preview) },
       fingerprint: plans.map((p) => p.fingerprint).join('|'),
       async apply(execCtx) {
-        const done: FilePlan[] = [];
-        const recorded: Parameters<NonNullable<ToolContext['recordFileChange']>>[0][] = [];
-        // Collect change records and only persist them once every file is written.
-        const batchCtx: ToolContext = { ...execCtx, recordFileChange: (c) => recorded.push(c) };
-        try {
-          for (const plan of plans) {
-            await applyPlan(plan, batchCtx);
-            done.push(plan);
-          }
-        } catch (err) {
-          for (const plan of done.reverse()) await undoPlan(plan).catch(() => undefined);
-          throw new WorkspaceError(
-            'unsupported',
-            `Applying the change set failed (${err instanceof Error ? err.message : String(err)}); the ${done.length} file(s) already written were restored.`,
-          );
-        }
-        for (const c of recorded) execCtx.recordFileChange?.(c);
+        await applyAll(plans, execCtx);
         return {
           content: `Changed ${plans.length} files: ${plans.map((p) => `${p.rel} (${counts(p.preview)})`).join(', ')}.`,
           summary: `changed ${plans.length} files (+${added} −${removed})`,

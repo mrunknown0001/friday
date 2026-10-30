@@ -254,22 +254,24 @@ pasted, dropped or picked.
 
 ## Coding agent (Phase 4)
 
-| Module                    | Responsibility                                                                                                                                        |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `git/git.ts`              | Single entry point for git: hardened `-c` overrides, scrubbed env, `GIT_OPTIONAL_LOCKS=0`, porcelain v2 parsing, secret-diff hiding, repo-root check. |
-| `tools/gitTools.ts`       | Read-only git tools plus approval-gated `git_commit` and `git_create_branch`.                                                                         |
-| `ci/logs.ts`              | GitHub Actions job logs: timestamps and colours stripped, steps split, the first real error found, runner paths made relative.                        |
-| `tools/ciTools.ts`        | Read-only `ci_runs` and `ci_failure` over GitHub's REST API through `gh api` (GET only).                                                              |
-| `git/github.ts`           | Remote URL parsing (credentials stripped for display) and the `gh` runner (neutral folder, explicit `--repo`, no prompts).                            |
-| `tools/remoteGitTools.ts` | Approval-gated `git_push` and `create_pull_request`: default-branch and force guards, push plan from local refs, report section from records.         |
-| `tools/fileTools.ts`      | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                   |
-| `commands/locations.ts`   | `file:line` extraction from tool output; verification-command classification.                                                                         |
-| `reports/runReport.ts`    | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                |
-| `tools/reviewTools.ts`    | `review_changes` (diff and changed line ranges per target) and `report_findings` (location and suggestion checks, refusals, `ReviewRepo`).            |
-| `testing/`                | Test insights: suite detection and related tests (`suites.ts`), changed lines and the code fingerprint (`changes.ts`), report parsers (`results.ts`). |
-| `tools/testTools.ts`      | `detect_tests` and approval-gated `run_tests`: builds the command, re-runs failures once, history (`TestRunRepo`), changed-line coverage.             |
-| `worktree/manager.ts`     | Task worktrees: `git worktree add` from the parent's HEAD, dependency links, accept (commit, then merge/squash/keep) and discard.                     |
-| `reports/export.ts`       | A conversation as Markdown (summary or full); `routes/export.ts` serves it, or prints it to PDF through the document renderer.                        |
+| Module                    | Responsibility                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git/git.ts`              | Single entry point for git: hardened `-c` overrides, scrubbed env, `GIT_OPTIONAL_LOCKS=0`, porcelain v2 parsing, secret-diff hiding, repo-root check.               |
+| `tools/gitTools.ts`       | Read-only git tools plus approval-gated `git_commit` and `git_create_branch`.                                                                                       |
+| `ci/logs.ts`              | GitHub Actions job logs: timestamps and colours stripped, steps split, the first real error found, runner paths made relative.                                      |
+| `tools/ciTools.ts`        | Read-only `ci_runs` and `ci_failure` over GitHub's REST API through `gh api` (GET only).                                                                            |
+| `git/github.ts`           | Remote URL parsing (credentials stripped for display) and the `gh` runner (neutral folder, explicit `--repo`, no prompts).                                          |
+| `tools/remoteGitTools.ts` | Approval-gated `git_push` and `create_pull_request`: default-branch and force guards, push plan from local refs, report section from records.                       |
+| `tools/fileTools.ts`      | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                                 |
+| `commands/locations.ts`   | `file:line` extraction from tool output; verification-command classification.                                                                                       |
+| `reports/runReport.ts`    | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                              |
+| `tools/reviewTools.ts`    | `review_changes` (diff and changed line ranges per target) and `report_findings` (location and suggestion checks, refusals, `ReviewRepo`).                          |
+| `refactor/`               | Rename and move: comment/string-aware scanner (`lexer.ts`), imports per language (`modules.ts`), reference split (`references.ts`), TS/JS move planner (`move.ts`). |
+| `tools/refactorTools.ts`  | `find_references`, and approval-gated `rename_symbol` and `move_symbol` (one all-or-nothing multi-file change, `applyAll`).                                         |
+| `testing/`                | Test insights: suite detection and related tests (`suites.ts`), changed lines and the code fingerprint (`changes.ts`), report parsers (`results.ts`).               |
+| `tools/testTools.ts`      | `detect_tests` and approval-gated `run_tests`: builds the command, re-runs failures once, history (`TestRunRepo`), changed-line coverage.                           |
+| `worktree/manager.ts`     | Task worktrees: `git worktree add` from the parent's HEAD, dependency links, accept (commit, then merge/squash/keep) and discard.                                   |
+| `reports/export.ts`       | A conversation as Markdown (summary or full); `routes/export.ts` serves it, or prints it to PDF through the document renderer.                                      |
 
 A _task_ is a run plus the unfinished runs (interrupted, failed, blocked, cancelled) it directly continues. Reports
 and rollback operate on the task. Checkpoints are written after every executed approval, not only at the end of a

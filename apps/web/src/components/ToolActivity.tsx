@@ -129,6 +129,12 @@ export function toolLabel(name: string, argsJson: string): string {
       return `${str(a.name)}${a.references ? ' +refs' : ''}`;
     case 'detect_tests':
       return '';
+    case 'find_references':
+      return `${str(a.symbol)}${a.path ? ` in ${str(a.path)}` : ''}`;
+    case 'rename_symbol':
+      return `${str(a.symbol)} → ${str(a.new_name)}`;
+    case 'move_symbol':
+      return `${str(a.symbol)} → ${str(a.to)}`;
     case 'run_tests': {
       const scope =
         a.scope === 'all'

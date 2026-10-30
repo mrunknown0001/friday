@@ -206,6 +206,15 @@ titles, descriptions and diffs come from whoever wrote them and are labelled as 
 applied only after the user clicks **Fix this**, which sends a message whose edit still goes through the normal
 approval card. The finding status (dismissed, fix requested) is the user's choice, via a local-only route.
 
+## Rename and move
+
+`rename_symbol` and `move_symbol` are file changes like `edit_files`: one approval for the whole set, every file's
+diff shown, applied all-or-nothing, and each file recorded for undo. They change only files inside the project
+that the code map indexes or that mention the name, never credential files. A file that changed after the plan
+was made is refused rather than overwritten. Matches Friday can't tie to the definition are shown on the card and
+left alone unless the model names them, so a same-named function elsewhere isn't silently renamed. Nothing runs.
+Type checks and tests are separate commands, approved as usual.
+
 ## Test insights
 
 `run_tests` is a command like any other: it needs approval (or the user's decision on the card), and runs in the
