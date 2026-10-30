@@ -198,6 +198,14 @@ neutral folder with prompts disabled and uses the user's own sign-in; Friday nev
 untrusted text (anyone who can push a branch controls what a log says). They are clipped and redacted like other
 tool output, and the system prompt treats them as data. GitHub masks repository secrets in logs.
 
+## Code review
+
+Reviewing is read-only: `review_changes` reads local git diffs, or a pull request through `gh api --method GET`.
+`report_findings` only records. Credential files are hidden from the diff and never reported. Pull request
+titles, descriptions and diffs come from whoever wrote them and are labelled as data, not instructions. A fix is
+applied only after the user clicks **Fix this**, which sends a message whose edit still goes through the normal
+approval card. The finding status (dismissed, fix requested) is the user's choice, via a local-only route.
+
 ## Task worktrees
 
 | Threat                               | Mitigation                                                                                                                                                                                                                                                                                 |

@@ -182,3 +182,12 @@ export async function ghApiGet(
     `GitHub API request failed: ${r.stderr.trim().split('\n')[0]?.slice(0, 300) || `exit ${r.code}`}`,
   );
 }
+
+/** Parse a GitHub API response, failing with a readable error instead of a crash. */
+export function parseGitHubJson<T>(body: string): T {
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new WorkspaceError('unsupported', 'GitHub returned a response Friday could not read.');
+  }
+}

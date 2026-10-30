@@ -17,7 +17,7 @@ import {
   Link2,
   OctagonAlert,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { formatBytes } from '../lib/format';
@@ -215,13 +215,16 @@ function ImageFileViewer({
   );
 }
 
-function FileViewer({
+export function FileViewer({
   projectId,
   path,
+  line = null,
   onClose,
 }: {
   projectId: string;
   path: string;
+  /** Scroll to and mark this line (1-based). */
+  line?: number | null;
   onClose: () => void;
 }) {
   const [file, setFile] = useState<FileViewDto | null>(null);
@@ -258,8 +261,21 @@ function FileViewer({
   }, [file]);
   const html = highlighted?.file === file ? highlighted.html : null;
 
+  // Scroll the requested line into view and mark it (measured from the rendered text).
+  const preRef = useRef<HTMLPreElement>(null);
+  const [mark, setMark] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const pre = preRef.current;
+    if (!pre || !line) return;
+    const style = getComputedStyle(pre);
+    const height = parseFloat(style.lineHeight) || 16;
+    const top = (parseFloat(style.paddingTop) || 0) + (line - 1) * height;
+    pre.scrollTop = Math.max(0, top - 3 * height);
+    setMark({ top, height });
+  }, [line, file, html]);
+
   return (
-    <Dialog open onClose={onClose} title={path}>
+    <Dialog open onClose={onClose} title={line ? `${path}:${line}` : path}>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {!file && !error && <p className="text-sm text-zinc-500">Loading…</p>}
       {file && (file.binary || file.tooLarge) && (
@@ -268,7 +284,18 @@ function FileViewer({
         </p>
       )}
       {file?.content != null && (
-        <pre className="max-h-[70vh] overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 font-mono text-[0.78rem] leading-snug">
+        <pre
+          ref={preRef}
+          className="relative max-h-[70vh] overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 font-mono text-[0.78rem] leading-snug"
+        >
+          {mark && (
+            <span
+              aria-hidden
+              data-testid="line-mark"
+              className="pointer-events-none absolute inset-x-0 bg-sky-500/20"
+              style={{ top: mark.top, height: mark.height }}
+            />
+          )}
           {html ? (
             <code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />
           ) : (

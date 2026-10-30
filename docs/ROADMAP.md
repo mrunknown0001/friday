@@ -238,8 +238,16 @@ approved), credentials never reach the model, and results from other systems are
   `node_modules`, the user's checkout stayed untouched, and Accept → Merge from the UI landed it on `main`.
   Original plan: each task can run in its own git worktree and branch, so the user's working tree stays untouched
   until they accept (merge) or discard the result. Uncommitted user changes are never discarded.
-- ⬜ **Code review mode** (M). Review uncommitted changes, a branch or a pull request. Findings come with severity,
-  `file:line` and a reason, plus suggested fixes the user applies one at a time (each a normal approved edit).
+- ✅ **Code review mode** (M). Done: **Review…** (or asking) runs `review_changes` (uncommitted, branch against base,
+  or a GitHub pull request via `gh`) and `report_findings`. The findings card shows severity, `file:line`
+  (opening the file at the line), the reason and an exact suggested change. Friday checks every location and
+  suggestion, and refuses reviews written before the diff was seen or mostly not matching the code. **Fix this**
+  sends exactly that fix as a normal approved edit; **Dismiss**/**Restore**. Verified live on 2026-10-30 with
+  `claude-sonnet-4.6`: the first attempt invented findings (report in the same turn as the diff request), and the
+  guard refused it. The retry found the SQL injection, the off-by-one and the percent bug, and **Fix this** →
+  Approve applied the one-line fix. Original plan: review uncommitted changes, a branch or a pull request.
+  Findings come with severity, `file:line` and a reason, plus suggested fixes the user applies one at a time (each
+  a normal approved edit).
 - ⬜ **Safe rename and refactor** (M). Rename a symbol, or move a function, across the project using the code map and
   references, shown as one multi-file diff to approve. Text matches that may not be the same symbol are listed
   separately.

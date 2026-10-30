@@ -28,6 +28,7 @@ const detail = (messages: MessageDto[]): SessionDetailDto => ({
   approvals: [],
   runs: [],
   deploymentPlans: [],
+  reviews: [],
   memoryUsage: {},
 });
 
@@ -46,6 +47,7 @@ const props = (d: SessionDetailDto) => ({
   approvals: [],
   onDecide: async () => {},
   deploymentPlans: [],
+  reviews: [],
   onRollback: async () => {},
   onOpenMemory: () => {},
   onRevokeTaskPermission: async () => {},

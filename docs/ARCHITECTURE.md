@@ -265,6 +265,7 @@ pasted, dropped or picked.
 | `tools/fileTools.ts`      | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                   |
 | `commands/locations.ts`   | `file:line` extraction from tool output; verification-command classification.                                                                         |
 | `reports/runReport.ts`    | Checkpoints, verification reports, task chains (`taskRunIds`), and resumption context.                                                                |
+| `tools/reviewTools.ts`    | `review_changes` (diff and changed line ranges per target) and `report_findings` (location and suggestion checks, refusals, `ReviewRepo`).            |
 | `worktree/manager.ts`     | Task worktrees: `git worktree add` from the parent's HEAD, dependency links, accept (commit, then merge/squash/keep) and discard.                     |
 | `reports/export.ts`       | A conversation as Markdown (summary or full); `routes/export.ts` serves it, or prints it to PDF through the document renderer.                        |
 

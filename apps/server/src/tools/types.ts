@@ -5,10 +5,14 @@ import type {
   PermissionCategory,
   PlanStep,
   RiskLevel,
+  ReviewDto,
+  ReviewFinding,
+  ReviewTarget,
   RunReport,
 } from '@friday/shared';
 import { z } from 'zod';
 import type { ImageInfo } from '../attachments/image.js';
+import type { ReviewScope } from './reviewTools.js';
 import type { ToolDefinition } from '../providers/types.js';
 import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
 import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
@@ -46,6 +50,8 @@ export interface ToolContext {
   devops?: DevopsContext;
   /** Screenshots of local pages; null/absent when no browser is available. */
   capture?: { engine: CaptureEngine; fridayPort: () => number | null };
+  /** The code review in progress in this run (review_changes, report_findings). */
+  reviews?: ReviewContext;
   /** Screenshots taken in this conversation (absent when not stored, e.g. in tests). */
   captures?: CaptureStore;
   /** Symbol index of the project (code_map, find_symbol). */
@@ -122,6 +128,12 @@ export interface ToolImage {
   name: string;
   /** Already stored (through ctx.captures): bound to the tool message instead of stored again. */
   attachmentId?: string;
+}
+
+export interface ReviewContext {
+  setTarget(scope: ReviewScope): void;
+  target(): ReviewScope | null;
+  record(r: { target: ReviewTarget; summary: string; findings: ReviewFinding[] }): ReviewDto;
 }
 
 /** Screenshots in this conversation, for before/after comparisons. */
