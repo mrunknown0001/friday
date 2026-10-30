@@ -212,3 +212,65 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
   can be allowed), secrets stay in Friday's config, never in chat, and tool results are treated as untrusted data
   like file contents. Open questions: the transports and auth your servers use (stdio, Streamable HTTP, OAuth or
   API key), and whether Friday should also expose its own tools as an MCP server later.
+
+### Queued (approved 2026-10-30)
+
+Effort: S = small, M = medium, L = large. Every item keeps the existing rules: nothing that changes files, runs
+commands, or reaches another system happens without an approval card (or a task permission or saved action the user
+approved), credentials never reach the model, and results from other systems are data, not instructions.
+
+**Coding workflow**
+
+- ⬜ **Push and pull requests** (M). Friday pushes a branch and opens a GitHub pull request (title, description, the
+  run report as the body) after approval. It never pushes to the default branch and never force-pushes; it uses the
+  user's own `gh`/git credentials, which Friday does not read.
+- ⬜ **Worktree per task** (M). Each task can run in its own git worktree and branch, so the user's working tree
+  stays untouched until they accept (merge) or discard the result. Uncommitted user changes are never discarded.
+- ⬜ **Code review mode** (M). Review uncommitted changes, a branch or a pull request. Findings come with severity,
+  `file:line` and a reason, plus suggested fixes the user applies one at a time (each a normal approved edit).
+- ⬜ **Safe rename and refactor** (M). Rename a symbol, or move a function, across the project using the code map and
+  references, shown as one multi-file diff to approve. Text matches that may not be the same symbol are listed
+  separately.
+
+**Testing and UI**
+
+- ⬜ **Browser flows** (L). Friday drives a local page (navigate, click, type, wait for text) to test a UI flow end to
+  end, with a screenshot and console errors at each step. Local pages only, on the existing capture engines; a flow
+  is a list of steps the user sees before it runs.
+- ⬜ **Before/after visuals** (S–M). Around a UI change, capture the page before and after, and show them side by
+  side (with a highlighted difference) in the run report.
+- ⬜ **Test insights** (M). Detect the test framework, run the tests related to the changed files first, and
+  summarise failures (first error, `file:line`), slow and flaky tests, with optional coverage for the changed lines.
+- ⬜ **Dependency upgrades** (M). A report of outdated and vulnerable packages, an upgrade plan with changelog
+  highlights and breaking changes, then the upgrade and a test run, each step approved. It follows the
+  "releases at least two weeks old" rule by default.
+
+**DevOps**
+
+- ⬜ **CI diagnosis** (S–M). Read the project's GitHub Actions runs and logs (read-only), find the first real
+  failure, relate it to the code, and propose a fix as a normal approved change.
+- ⬜ **Docker Compose control** (M). For the project's compose file only: bring services up or down, restart them,
+  tail logs and run health checks, each change with approval. It never touches other containers, and never
+  removes volumes unless the user explicitly asks, at high risk.
+- ⬜ **Database, read-only** (M–L). Connections the user adds in Settings (Postgres, MySQL, SQLite), with credentials
+  kept like SSH keys and never shown to the model. Schema browsing, and read-only queries with approval, row and time
+  limits, and a read-only session or transaction. Writes stay disabled; the `database` category is enabled only for
+  these tools.
+- ⬜ **Health monitors** (M). Scheduled checks of URLs, SSH hosts and background processes every N minutes. When
+  something breaks or recovers, a notification and a status panel show it. Checks are read-only and use authorized
+  hosts only.
+
+**Platform**
+
+- ⬜ **Saved actions (runbooks)** (M). The user defines a named procedure once (exact commands or steps, where it runs,
+  its risk), such as "deploy staging". Friday runs it on request with one approval per run that shows every step.
+  The model cannot edit saved actions.
+- ⬜ **Usage and cost view** (S). Tokens, calls and time per conversation, model and day, from Friday's own provider
+  records (no prompt content), as a small chart in Settings.
+- ⬜ **Export conversations** (S). Export a conversation (messages, tool results, approvals and the run report) as
+  Markdown or PDF with the document generator; secrets are redacted as everywhere else.
+
+Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
+conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,
+test insights, safe rename, then saved actions, Docker Compose, health monitors, dependency upgrades, browser flows
+and the read-only database.
