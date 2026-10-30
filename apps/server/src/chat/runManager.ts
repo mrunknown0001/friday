@@ -551,6 +551,7 @@ export class RunManager {
           initial.session.summary,
           fit.dropped,
           run.controller.signal,
+          run.sessionId,
         );
         sessions.setSummary(
           run.sessionId,
@@ -831,6 +832,7 @@ export class RunManager {
             maxOutputTokens: this.deps.maxOutputTokens ?? 8_192,
             signal: run.controller.signal,
             operation: 'chat',
+            sessionId: run.sessionId,
             ...(tools.length ? { tools, toolChoice: 'auto' as const } : {}),
           },
           caps,

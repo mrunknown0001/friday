@@ -1,30 +1,7 @@
-import { imageTokens } from '../attachments/image.js';
+import { estimateMessageTokens, estimateTokens } from '../providers/tokens.js';
 import type { ChatMessage, LLMProvider } from '../providers/types.js';
 
-/** Rough, provider-agnostic token estimate. Deliberately pessimistic (~3.5 chars/token). */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3.5);
-}
-
-export function estimateMessageTokens(m: ChatMessage): number {
-  const overhead = 6;
-  switch (m.role) {
-    case 'assistant':
-      return (
-        overhead +
-        estimateTokens(m.content ?? '') +
-        (m.toolCalls ?? []).reduce((n, tc) => n + estimateTokens(tc.name + tc.argumentsJson), 0)
-      );
-    case 'user':
-      return (
-        overhead +
-        estimateTokens(m.content) +
-        (m.images ?? []).reduce((n, img) => n + imageTokens(img.width, img.height), 0)
-      );
-    default:
-      return overhead + estimateTokens(m.content);
-  }
-}
+export { estimateMessageTokens, estimateTokens };
 
 export interface HistoryItem {
   id: number;
@@ -186,6 +163,7 @@ export async function summarizeHistory(
   previousSummary: string | null,
   dropped: HistoryItem[],
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<string> {
   const transcript = dropped
     .map((h) => {
@@ -209,6 +187,7 @@ export async function summarizeHistory(
     operation: 'summarize',
     maxOutputTokens: 800,
     ...(signal ? { signal } : {}),
+    ...(sessionId ? { sessionId } : {}),
     messages: [
       {
         role: 'system',

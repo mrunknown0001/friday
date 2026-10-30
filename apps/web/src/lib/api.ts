@@ -26,11 +26,13 @@ import type {
   MessageDto,
   ModelCapabilities,
   ModelInfo,
+  ModelPrice,
   ProviderCallDto,
   RunDto,
   SessionDetailDto,
   SessionSummaryDto,
   SettingsDto,
+  UsageSummaryDto,
 } from '@friday/shared';
 
 export class ApiError extends Error {
@@ -109,6 +111,10 @@ export const api = {
   setContextWindow: (tokens: number | null) =>
     request<ModelCapabilities>('PUT', '/api/provider/capabilities/context-window', { tokens }),
   providerCalls: () => request<{ calls: ProviderCallDto[] }>('GET', '/api/provider/calls'),
+  usage: (days: number, tzOffsetMinutes: number) =>
+    request<UsageSummaryDto>('GET', `/api/usage?days=${days}&tz=${tzOffsetMinutes}`),
+  saveUsagePrices: (prices: Record<string, ModelPrice>) =>
+    request<{ prices: Record<string, ModelPrice> }>('PUT', '/api/usage/prices', { prices }),
 
   system: () => request<SystemInfoDto>('GET', '/api/system'),
   projects: () => request<{ projects: ProjectDto[] }>('GET', '/api/projects'),

@@ -78,6 +78,45 @@ export interface ProviderCallDto {
   attempts: number;
   inputTokens: number | null;
   outputTokens: number | null;
+  /** The provider reported no token counts; these are Friday's estimate. */
+  tokensEstimated: boolean;
+}
+
+/** A user-entered price for a model, in US dollars per million tokens. */
+export interface ModelPrice {
+  input: number;
+  output: number;
+}
+
+export interface UsageTotals {
+  /** Model requests (chat, summaries, probes, connection tests); model listings are not counted. */
+  calls: number;
+  errors: number;
+  /** Calls whose token counts are Friday's estimate (the provider reported none). */
+  estimatedCalls: number;
+  /** Calls with no token counts at all: failed ones, and those recorded before Friday estimated. */
+  callsWithoutTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Time spent waiting for the model. */
+  durationMs: number;
+  /** Estimated from the prices entered in Settings; null when none of the calls has a price. */
+  cost: number | null;
+}
+
+export interface UsageSummaryDto {
+  days: number;
+  /** Start of the range (UTC), the local midnight `days - 1` days ago. */
+  since: string;
+  totals: UsageTotals;
+  /** One entry per local day in the range, oldest first, including days without calls. */
+  byDay: Array<UsageTotals & { day: string }>;
+  byModel: Array<UsageTotals & { model: string }>;
+  /** The conversations that used the most tokens, at most 20. */
+  bySession: Array<UsageTotals & { sessionId: string; title: string | null; deleted: boolean }>;
+  /** Calls made outside a conversation: capability probes and connection tests. */
+  outsideSessions: UsageTotals;
+  prices: Record<string, ModelPrice>;
 }
 
 export interface ProjectDto {

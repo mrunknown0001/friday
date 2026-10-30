@@ -265,8 +265,13 @@ approved), credentials never reach the model, and results from other systems are
 - ⬜ **Saved actions (runbooks)** (M). The user defines a named procedure once (exact commands or steps, where it runs,
   its risk), such as "deploy staging". Friday runs it on request with one approval per run that shows every step.
   The model cannot edit saved actions.
-- ⬜ **Usage and cost view** (S). Tokens, calls and time per conversation, model and day, from Friday's own provider
-  records (no prompt content), as a small chart in Settings.
+- ✅ **Usage and cost view** (S). Done: Settings → Usage, with totals, tokens per day (hover or table), the top
+  conversations and a by-model table, over 7, 30 or 90 days. Provider calls now record their conversation, and
+  earlier calls were linked to theirs by run time. NoTokenLimit sends no usage on streamed replies (checked
+  2026-10-30 for opus-5.5, sonnet-4.6 and haiku-4.5), so Friday records its own estimate and marks it `~`. Cost is
+  an estimate from per-model prices the user enters, because NoTokenLimit publishes none. Original plan: tokens,
+  calls and time per conversation, model and day, from Friday's own provider records (no prompt content), as a
+  small chart in Settings.
 - ⬜ **Export conversations** (S). Export a conversation (messages, tool results, approvals and the run report) as
   Markdown or PDF with the document generator; secrets are redacted as everywhere else.
 

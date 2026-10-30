@@ -21,12 +21,13 @@ tool execution happen in the server process.
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `config.ts`                 | Validates the environment with zod. Fails fast with variable names only, never values.                                                                          |
 | `db/`                       | Opens SQLite via Node's built-in `node:sqlite` (WAL, foreign keys), applies append-only migrations each in its own transaction, and holds the data-folder lock. |
-| `repositories/`             | Narrow data-access classes: sessions, messages, runs, settings, capabilities, provider calls, audit.                                                            |
+| `repositories/`             | Narrow data-access classes: sessions, messages, runs, settings, capabilities, provider calls, usage, audit.                                                     |
 | `providers/types.ts`        | The provider-neutral `LLMProvider` interface and message, tool, and stream-event types.                                                                         |
 | `providers/notokenlimit.ts` | OpenAI SDK adapter: request mapping, streaming, tool-call reassembly, idle timeout, response validation, telemetry.                                             |
 | `providers/errors.ts`       | Maps any SDK or network failure to a `ProviderError` with a `kind` and a `retryable` flag.                                                                      |
 | `providers/retry.ts`        | Bounded exponential backoff with jitter. Retries only transient kinds and honours `Retry-After` (capped).                                                       |
 | `providers/capabilities.ts` | Conservative context-window defaults and a live probe for streaming and tool calling.                                                                           |
+| `providers/tokens.ts`       | Rough token estimates, for context fitting and for usage the provider does not report.                                                                          |
 | `chat/context.ts`           | Token estimation, history fitting (keeps tool-call groups intact), and summarization of history that no longer fits.                                            |
 | `chat/runManager.ts`        | Owns run lifecycles: event buffering for SSE replay, cancellation, checkpointing, persistence, one active run per session.                                      |
 | `http/`                     | Local-only guards, routes, SSE, and error mapping.                                                                                                              |
