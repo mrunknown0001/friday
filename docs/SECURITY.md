@@ -218,6 +218,22 @@ trusted keys, so editing any of them makes a shown card stale. Local steps go th
 key is trusted. Production hosts need their name typed and get the short approval lifetime. The run's risk is at
 least the declared risk and is raised by what the commands and hosts imply.
 
+## Docker Compose
+
+`compose_status` and `compose_control` work only on a compose file inside the project (resolved like any project
+path, so no traversal, symlink escape or credential file). Every command pins the files (`-f`), the project
+directory and the project name (`-p`), and runs without a shell, with the filtered environment. Before acting,
+Friday checks the containers that carry the project name. If any was created from another compose file (another
+project or checkout with the same name), it refuses to act or show their logs. The model never sees environment
+values, labels, commands or secrets from the resolved configuration (it is parsed for images, ports, dependencies
+and volumes only). Its hash goes into the approval fingerprint, together with the exact arguments and the
+container ids, so a changed file, `.env` or container set makes a shown card stale. `up` runs with `--pull never
+--no-build` unless the model asks for a pull or a build, which raises the risk and shows on the card. Removing
+volumes is limited to `down` of the whole project, is rated critical, needs the compose project name typed
+(enforced by the server) and gets the short approval lifetime. Settings that give a service broad access to the
+machine (privileged, the Docker socket, host networking) are listed and raise starts to high risk. Logs are
+redacted like any tool output.
+
 ## Rename and move
 
 `rename_symbol` and `move_symbol` are file changes like `edit_files`: one approval for the whole set, every file's

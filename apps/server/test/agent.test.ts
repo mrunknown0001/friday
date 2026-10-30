@@ -254,6 +254,8 @@ describe('tool executor', () => {
         'create_document',
         'create_spreadsheet',
         'create_presentation',
+        'compose_status',
+        'compose_control',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;

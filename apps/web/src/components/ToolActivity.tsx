@@ -90,6 +90,14 @@ export function toolLabel(name: string, argsJson: string): string {
       return `${str(a.source)}${a.query ? ` "${str(a.query)}"` : ''}`;
     case 'inspect_docker':
       return `${str(a.view)}${a.container ? ` ${str(a.container)}` : ''}`;
+    case 'compose_status':
+    case 'compose_control': {
+      const svcs =
+        Array.isArray(a.services) && a.services.length
+          ? ` ${(a.services as unknown[]).map(str).join(', ')}`
+          : '';
+      return `${str(a.action ?? a.view ?? 'status')}${svcs}${a.removeVolumes ? ' (remove volumes)' : ''}`;
+    }
     case 'validate_config':
       return str(a.path);
     case 'prepare_deployment_plan':

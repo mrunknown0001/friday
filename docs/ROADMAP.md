@@ -314,9 +314,20 @@ approved), credentials never reach the model, and results from other systems are
   found the off-by-one column in the failing snapshot and read the right test file first. Original plan: read the
   project's GitHub Actions runs and logs (read-only), find the first real failure, relate it to the code, and
   propose a fix as a normal approved change.
-- ⬜ **Docker Compose control** (M). For the project's compose file only: bring services up or down, restart them,
-  tail logs and run health checks, each change with approval. It never touches other containers, and never
-  removes volumes unless the user explicitly asks, at high risk.
+- ✅ **Docker Compose control** (M). Done: `compose_status` (each service's state, health check result, restarts
+  and whether its published ports accept connections; logs) runs freely, and `compose_control` (up, start, stop,
+  restart, down) needs approval. The compose file is the project root's default file with its override, or any
+  compose file inside the project. Files and project name are pinned on every call, and the containers'
+  config-file labels must match, so another project or checkout with the same project name is refused. Images
+  are never pulled or built unless asked (`--pull never --no-build`), and a missing image is reported before the
+  card. Deleting volumes is critical risk and needs the project name typed. The card lists the services
+  (dependencies marked), the exact command and the volumes that would be deleted. After up/start/restart, Friday
+  waits for the services to be running and healthy and reports each one. Verified live on 2026-10-31 with
+  `claude-sonnet-4.6` on a throwaway nginx + redis stack: status, `up web` (with its dependency), a refusal to
+  restart another project's container, `down` keeping the volume, then `down` deleting it after the typed name.
+  The `.env` secret never reached the conversation. Original plan: for the project's compose file only: bring
+  services up or down, restart them, tail logs and run health checks, each change with approval. It never
+  touches other containers, and never removes volumes unless the user explicitly asks, at high risk.
 - ⬜ **Database, read-only** (M–L). Connections the user adds in Settings (Postgres, MySQL, SQLite), with credentials
   kept like SSH keys and never shown to the model. Schema browsing, and read-only queries with approval, row and time
   limits, and a read-only session or transaction. Writes stay disabled; the `database` category is enabled only for
