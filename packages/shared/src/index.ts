@@ -218,6 +218,15 @@ export type ApprovalDetails =
       background?: { name: string } | null;
     }
   | {
+      kind: 'document';
+      path: string;
+      format: 'pdf' | 'docx' | 'xlsx' | 'pptx';
+      change: 'create' | 'modify';
+      title: string;
+      /** What is inside: headings, sheets with their size, or slide titles. */
+      outline: string[];
+    }
+  | {
       kind: 'mcp';
       /** Server name and URL as the user configured them. */
       server: string;

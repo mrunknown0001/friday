@@ -33,7 +33,9 @@ export function toolLabel(name: string, argsJson: string): string {
   try {
     a = JSON.parse(argsJson || '{}') as Record<string, unknown>;
   } catch {
-    return argsJson.slice(0, 80);
+    // Long arguments (a document's body) are stored clipped; the path still leads them.
+    const p = /^\{\s*"path"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(argsJson);
+    return p ? p[1]! : argsJson.slice(0, 80);
   }
   const str = (v: unknown) =>
     typeof v === 'string' ? v : v === undefined ? '' : JSON.stringify(v);
@@ -102,6 +104,10 @@ export function toolLabel(name: string, argsJson: string): string {
     case 'list_processes':
       return '';
     case 'view_image':
+      return str(a.path);
+    case 'create_document':
+    case 'create_spreadsheet':
+    case 'create_presentation':
       return str(a.path);
     case 'screenshot':
       return `${str(a.url ?? a.process_id)}${a.path ? str(a.path) : ''}${a.full_page ? ' (full page)' : ''}`;

@@ -22,6 +22,7 @@ import {
   gitStatus,
 } from './gitTools.js';
 import { codeMapTool, findSymbol } from './codeMapTools.js';
+import { createDocument, createPresentation, createSpreadsheet } from './documentTools.js';
 import { viewImage } from './imageTools.js';
 import { screenshot } from './screenshotTool.js';
 import { remember, searchMemory } from './memoryTools.js';
@@ -99,6 +100,9 @@ export const DEFAULT_TOOLS = [
   writeFile,
   editFile,
   editFiles,
+  createDocument,
+  createSpreadsheet,
+  createPresentation,
   deleteFile,
   moveFile,
   runCommand,

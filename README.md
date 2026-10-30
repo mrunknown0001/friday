@@ -162,6 +162,23 @@ dialog suggests one for the project's stack (e.g. `node:22-bookworm-slim`), show
 your machine. Commands can still change files in the project folder, so review them as usual. Requires Docker (checked
 at startup and from the dialog).
 
+### Documents: PDF, Word, Excel, PowerPoint
+
+Ask Friday for a report, plan, roadmap, overview or status deck and it writes the file into the project:
+
+| Format     | Tool                  | How Friday writes it                                                                       |
+| ---------- | --------------------- | ------------------------------------------------------------------------------------------ |
+| PDF / Word | `create_document`     | Markdown: headings, lists, task lists, tables, code, quotes, links, page breaks            |
+| Excel      | `create_spreadsheet`  | sheets of typed columns (text, number, currency, percent, date); frozen, styled header     |
+| PowerPoint | `create_presentation` | a title slide, then slides with bullets, a small table, speaker notes, or section dividers |
+
+All four share one clean built-in style. Each file is a normal approved change. The card shows the document's
+outline (headings, sheets with their size, or slide titles). The file is generated when you approve, can be undone
+from the Changes list, and appears in the file tree. There, and on the card, the desktop app offers **Open** (in your
+default app) and the browser version **Download**. PDFs are printed by the same browser as screenshots, with
+scripts off and no network: the desktop app's built-in Chromium, or an installed Chrome. Without a browser, Friday
+writes Word instead. Spreadsheet values are never written as formulas.
+
 ### Screenshots and live preview
 
 - **Screenshots:** Friday can open a page on this machine (for example a dev server it started with `start_process`)

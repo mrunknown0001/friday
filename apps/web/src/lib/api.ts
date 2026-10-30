@@ -120,7 +120,12 @@ export const api = {
     request<ProjectDto>('PUT', `/api/projects/${id}/sandbox`, settings),
   pullSandboxImage: (id: string, image: string) =>
     request<SandboxStatusDto>('POST', `/api/projects/${id}/sandbox/pull`, { image }),
-  previewStatus: () => request<{ screenshots: string | null }>('GET', '/api/preview/status'),
+  previewStatus: () =>
+    request<{ screenshots: string | null; openFiles: boolean }>('GET', '/api/preview/status'),
+  openProjectFile: (id: string, path: string) =>
+    request<{ opened: true }>('POST', `/api/projects/${id}/open`, { path }),
+  projectDownloadUrl: (id: string, path: string) =>
+    `/api/projects/${id}/download?path=${encodeURIComponent(path)}`,
   previewScreenshot: (body: { url: string; width?: number; fullPage?: boolean }) =>
     request<{ attachment: AttachmentDto; title: string; finalUrl: string; problems: string[] }>(
       'POST',

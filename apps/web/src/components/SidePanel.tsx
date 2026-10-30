@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { formatBytes } from '../lib/format';
+import { DocumentActions } from './DocumentActions';
 import { ProcessList } from './Processes';
 import { Dialog } from './ui/dialog';
 
@@ -150,6 +151,28 @@ function TreeNode({
         </ul>
       )}
     </li>
+  );
+}
+
+/** Generated documents: open in their app (desktop) or download. */
+const DOCUMENT_FILE = /\.(pdf|docx|xlsx|pptx)$/i;
+
+function DocumentFileViewer({
+  projectId,
+  path,
+  onClose,
+}: {
+  projectId: string;
+  path: string;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open onClose={onClose} title={path}>
+      <p className="mb-3 text-sm text-zinc-300">
+        A {path.split('.').at(-1)!.toUpperCase()} document. Open it in its app, or download it.
+      </p>
+      <DocumentActions projectId={projectId} path={path} />
+    </Dialog>
   );
 }
 
@@ -424,7 +447,13 @@ export function SidePanel({
       </section>
       {viewing &&
         project &&
-        (IMAGE_FILE.test(viewing) ? (
+        (DOCUMENT_FILE.test(viewing) ? (
+          <DocumentFileViewer
+            projectId={project.id}
+            path={viewing}
+            onClose={() => setViewing(null)}
+          />
+        ) : IMAGE_FILE.test(viewing) ? (
           <ImageFileViewer projectId={project.id} path={viewing} onClose={() => setViewing(null)} />
         ) : (
           <FileViewer projectId={project.id} path={viewing} onClose={() => setViewing(null)} />

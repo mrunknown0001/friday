@@ -173,6 +173,18 @@ never start a process. The server's `onClose` stops everything. Startup's `reapO
 carry the marker. `run_command` and `start_process` share `prepareCommand` (folder, risk, sandbox checks). The system
 prompt lists each process's current status, so the model does not trust stale history.
 
+### Documents (`documents/`, `tools/documentTools.ts`)
+
+`documents/markdown.ts` parses the supported Markdown subset into blocks. Both `html.ts` (print HTML with the
+built-in style, printed with `CaptureEngine.printPdf`: DevTools `Page.printToPDF` with scripts disabled and `Fetch`
+refusing everything, or `webContents.printToPDF` in the desktop shell's offline `friday-print` session) and
+`docx.ts` (the `docx` library) render from those blocks. `office.ts` renders Excel (`write-excel-file`) and
+PowerPoint (`pptxgenjs`, LAYOUT_WIDE with a title slide and a content master). The tools resolve the target with
+`resolveForWrite` and fingerprint only the target's current content: Office files embed timestamps, so they are
+rendered in `apply`, which also does the atomic write and `recordFileChange`, keeping undo working. Routes: `GET
+/api/projects/:id/download` (documents and images) and `POST /api/projects/:id/open` (desktop: `open_path` over the
+utility-process channel).
+
 ### Screenshots and preview (`browser/`, `tools/screenshotTool.ts`, `routes/preview.ts`)
 
 `detectCaptureEngine` picks the engine at startup. Under the desktop shell (`FRIDAY_DESKTOP_CAPTURE=1` and a parent

@@ -192,7 +192,12 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
   you pasting screenshots. Local URLs only (`localhost`/`127.0.0.1`); viewport and full-page options. Builds on
   background processes and image input. Open question: which browser engine (the desktop app's built-in Chromium,
   or a separate headless browser for the web app).
-- ⬜ **Document generation: PDF, Word, Excel and PowerPoint.** Friday writes documents about the code and the work:
+- ✅ **Document generation: PDF, Word, Excel and PowerPoint.** Done: `create_document` (PDF via the built-in or
+  installed browser, Word via `docx`), `create_spreadsheet` (`write-excel-file`), `create_presentation`
+  (`pptxgenjs`), one clean built-in style, saved in the project through approval with an outline, undoable, Open
+  (desktop) / Download. Verified live on 2026-10-30 with `claude-sonnet-4.6`: an overview PDF and Word copy, a
+  task tracker spreadsheet and a status deck about the test shop, accurate to its code; PDF also printed by the
+  desktop app's own Chromium. Original plan: Friday writes documents about the code and the work:
   architecture overviews, plans and roadmaps, run and change reports, test results, estimates. Files are written
   into the project (or an export folder) through the normal approved-change flow, with a preview before saving.
   Open questions: which libraries (each is a new dependency that needs approval), and whether documents follow a

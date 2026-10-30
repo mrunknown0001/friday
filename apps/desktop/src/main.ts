@@ -14,7 +14,7 @@ import {
   type MenuItemConstructorOptions,
   type UtilityProcess,
 } from 'electron';
-import { captureSession, isLocalUrl, serveCaptures } from './capture.js';
+import { captureSession, isLocalUrl, printSession, serveCaptures } from './capture.js';
 
 /**
  * Friday desktop shell. The agent runs in the same local server as the web version, started here
@@ -291,7 +291,7 @@ function isExternalWebUrl(url: string): boolean {
 function lockDownContents(): void {
   app.on('web-contents-created', (_event, contents) => {
     // The hidden screenshot window has its own, stricter session rules (capture.ts).
-    if (contents.session === captureSession()) {
+    if (contents.session === captureSession() || contents.session === printSession()) {
       contents.setWindowOpenHandler(() => ({ action: 'deny' }));
       contents.on('will-attach-webview', (event) => event.preventDefault());
       return;

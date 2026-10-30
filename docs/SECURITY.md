@@ -142,6 +142,16 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Exposing a sandboxed dev server            | Ports are published on `127.0.0.1` only, only for a sandbox with network, and are part of the approval fingerprint.                                                                                            |
 | The model stopping other programs          | `stop_process` (category `process_control`, no approval) only accepts ids of processes Friday started in the same project.                                                                                     |
 
+## Documents
+
+| Threat                                    | Mitigation                                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Writing files without consent             | `create_document`, `create_spreadsheet` and `create_presentation` are `file_create`/`file_modify`: an approval card with the outline, the same path checks as `write_file` (no credential files, nothing outside the project), atomic writes, undo. Not covered by task permissions. |
+| Scripts or remote content in printed PDFs | The Markdown is escaped (raw HTML stays text, only `http(s)`/`mailto` links); the page has a `default-src 'none'` CSP; printing runs with JavaScript disabled and every request refused (DevTools `Fetch`; a separate offline session in the desktop app).                           |
+| Spreadsheet formula injection             | Cells are written as strings, numbers, booleans or dates, never as formulas (a value starting with `=` stays text).                                                                                                                                                                  |
+| Opening files with other programs         | Only on a click, only PDF/Word/Excel/PowerPoint files inside the project; the desktop shell checks the type again before `shell.openPath`. Downloads are limited to documents and images.                                                                                            |
+| Third-party code                          | `docx`, `write-excel-file` and `pptxgenjs` pinned; `image-size` (a `pptxgenjs` dependency it does not call in Node) is forced to the patched 2.0.4 with an npm override; `npm audit` reports 0 vulnerabilities.                                                                      |
+
 ## Screenshots and live preview
 
 | Threat                                        | Mitigation                                                                                                                                                                                                                                                                               |
