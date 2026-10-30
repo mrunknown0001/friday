@@ -249,6 +249,8 @@ pasted, dropped or picked.
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `git/git.ts`              | Single entry point for git: hardened `-c` overrides, scrubbed env, `GIT_OPTIONAL_LOCKS=0`, porcelain v2 parsing, secret-diff hiding, repo-root check. |
 | `tools/gitTools.ts`       | Read-only git tools plus approval-gated `git_commit` and `git_create_branch`.                                                                         |
+| `ci/logs.ts`              | GitHub Actions job logs: timestamps and colours stripped, steps split, the first real error found, runner paths made relative.                        |
+| `tools/ciTools.ts`        | Read-only `ci_runs` and `ci_failure` over GitHub's REST API through `gh api` (GET only).                                                              |
 | `git/github.ts`           | Remote URL parsing (credentials stripped for display) and the `gh` runner (neutral folder, explicit `--repo`, no prompts).                            |
 | `tools/remoteGitTools.ts` | Approval-gated `git_push` and `create_pull_request`: default-branch and force guards, push plan from local refs, report section from records.         |
 | `tools/fileTools.ts`      | Shared write/edit planners; `edit_files` applies a set of plans and restores them all if one fails.                                                   |

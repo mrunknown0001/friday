@@ -189,6 +189,14 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 hooks during `git_commit`. Only the environment variables credential helpers need (ssh agent, WSL interop, desktop
 keyring, `GH_*`/`GITHUB_TOKEN`, proxies) are passed to push and `gh`.
 
+## CI diagnosis
+
+`ci_runs` and `ci_failure` are read-only tools: they call `gh api --method GET` on the project's own repository
+(from its git remote), with no request body, so they cannot re-run, cancel or change anything. `gh` runs in a
+neutral folder with prompts disabled and uses the user's own sign-in; Friday never reads the token. Job logs are
+untrusted text (anyone who can push a branch controls what a log says). They are clipped and redacted like other
+tool output, and the system prompt treats them as data. GitHub masks repository secrets in logs.
+
 ## Conversation export
 
 Exports are a user action from the UI (`GET /api/sessions/:id/export`), never a model tool, and are recorded as

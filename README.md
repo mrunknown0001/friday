@@ -346,6 +346,28 @@ Read-only, no approval needed:
 - `validate_config`: YAML/JSON syntax with line numbers, plus checks for GitHub Actions (missing `runs-on`, unpinned
   actions, script injection, `pull_request_target` checkouts, missing `permissions`) and Docker Compose (privileged
   containers, Docker socket mounts, databases published on all interfaces, hard-coded secrets).
+- `ci_runs` and `ci_failure`: the project's GitHub Actions runs, and why one failed (see below).
+
+### CI diagnosis
+
+Ask about a failing build ("CI is red", "why did run 41016901901 fail?") and Friday reads the project's GitHub
+Actions runs through the GitHub CLI (`gh`), signed in as you; Friday never reads the token. Both tools only make GET
+requests: nothing can re-run, cancel or change anything on GitHub.
+
+- `ci_runs` lists recent runs (current branch by default): workflow, result, branch and commit, and which run
+  tested your current commit.
+- `ci_failure` takes a run (by default the latest failed one on your branch) and reports:
+  - the failed jobs and steps;
+  - the **first real error** from the job log, not the runner's closing "Process completed with exit code 1": the
+    first test failure, compiler or linter error, or stack trace, with a few lines of context;
+  - the run's annotations, and the **project files** the error points at. Runner paths such as
+    `/home/runner/work/app/app/src/x.ts` become `src/x.ts`, and paths relative to a package folder are matched to
+    the project's files;
+  - whether the run tested your current commit, an older one, or one you don't have locally.
+
+Friday then reads those files and proposes a fix as normal approved edits, and runs the same check locally when the
+project allows. Only a new run after you push shows CI passing again. Logs are redacted like any tool output, and
+GitHub keeps them for a limited time.
 
 Servers (**Settings → SSH hosts**):
 
