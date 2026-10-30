@@ -16,6 +16,7 @@ import { registerProjectRoutes } from './http/routes/projects.js';
 import { registerProviderRoutes } from './http/routes/provider.js';
 import { registerSessionRoutes } from './http/routes/sessions.js';
 import { registerUsageRoutes } from './http/routes/usage.js';
+import { registerWorktreeRoutes } from './http/routes/worktrees.js';
 import { registerLocalOnlyGuards } from './http/security.js';
 import type { Services } from './services.js';
 
@@ -111,6 +112,7 @@ export async function buildApp(
   registerMcpRoutes(app, services);
   registerUsageRoutes(app, services);
   registerExportRoutes(app, services);
+  registerWorktreeRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {

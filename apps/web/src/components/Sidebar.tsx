@@ -3,6 +3,8 @@ import {
   Brain,
   FolderPlus,
   FolderX,
+  GitBranch,
+  GitBranchPlus,
   MessageSquarePlus,
   Pencil,
   Settings,
@@ -26,6 +28,8 @@ interface Props {
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Start a conversation in a new task worktree (offered for available git projects). */
+  onNewWorktree?: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
@@ -44,6 +48,7 @@ export function Sidebar({
   activeId,
   onSelect,
   onNew,
+  onNewWorktree,
   onRename,
   onDelete,
   onOpenSettings,
@@ -53,6 +58,8 @@ export function Sidebar({
   const [editing, setEditing] = useState<string | null>(null);
   const current = projects.find((p) => p.id === projectId) ?? null;
   const [draft, setDraft] = useState('');
+  const worktreeOf = (s: SessionSummaryDto) =>
+    projects.find((p) => p.id === s.projectId)?.worktree ?? null;
 
   const commitRename = (id: string) => {
     const title = draft.trim();
@@ -69,15 +76,28 @@ export function Sidebar({
           </div>
           <span className="font-semibold tracking-tight">Friday</span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onNew}
-          aria-label="New conversation"
-          title="New conversation"
-        >
-          <MessageSquarePlus className="h-4 w-4" />
-        </Button>
+        <div className="flex">
+          {onNewWorktree && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onNewWorktree}
+              aria-label="New task in a worktree"
+              title="New task in a worktree: its own folder and branch, so your checkout stays untouched until you accept"
+            >
+              <GitBranchPlus className="h-4 w-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onNew}
+            aria-label="New conversation"
+            title="New conversation"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <div className="border-b border-zinc-800 px-4 pb-3">
@@ -140,12 +160,14 @@ export function Sidebar({
           className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm outline-none focus:border-sky-500"
         >
           <option value="">No project (chat only)</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-              {p.available ? '' : ' (missing)'}
-            </option>
-          ))}
+          {projects
+            .filter((p) => !p.worktree)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.available ? '' : ' (missing)'}
+              </option>
+            ))}
         </select>
         {current && (
           <p className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={current.rootPath}>
@@ -192,6 +214,15 @@ export function Sidebar({
                     aria-current={s.id === activeId ? 'page' : undefined}
                     className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
                   >
+                    {worktreeOf(s) && (
+                      <GitBranch
+                        className={cn(
+                          'h-3.5 w-3.5 shrink-0',
+                          worktreeOf(s)!.status === 'active' ? 'text-sky-400' : 'text-zinc-500',
+                        )}
+                        aria-label={`Task worktree, ${worktreeOf(s)!.status}`}
+                      />
+                    )}
                     <span className="truncate">{s.title}</span>
                     {s.lastRunStatus && s.lastRunStatus !== 'completed' && (
                       <Badge tone={RUN_STATUS_TONE[s.lastRunStatus]}>{s.lastRunStatus}</Badge>

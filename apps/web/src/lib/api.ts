@@ -33,6 +33,7 @@ import type {
   SessionSummaryDto,
   SettingsDto,
   UsageSummaryDto,
+  WorktreeStatusDto,
 } from '@friday/shared';
 
 export class ApiError extends Error {
@@ -155,6 +156,21 @@ export const api = {
     download(
       `/api/sessions/${id}/export?format=${opts.format}&detail=${opts.detail}&tz=${opts.tzOffsetMinutes}`,
     ),
+  createWorktree: (projectId: string, title?: string) =>
+    request<{ project: ProjectDto; sessionId: string }>(
+      'POST',
+      `/api/projects/${projectId}/worktrees`,
+      title ? { title } : {},
+    ),
+  worktreeStatus: (projectId: string) =>
+    request<WorktreeStatusDto>('GET', `/api/projects/${projectId}/worktree`),
+  acceptWorktree: (projectId: string, mode: 'merge' | 'squash' | 'branch', message: string) =>
+    request<{ project: ProjectDto }>('POST', `/api/projects/${projectId}/worktree/accept`, {
+      mode,
+      message,
+    }),
+  discardWorktree: (projectId: string) =>
+    request<{ project: ProjectDto }>('POST', `/api/projects/${projectId}/worktree/discard`),
   previewStatus: () =>
     request<{ screenshots: string | null; openFiles: boolean }>('GET', '/api/preview/status'),
   openProjectFile: (id: string, path: string) =>

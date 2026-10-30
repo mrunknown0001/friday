@@ -30,6 +30,8 @@ import { ACCEPTED, imageFiles, prepareImage } from '../lib/images';
 import { ApprovalCard } from './ApprovalCard';
 import { AttachmentThumbs, DraftImages, type DraftImage } from './Attachments';
 import { ExportDialog } from './ExportDialog';
+import { WorktreeBadge } from './WorktreeBadge';
+import { WorktreeDialog } from './WorktreeDialog';
 import { ATTACH_IMAGE_EVENT } from './PreviewPane';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
@@ -68,6 +70,8 @@ interface Props {
   /** Persisted and live deployment plans, matched to tool calls by id. */
   deploymentPlans: DeploymentPlanDto[];
   onRollback: (runId: string) => Promise<void>;
+  /** After a task worktree was accepted or discarded. */
+  onWorktreeChanged?: () => void;
   onOpenMemory: () => void;
   onRevokeTaskPermission: (runId: string) => Promise<void>;
 }
@@ -336,6 +340,7 @@ export function ChatView(props: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [worktreeAction, setWorktreeAction] = useState<'accept' | 'discard' | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   // Shown when the user has scrolled up; `unseen` marks new activity below since then.
@@ -450,10 +455,27 @@ export function ChatView(props: Props) {
     <main className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-5">
         <h1 className="truncate text-sm font-medium text-zinc-200">{detail?.title ?? 'Friday'}</h1>
-        {project && (
+        {project && !project.worktree && (
           <Badge tone="info" title={project.rootPath}>
             <FolderOpen className="h-3 w-3" /> {project.name}
           </Badge>
+        )}
+        {project?.worktree && (
+          <WorktreeBadge
+            project={project}
+            onAccept={() => setWorktreeAction('accept')}
+            onDiscard={() => setWorktreeAction('discard')}
+            busy={running}
+          />
+        )}
+        {worktreeAction && project?.worktree && (
+          <WorktreeDialog
+            project={project}
+            action={worktreeAction}
+            defaultMessage={detail?.title ?? 'Task'}
+            onClose={() => setWorktreeAction(null)}
+            onDone={() => props.onWorktreeChanged?.()}
+          />
         )}
         {detail?.hasSummary && (
           <Badge title="Older messages were summarized to fit the model context window.">

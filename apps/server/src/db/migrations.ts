@@ -466,6 +466,17 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX page_captures_run ON page_captures(run_id);
     `,
   },
+  {
+    version: 17,
+    name: 'worktree_projects',
+    up: `
+      -- A git worktree Friday created for one task is a child project of the project it came from:
+      -- its own folder and branch, so the user's checkout stays untouched until they accept it.
+      ALTER TABLE projects ADD COLUMN parent_id TEXT REFERENCES projects(id) ON DELETE CASCADE;
+      ALTER TABLE projects ADD COLUMN worktree TEXT;
+      CREATE INDEX projects_parent ON projects(parent_id);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

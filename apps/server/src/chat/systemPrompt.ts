@@ -63,6 +63,17 @@ Detected stack: ${detection.stack.join(', ') || 'unknown'}
 Package managers: ${detection.packageManagers.join(', ') || 'none detected'}
 Top level: ${detection.topLevel.slice(0, 40).join('  ')}`
         : ''
+    }${
+      project.worktree
+        ? `
+
+## Task worktree
+You are working in a separate git worktree made for this task, on branch ${project.worktree.branch} (started from ${project.worktree.baseBranch ?? 'a detached HEAD'} at ${project.worktree.base.slice(0, 8)}). The user's own checkout is untouched: they accept the result (merge, squash, or keep the branch) or discard it from the UI, and uncommitted changes here are committed for them on accept, so you don't need to commit. Stay on ${project.worktree.branch}; don't switch branches.${
+            project.worktree.linked.length
+              ? ` These dependency folders are linked from the user's checkout: ${project.worktree.linked.join(', ')}. Installing or removing packages here changes the user's own copy too, so say so before proposing an install.`
+              : ''
+          }${project.worktree.status !== 'active' ? ` This worktree was already ${project.worktree.status}; its folder is gone.` : ''}`
+        : ''
     }
 
 ## Capabilities

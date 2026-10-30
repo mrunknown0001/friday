@@ -76,9 +76,17 @@ export class SessionRepo {
     const rows =
       projectId === undefined
         ? this.db.prepare(`${SELECT} ORDER BY s.updated_at DESC LIMIT ?`).all(limit)
-        : this.db
-            .prepare(`${SELECT} WHERE s.project_id IS ? ORDER BY s.updated_at DESC LIMIT ?`)
-            .all(projectId, limit);
+        : projectId === null
+          ? this.db
+              .prepare(`${SELECT} WHERE s.project_id IS NULL ORDER BY s.updated_at DESC LIMIT ?`)
+              .all(limit)
+          : this.db
+              .prepare(
+                // A project's list includes the conversations in its worktrees.
+                `${SELECT} WHERE s.project_id = ? OR s.project_id IN (SELECT id FROM projects WHERE parent_id = ?)
+               ORDER BY s.updated_at DESC LIMIT ?`,
+              )
+              .all(projectId, projectId, limit);
     return (rows as SessionRow[]).map(toRecord);
   }
 
