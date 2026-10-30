@@ -407,6 +407,40 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 13,
+    name: 'provider_call_sessions',
+    up: `
+      -- The conversation each provider call belongs to, for the usage view. No foreign key: usage
+      -- records outlive deleted conversations.
+      ALTER TABLE provider_calls ADD COLUMN session_id TEXT;
+      CREATE INDEX provider_calls_created ON provider_calls(created_at);
+    `,
+  },
+  {
+    version: 14,
+    name: 'provider_call_sessions_backfill',
+    up: `
+      -- Earlier conversation calls: the run that was going on when the call finished.
+      UPDATE provider_calls SET session_id = (
+        SELECT r.session_id FROM runs r
+         WHERE provider_calls.created_at >= r.started_at
+           AND provider_calls.created_at <= COALESCE(r.finished_at, provider_calls.created_at)
+         ORDER BY r.started_at DESC LIMIT 1
+      ) WHERE session_id IS NULL AND operation IN ('chat', 'summarize');
+      -- The rest belonged to conversations deleted since (their runs went with them).
+      UPDATE provider_calls SET session_id = 'deleted'
+       WHERE session_id IS NULL AND operation IN ('chat', 'summarize');
+    `,
+  },
+  {
+    version: 15,
+    name: 'provider_call_estimates',
+    up: `
+      -- NoTokenLimit reports no usage on streamed replies; Friday then records its own estimate.
+      ALTER TABLE provider_calls ADD COLUMN tokens_estimated INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

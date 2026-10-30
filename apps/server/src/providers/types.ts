@@ -42,6 +42,8 @@ export interface ChatRequest {
   signal?: AbortSignal;
   /** Label recorded in provider telemetry (e.g. "chat", "summarize", "probe"). */
   operation?: string;
+  /** The conversation the call belongs to, recorded in provider telemetry for the usage view. */
+  sessionId?: string;
 }
 
 export interface Usage {
@@ -67,11 +69,14 @@ export interface CompletionResult {
 export interface ProviderCallRecord {
   model: string;
   operation: string;
+  sessionId: string | null;
   status: 'ok' | 'error' | 'cancelled';
   errorKind: ProviderErrorKind | null;
   durationMs: number;
   attempts: number;
   usage: Usage | null;
+  /** True when the provider reported no token counts and Friday estimated them. */
+  tokensEstimated: boolean;
 }
 
 export type ProviderCallRecorder = (record: ProviderCallRecord) => void;

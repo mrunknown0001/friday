@@ -25,7 +25,7 @@ import { ProjectRepo } from './repositories/projects.js';
 import { RunRepo } from './repositories/runs.js';
 import { SessionRepo } from './repositories/sessions.js';
 import { SettingsRepo } from './repositories/settings.js';
-import { AuditRepo, ProviderCallRepo } from './repositories/telemetry.js';
+import { AuditRepo, ProviderCallRepo, UsageRepo } from './repositories/telemetry.js';
 import { ToolCallRepo } from './repositories/toolCalls.js';
 import { Redactor } from './security/redact.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -106,6 +106,7 @@ export interface Services {
   toolEnv: ToolEnvironment;
   capabilities: CapabilityRepo;
   providerCalls: ProviderCallRepo;
+  usage: UsageRepo;
   audit: AuditRepo;
   modelSettings: ModelSettings;
   catalog: ModelCatalog;
@@ -262,6 +263,7 @@ export function createServices(
     toolEnv,
     capabilities,
     providerCalls,
+    usage: new UsageRepo(db),
     audit,
     modelSettings,
     catalog: new ModelCatalog(provider),

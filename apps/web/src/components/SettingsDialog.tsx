@@ -20,6 +20,7 @@ import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
 import { DevopsSettings } from './DevopsSettings';
 import { McpSettings } from './McpSettings';
+import { UsageSettings } from './UsageSettings';
 import { Dialog } from './ui/dialog';
 
 function NotificationSettings() {
@@ -466,6 +467,7 @@ export function SettingsDialog({
       <NotificationSettings />
       <McpSettings />
       <DevopsSettings />
+      <UsageSettings />
       <Section
         title="Recent provider calls"
         aside={
@@ -521,6 +523,7 @@ export function SettingsDialog({
                     </td>
                     <td className="px-2 py-1 text-right">{c.durationMs}</td>
                     <td className="px-2 py-1 text-right">
+                      {c.tokensEstimated && '~'}
                       {c.inputTokens ?? '–'}/{c.outputTokens ?? '–'}
                     </td>
                   </tr>

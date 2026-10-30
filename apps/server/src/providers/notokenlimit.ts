@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type { Redactor } from '../security/redact.js';
 import { classifyError, ProviderError } from './errors.js';
 import { withRetry } from './retry.js';
+import { estimateRequestTokens, estimateTokens } from './tokens.js';
 import type {
   ChatMessage,
   ChatRequest,
@@ -113,18 +114,41 @@ export class NoTokenLimitProvider implements LLMProvider {
   }
 
   private record(
-    req: { model: string; operation?: string | undefined },
+    req: Pick<ChatRequest, 'model' | 'operation' | 'sessionId'> &
+      Partial<Pick<ChatRequest, 'messages' | 'tools'>>,
     started: number,
-    outcome: { error?: ProviderError; attempts: number; usage: Usage | null },
+    outcome: {
+      error?: ProviderError;
+      attempts: number;
+      usage: Usage | null;
+      /** The reply's text and tool calls, to estimate tokens the provider did not report. */
+      output?: string;
+    },
   ) {
+    // NoTokenLimit reports no usage on streamed replies; estimate what a finished call used.
+    let usage = outcome.usage;
+    let tokensEstimated = false;
+    if (!outcome.error && outcome.output !== undefined && req.messages) {
+      if (usage?.inputTokens == null || usage.outputTokens == null) {
+        usage = {
+          inputTokens:
+            usage?.inputTokens ??
+            estimateRequestTokens({ messages: req.messages, tools: req.tools }),
+          outputTokens: usage?.outputTokens ?? estimateTokens(outcome.output),
+        };
+        tokensEstimated = true;
+      }
+    }
     this.opts.recorder?.({
       model: req.model,
       operation: req.operation ?? 'chat',
+      sessionId: req.sessionId ?? null,
       status: !outcome.error ? 'ok' : outcome.error.kind === 'cancelled' ? 'cancelled' : 'error',
       errorKind: outcome.error?.kind ?? null,
       durationMs: Date.now() - started,
       attempts: outcome.attempts,
-      usage: outcome.usage,
+      usage,
+      tokensEstimated,
     });
   }
 
@@ -174,6 +198,7 @@ export class NoTokenLimitProvider implements LLMProvider {
     let attempts = 1;
     let usage: Usage | null = null;
     let finished = false;
+    let output = '';
     try {
       const body = {
         ...toRequestBody(req),
@@ -201,6 +226,7 @@ export class NoTokenLimitProvider implements LLMProvider {
         // Reasoning fields (e.g. `reasoning_content`) are deliberately ignored: hidden reasoning
         // is not shown to users or stored.
         if (typeof delta.content === 'string' && delta.content.length > 0) {
+          output += delta.content;
           yield { type: 'text', delta: delta.content };
         }
         if (Array.isArray(delta.tool_calls)) tools.add(delta.tool_calls);
@@ -214,7 +240,8 @@ export class NoTokenLimitProvider implements LLMProvider {
       for (const call of calls) yield { type: 'tool_call', call };
       if (calls.length > 0) finishReason = 'tool_calls';
       finished = true;
-      this.record(req, started, { attempts, usage });
+      for (const call of calls) output += call.name + call.argumentsJson;
+      this.record(req, started, { attempts, usage, output });
       yield { type: 'finish', finishReason, usage };
     } catch (raw) {
       const err =
@@ -253,7 +280,9 @@ export class NoTokenLimitProvider implements LLMProvider {
         normalizeToolCall(tc.id, tc.function.name, tc.function.arguments),
       );
       const usage = parsed.data.usage ? toUsage(parsed.data.usage) : null;
-      this.record(req, started, { attempts, usage });
+      const output =
+        (choice.message.content ?? '') + toolCalls.map((c) => c.name + c.argumentsJson).join('');
+      this.record(req, started, { attempts, usage, output });
       return {
         text: choice.message.content ?? '',
         toolCalls,

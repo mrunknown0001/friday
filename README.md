@@ -402,6 +402,20 @@ replies with a self-introduction (NoTokenLimit appears to add its own hidden pro
 `claude-sonnet-4.6` and `gemini-3-flash` answered cleanly. Use **Settings → Probe capabilities** before relying on a
 new model for tool use.
 
+### Usage and cost
+
+**Settings → Usage** shows model calls, tokens and time spent waiting for the model over the last 7, 30 or 90 days:
+a bar per day (hover for the numbers, or switch to a table), the conversations that used the most tokens, and a
+breakdown by model. It reads Friday's own record of each model call, which holds no prompt or reply content.
+
+- NoTokenLimit reports token usage only on non-streamed replies, and chat replies are streamed. For those, Friday
+  records its own estimate of what it sent and received (the same estimate it uses to fit the context window), and
+  the view marks such counts with `~`. Calls recorded before this, and failed calls, have no token count and are
+  shown as "no count", not zero.
+- NoTokenLimit is a flat plan and publishes no per-token prices. To see an estimated cost, enter a price per million
+  input and output tokens for each model in the By model table. Prices are stored in Friday's settings, and cost is
+  computed only for models with a price.
+
 ## Data
 
 - SQLite database: `friday.db` in the data folder (`./.data/` for the web app, `~/.config/Friday/data/` for the desktop

@@ -14,6 +14,7 @@ import { registerProcessRoutes } from './http/routes/processes.js';
 import { registerProjectRoutes } from './http/routes/projects.js';
 import { registerProviderRoutes } from './http/routes/provider.js';
 import { registerSessionRoutes } from './http/routes/sessions.js';
+import { registerUsageRoutes } from './http/routes/usage.js';
 import { registerLocalOnlyGuards } from './http/security.js';
 import type { Services } from './services.js';
 
@@ -107,6 +108,7 @@ export async function buildApp(
   registerDevopsRoutes(app, services);
   registerMemoryRoutes(app, services);
   registerMcpRoutes(app, services);
+  registerUsageRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {

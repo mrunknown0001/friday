@@ -74,8 +74,35 @@ describe('NoTokenLimitProvider', () => {
         status: 'ok',
         attempts: 1,
         usage: { inputTokens: 11, outputTokens: 7 },
+        tokensEstimated: false,
       }),
     ]);
+  });
+
+  it('records an estimate when a streamed reply reports no usage', async () => {
+    // NoTokenLimit sends no usage chunk on streamed replies, even when asked to.
+    const { provider, records } = makeProvider([
+      (_c, signal) => sseResponse(textChunks(['Hello']).slice(0, -1), {}, signal),
+      (_c, signal) => sseResponse(textChunks(['x']).slice(0, -1), {}, signal),
+    ]);
+    const events = await collect(provider.streamChat({ ...req, sessionId: 's1' }));
+    // The run still sees that the provider reported nothing.
+    expect(events.at(-1)).toEqual({ type: 'finish', finishReason: 'stop', usage: null });
+    expect(records[0]).toMatchObject({
+      sessionId: 's1',
+      usage: { inputTokens: 7, outputTokens: 2 },
+      tokensEstimated: true,
+    });
+
+    // A failed or cancelled call is not estimated.
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(
+      collect(provider.streamChat({ ...req, signal: ctrl.signal })),
+    ).rejects.toMatchObject({
+      kind: 'cancelled',
+    });
+    expect(records[1]).toMatchObject({ status: 'cancelled', usage: null, tokensEstimated: false });
   });
 
   it('reassembles tool calls whose arguments are split across chunks', async () => {
