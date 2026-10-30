@@ -152,6 +152,7 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     const unsubscribers = [
       s.runManager.onNotice(send),
       s.processes.onChange((process) => send({ type: 'process_updated', process })),
+      s.mcp.onChange((serverId) => send({ type: 'mcp_updated', serverId })),
     ];
     const heartbeat = setInterval(() => raw.write(': ping\n\n'), SSE_HEARTBEAT_MS);
     const end = () => {

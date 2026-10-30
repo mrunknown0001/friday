@@ -162,7 +162,11 @@ export type PermissionCategory =
   | 'database'
   | 'deployment'
   | 'task_permission'
-  | 'process_control';
+  | 'process_control'
+  /** A tool of a connected MCP server: asks every time. */
+  | 'mcp'
+  /** An MCP tool the user allowed to run without asking. */
+  | 'mcp_trusted';
 
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
 
@@ -212,6 +216,20 @@ export type ApprovalDetails =
       } | null;
       /** Set when the command keeps running in the background until stopped (start_process). */
       background?: { name: string } | null;
+    }
+  | {
+      kind: 'mcp';
+      /** Server name and URL as the user configured them. */
+      server: string;
+      serverUrl: string;
+      tool: string;
+      title: string | null;
+      description: string;
+      /** The exact arguments, pretty-printed JSON. */
+      arguments: string;
+      readOnly: boolean | null;
+      destructive: boolean | null;
+      openWorld: boolean | null;
     }
   | {
       kind: 'git';
@@ -425,7 +443,39 @@ export type AppNotice =
       status: RunStatus;
       durationMs: number | null;
     }
-  | { type: 'process_updated'; process: ProcessDto };
+  | { type: 'process_updated'; process: ProcessDto }
+  | { type: 'mcp_updated'; serverId: string };
+
+/** How Friday may use one tool of a connected MCP server. */
+export type McpToolPolicy = 'ask' | 'allow' | 'off';
+
+export interface McpToolDto {
+  name: string;
+  title: string | null;
+  description: string;
+  /** The server's own hints (not guarantees). */
+  readOnly: boolean | null;
+  destructive: boolean | null;
+  policy: McpToolPolicy;
+}
+
+/** A remote MCP server (an app) the user connected in Settings. */
+export interface McpServerDto {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  /** connected: tools usable; needs_auth: sign in first; error: see `error`. */
+  status: 'connected' | 'needs_auth' | 'error' | 'disconnected';
+  error: string | null;
+  /** Signed in with OAuth (tokens stored on this machine). */
+  signedIn: boolean;
+  /** A static access token was configured instead of OAuth. */
+  hasToken: boolean;
+  tools: McpToolDto[];
+  toolsRefreshedAt: string | null;
+  createdAt: string;
+}
 
 /** Code map index of a project (Project settings). */
 export interface CodeMapStatusDto {

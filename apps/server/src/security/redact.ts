@@ -29,6 +29,12 @@ export class Redactor {
     this.literals = knownSecrets.filter((s): s is string => typeof s === 'string' && s.length >= 8);
   }
 
+  /** Secrets learned at runtime (e.g. OAuth access tokens of connected apps). */
+  addSecret(secret: string | null | undefined): void {
+    if (typeof secret === 'string' && secret.length >= 8 && !this.literals.includes(secret))
+      this.literals.push(secret);
+  }
+
   redact(text: string): string {
     let out = text;
     for (const secret of this.literals) {

@@ -21,6 +21,7 @@ export function decide(category: PermissionCategory | undefined): PolicyDecision
     case 'read_only':
     case 'agent_state':
     case 'process_control': // stopping a background process it started (the user approved it)
+    case 'mcp_trusted': // a connected app's tool the user allowed in Settings
       return { action: 'allow' };
     case 'file_create':
     case 'file_modify':
@@ -30,6 +31,7 @@ export function decide(category: PermissionCategory | undefined): PolicyDecision
     case 'remote':
     case 'deployment':
     case 'task_permission':
+    case 'mcp':
       return { action: 'require_approval' };
     case undefined:
       return { action: 'deny', reason: 'Unknown tool.' };

@@ -4,6 +4,8 @@ import type {
   AttachmentDto,
   CodeMapStatusDto,
   FileChangeDto,
+  McpServerDto,
+  McpToolPolicy,
   HostEnvironment,
   LogSourceDto,
   MemoryCategory,
@@ -118,6 +120,27 @@ export const api = {
     request<ProjectDto>('PUT', `/api/projects/${id}/sandbox`, settings),
   pullSandboxImage: (id: string, image: string) =>
     request<SandboxStatusDto>('POST', `/api/projects/${id}/sandbox/pull`, { image }),
+  mcpServers: () => request<{ servers: McpServerDto[] }>('GET', '/api/mcp/servers'),
+  addMcpServer: (body: { name: string; url: string; accessToken?: string }) =>
+    request<{ server: McpServerDto; authorizeUrl: string | null }>(
+      'POST',
+      '/api/mcp/servers',
+      body,
+    ),
+  connectMcpServer: (id: string) =>
+    request<{ server: McpServerDto; authorizeUrl: string | null }>(
+      'POST',
+      `/api/mcp/servers/${id}/connect`,
+    ),
+  signOutMcpServer: (id: string) =>
+    request<McpServerDto>('POST', `/api/mcp/servers/${id}/sign-out`),
+  setMcpServerEnabled: (id: string, enabled: boolean) =>
+    request<McpServerDto>('PATCH', `/api/mcp/servers/${id}`, { enabled }),
+  setMcpToolPolicy: (id: string, tool: string, policy: McpToolPolicy) =>
+    request<McpServerDto>('PUT', `/api/mcp/servers/${id}/tools/${encodeURIComponent(tool)}`, {
+      policy,
+    }),
+  removeMcpServer: (id: string) => request<void>('DELETE', `/api/mcp/servers/${id}`),
   projectCodeMap: (id: string) => request<CodeMapStatusDto>('GET', `/api/projects/${id}/codemap`),
   rebuildCodeMap: (id: string) =>
     request<CodeMapStatusDto>('POST', `/api/projects/${id}/codemap/rebuild`),

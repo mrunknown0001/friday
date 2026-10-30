@@ -382,6 +382,31 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX code_symbols_path ON code_symbols(project_id, path);
     `,
   },
+  {
+    version: 12,
+    name: 'mcp_servers',
+    up: `
+      -- Remote MCP servers the user connected. Credentials (a static token, or OAuth client
+      -- registration and tokens) live only here, in the 0600 database; never sent to the UI.
+      CREATE TABLE mcp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        url TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        access_token TEXT,
+        oauth TEXT,
+        tools TEXT,
+        tools_refreshed_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE mcp_tool_policies (
+        server_id TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+        tool TEXT NOT NULL,
+        policy TEXT NOT NULL CHECK (policy IN ('ask', 'allow', 'off')),
+        PRIMARY KEY (server_id, tool)
+      );
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

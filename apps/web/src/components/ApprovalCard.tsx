@@ -46,6 +46,8 @@ const CATEGORY_LABEL: Record<string, string> = {
   deployment: 'Production change',
   task_permission: 'Task permission',
   process_control: 'Process',
+  mcp: 'Connected app',
+  mcp_trusted: 'Connected app (allowed)',
 };
 
 function TaskPermissionDetails({
@@ -95,6 +97,54 @@ function TaskPermissionDetails({
         Each change is still checked right before it runs, shown in the conversation and can be
         undone. Deleting or moving files, git, remote servers, shell scripts and anything not listed
         here still ask you.
+      </p>
+    </div>
+  );
+}
+
+function McpDetails({ d }: { d: Extract<ApprovalDto['details'], { kind: 'mcp' }> }) {
+  let host = d.serverUrl;
+  try {
+    host = new URL(d.serverUrl).host;
+  } catch {
+    /* shown as configured */
+  }
+  return (
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        <dt className="text-zinc-500">App</dt>
+        <dd className="text-zinc-200">
+          {d.server} <span className="font-mono text-zinc-400">({host})</span>
+        </dd>
+        <dt className="text-zinc-500">Tool</dt>
+        <dd className="font-mono text-zinc-200">
+          {d.tool}
+          {d.title && <span className="ml-2 font-sans text-zinc-400">{d.title}</span>}
+        </dd>
+        {d.description && (
+          <>
+            <dt className="text-zinc-500">The app says</dt>
+            <dd className="text-zinc-300">{d.description}</dd>
+          </>
+        )}
+        <dt className="text-zinc-500">Hints</dt>
+        <dd className="flex flex-wrap gap-1.5">
+          {d.readOnly && <Badge tone="success">read-only</Badge>}
+          {d.destructive && <Badge tone="danger">may delete or overwrite</Badge>}
+          {d.openWorld && <Badge tone="warning">reaches outside the app</Badge>}
+          {!d.readOnly && !d.destructive && !d.openWorld && (
+            <span className="text-zinc-400">none given</span>
+          )}
+        </dd>
+      </dl>
+      <pre
+        aria-label="Exact arguments"
+        className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem] text-zinc-100"
+      >
+        {d.arguments}
+      </pre>
+      <p className="text-xs text-zinc-400">
+        Runs in that app with your account. The app’s hints are its own claims, not guarantees.
       </p>
     </div>
   );
@@ -179,6 +229,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   if (d.kind === 'file_change') return <FileDiffs changes={d.changes} />;
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
+  if (d.kind === 'mcp') return <McpDetails d={d} />;
   const shown = d.argv ? displayArgv(d.argv) : (d.shellCommand ?? '');
   return (
     <div className="space-y-2">

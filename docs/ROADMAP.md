@@ -180,3 +180,26 @@ Status key: ✅ done and tested · 🟡 partial · ⬜ not started
   no-change check, 11 ms lookups. Verified live on 2026-10-30 with `claude-sonnet-4.6` on Friday's own repository:
   a structure question was answered from `code_map` alone, and a "who calls X" question started with
   `find_symbol`, which returned the exact definition and call sites
+
+### Queued (requested 2026-10-30)
+
+- ⬜ **Screenshots for preview.** Friday captures a page itself, for example a dev server started with
+  `start_process`, and looks at the result (and shows it in the conversation), so it can check a UI change without
+  you pasting screenshots. Local URLs only (`localhost`/`127.0.0.1`); viewport and full-page options. Builds on
+  background processes and image input. Open question: which browser engine (the desktop app's built-in Chromium,
+  or a separate headless browser for the web app).
+- ⬜ **Document generation: PDF, Word, Excel and PowerPoint.** Friday writes documents about the code and the work:
+  architecture overviews, plans and roadmaps, run and change reports, test results, estimates. Files are written
+  into the project (or an export folder) through the normal approved-change flow, with a preview before saving.
+  Open questions: which libraries (each is a new dependency that needs approval), and whether documents follow a
+  template or house style.
+- ✅ **MCP client: connect Friday to MCP servers, as Claude does.** Done: remote (Streamable HTTP) servers
+  with OAuth sign-in (or a static token) through the official SDK; tools only; per-tool Ask, Allow or Off.
+  Verified live on 2026-10-30 with `claude-sonnet-4.6` against a local test app: signed in through the real UI
+  and browser, a note was created after one approval, an allowed search ran without asking, and a destructive
+  "delete all" was asked at high risk and, rejected, not run. Original plan: You register MCP servers in Settings
+  (local `stdio` commands or remote HTTP endpoints), and their tools become available to Friday, so it can work
+  with your other apps. Each server's tools get a permission level (ask every time by default; read-only tools
+  can be allowed), secrets stay in Friday's config, never in chat, and tool results are treated as untrusted data
+  like file contents. Open questions: the transports and auth your servers use (stdio, Streamable HTTP, OAuth or
+  API key), and whether Friday should also expose its own tools as an MCP server later.

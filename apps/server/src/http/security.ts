@@ -8,6 +8,9 @@ export const CLIENT_HEADER = 'x-friday-client';
 /** Per-launch secret the desktop shell adds to every request; the renderer never sees it. */
 export const TOKEN_HEADER = 'x-friday-token';
 
+/** Must match mcp/manager.ts CALLBACK_PATH (kept here so the guard has no app imports). */
+export const OAUTH_CALLBACK_PATH = '/oauth/mcp/callback';
+
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -43,7 +46,10 @@ export function registerLocalOnlyGuards(
   });
 
   app.addHook('onRequest', async (req, reply) => {
-    if (expectedToken) {
+    // The browser returning from a connected app's sign-in page: a cross-site navigation without
+    // the launch token. Only the loopback host check applies; the route needs a single-use state.
+    const oauthReturn = req.method === 'GET' && req.url.split('?')[0] === OAUTH_CALLBACK_PATH;
+    if (expectedToken && !oauthReturn) {
       const token = req.headers[TOKEN_HEADER];
       // Compare fixed-length digests so the check takes the same time for any input.
       if (typeof token !== 'string' || !timingSafeEqual(digest(token), expectedToken)) {
@@ -62,7 +68,7 @@ export function registerLocalOnlyGuards(
     if (origin !== undefined && !allowedOrigins.has(origin)) {
       throw new HttpError(403, 'forbidden_origin', 'Cross-origin requests are not allowed.');
     }
-    if (req.headers['sec-fetch-site'] === 'cross-site') {
+    if (req.headers['sec-fetch-site'] === 'cross-site' && !oauthReturn) {
       throw new HttpError(403, 'forbidden_origin', 'Cross-site requests are not allowed.');
     }
     if (
