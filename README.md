@@ -318,6 +318,21 @@ After a completed task Friday shows up to five one-click follow-ups under the an
 Clicking a chip just sends its prompt as your next message; anything it leads to still goes through approvals.
 Cancelled, failed and blocked runs get no chips.
 
+### Exporting a conversation
+
+The download button in the conversation header exports the conversation as **Markdown** or **PDF**:
+
+- **Summary:** your messages and Friday's replies, one line per tool call, every approval with its decision and
+  result, and each run's verification report.
+- **Full:** also each tool's result (up to 20,000 characters each), the reason given for each approval, and the
+  exact action (diffs, commands, pull request text, a connected app's arguments).
+
+Times are in your time zone. Headings inside replies are nested under the conversation's, and images are listed by
+name, not included. Secrets Friday recognizes are redacted in both formats, as everywhere else. The PDF is printed
+in the same style as the documents Friday writes, so it needs a browser engine: the desktop app, or
+`FRIDAY_CHROME`. Markdown works everywhere. Exporting is your action, not a tool the model can call, and it's
+recorded in the audit log.
+
 ## DevOps
 
 Read-only, no approval needed:

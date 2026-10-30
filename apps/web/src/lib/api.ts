@@ -46,6 +46,28 @@ export class ApiError extends Error {
   }
 }
 
+/** Fetch a file the server generates; errors arrive as the usual JSON body. */
+async function download(url: string): Promise<{ blob: Blob; name: string }> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new ApiError(
+      0,
+      'server_unreachable',
+      'Cannot reach the Friday server. Is it running?',
+      true,
+    );
+  }
+  if (!res.ok) {
+    const err = ((await res.json().catch(() => null)) as ApiErrorBody | null)?.error;
+    throw new ApiError(res.status, err?.code ?? 'http_error', err?.message ?? `HTTP ${res.status}`);
+  }
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const name = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
+  return { blob: await res.blob(), name: name ? decodeURIComponent(name) : 'download' };
+}
+
 async function request<T>(
   method: string,
   url: string,
@@ -126,6 +148,13 @@ export const api = {
     request<ProjectDto>('PUT', `/api/projects/${id}/sandbox`, settings),
   pullSandboxImage: (id: string, image: string) =>
     request<SandboxStatusDto>('POST', `/api/projects/${id}/sandbox/pull`, { image }),
+  exportConversation: (
+    id: string,
+    opts: { format: 'md' | 'pdf'; detail: 'summary' | 'full'; tzOffsetMinutes: number },
+  ) =>
+    download(
+      `/api/sessions/${id}/export?format=${opts.format}&detail=${opts.detail}&tz=${opts.tzOffsetMinutes}`,
+    ),
   previewStatus: () =>
     request<{ screenshots: string | null; openFiles: boolean }>('GET', '/api/preview/status'),
   openProjectFile: (id: string, path: string) =>
