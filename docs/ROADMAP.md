@@ -289,9 +289,19 @@ approved), credentials never reach the model, and results from other systems are
   the test framework, run the tests related to the changed files first, and summarise failures (first error,
   `file:line`), slow and flaky tests, with optional coverage for the changed lines.
 
-- ⬜ **Dependency upgrades** (M). A report of outdated and vulnerable packages, an upgrade plan with changelog
-  highlights and breaking changes, then the upgrade and a test run, each step approved. It follows the
-  "releases at least two weeks old" rule by default.
+- ✅ **Dependency upgrades** (M). Done for npm (package-lock.json, workspaces) and Composer (composer.lock):
+  `dependency_report` (outdated and vulnerable direct dependencies, targets at least 14 days old, advisories and
+  whether a target fixes them), `dependency_changelog` (GitHub releases, or CHANGELOG.md where releases are
+  missing, with breaking-change lines), and approval-gated `upgrade_dependencies`. The card shows each version
+  change, age, advisories fixed and breaking-change lines, plus the exact commands. They run like `run_command`,
+  keep the manifest's `^`/`~`/exact style, and the file changes are recorded for undo. Verified live on 2026-10-31
+  with `claude-sonnet-4.6` on a scratch npm project: a security patch (semver 5.7.1 → 5.7.2), and then "upgrade to
+  the latest", where it read the changelog and checked the API the tests use before going to 7.8.5. Tests passed
+  both times. The live run found two bugs, now fixed: an exact pin turning into `^`, and link noise in the
+  breaking-change lines. Composer upgrades are covered by tests and a live report; the install itself was not run
+  live. Original plan: a report of outdated and vulnerable packages, an upgrade plan with changelog highlights and
+  breaking changes, then the upgrade and a test run, each step approved. It follows the "releases at least two
+  weeks old" rule by default.
 - ⬜ **Playwright tests** (M, added 2026-10-31). Friday detects a project's `@playwright/test` setup and writes and
   runs its specs: `run_tests` supports Playwright with its JSON reporter. Each failing test shows its first error
   and `file:line`, plus the screenshot and trace Playwright saved, in the **Tests** card. It runs the specs related to
@@ -370,8 +380,55 @@ approved), credentials never reach the model, and results from other systems are
   live on 2026-10-30 by exporting the push-and-PR test conversation through the UI as a full PDF. Original plan:
   export a conversation (messages, tool results, approvals and the run report) as Markdown or PDF with the
   document generator; secrets are redacted as everywhere else.
+- ⬜ **Voice replies and voice input** (M–L, added 2026-10-31).
+  - **Spoken replies.** A **Voice** toggle in the composer makes Friday also speak its replies. The text reply
+    still appears as usual, and each spoken reply gets play and stop controls inline.
+  - **What is spoken.** Friday speaks the prose and a description of the technical parts, not the parts
+    themselves. Code, logs, diffs, command output, tables, paths and hashes are never read out. A code block is
+    described in a sentence or two: what it is, what it does and its significant line, for example "the fix is
+    the comparison on line 12, which now uses less-than-or-equal, so the last item is counted". Approval cards are
+    announced ("Friday needs your approval to run the tests"), and redacted values stay redacted.
+  - **Voice input.** A microphone button in the composer records while it is on, with a visible recording
+    indicator. The transcript goes into the message box to edit and send. The microphone is used only while the
+    button is on: nothing listens in the background, there is no wake word, and the audio is not stored.
+  - **Voice never approves anything.** Saying "yes" or "approve" is just a message. Approvals still need a click
+    on the card, as now.
+  - Open questions:
+    - Which speech engines. Options are the browser's built-in speech (free, local, quality varies, and
+      recognition does not work in Electron), NoTokenLimit audio models if it offers any, or a local engine such
+      as Piper or whisper.cpp (a new dependency that needs approval).
+    - How the spoken version is written: a second short model call after each reply (costs tokens), or the
+      model writing it alongside the reply.
+    - Whether a transcript should send itself after a pause or always wait for **Send**.
+- ⬜ **Web search and deep research** (L, added 2026-10-31). Friday has no web access today, apart from tools an
+  MCP server provides.
+  - **Search and read.** `web_search` runs a query and returns titles, links and snippets. `read_web_page` fetches a
+    public page and returns its readable text. Both are read-only GET requests, with no cookies or credentials,
+    time and size limits, and http(s) only. Local and private network addresses are refused.
+  - **Deep research.** For a bigger question ("which PDF library fits this project", "why does this error appear
+    after the upgrade", "what changed in the API between the version we use and the latest"), Friday:
+    - plans sub-questions;
+    - runs several searches and reads the sources;
+    - compares what they say and notes where they disagree;
+    - writes a report with every claim linked to its source, and lists the sources it read.
+
+    Progress shows live and can be stopped. Each research has limits on searches, pages and time. The report can be
+    saved with the document generator.
+
+  - **Combined with the code.** Answers are checked against the project: the installed version, how the code
+    actually calls the API, and the lockfile, so advice matches what is in use.
+  - **What leaves the machine.** Only search queries and page addresses. Never file contents or secrets, and
+    queries are checked for secrets the same way memory writes are. Every query and page is shown in the tool
+    activity. Page text is untrusted data: it can inform an answer but cannot trigger an action, and any change it
+    suggests is a normal approved change.
+  - Open questions:
+    - Which search provider. NoTokenLimit may offer none. Options are Brave Search or Tavily (an API key kept in
+      Friday's config, never in chat) or a self-hosted SearXNG.
+    - Whether searches run freely (queries visible), need one approval per research, or one approval per query.
+    - Whether queries may include project details such as an error message or a package name.
 
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,
 test insights, safe rename, then saved actions, Docker Compose, health monitors, dependency upgrades, browser flows
-and the read-only database, then (added 2026-10-31) Playwright tests and k6 load tests.
+and the read-only database, then (added 2026-10-31) Playwright tests, k6 load tests, voice replies and voice input,
+and web search and deep research.

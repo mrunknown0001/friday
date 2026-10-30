@@ -322,6 +322,23 @@ export interface RefactorInfo {
 
 export type ApprovalDetails =
   | {
+      /** upgrade_dependencies: exact package versions, the commands, and what changes. */
+      kind: 'dependency_upgrade';
+      ecosystem: 'npm' | 'composer';
+      /** Project-relative folder with the manifest and lockfile. */
+      folder: string;
+      packages: DependencyUpgradeItem[];
+      /** The exact commands, run in order in `folder` (no shell). */
+      commands: string[][];
+      /** Set when the commands run in the project's container. */
+      sandbox: { image: string; network: 'none' | 'bridge' } | null;
+      /** Manifest and lockfiles that will change (recorded for undo). */
+      files: string[];
+      riskReasons: string[];
+      /** The release-age rule in force (days). */
+      minAgeDays: number;
+    }
+  | {
       /** compose_control: bringing the project's compose services up or down. */
       kind: 'compose';
       action: ComposeAction;
@@ -514,6 +531,38 @@ export type ApprovalDetails =
       maxActions: number;
       minutes: number;
     };
+
+export interface DependencyAdvisory {
+  title: string;
+  severity: string;
+  url: string | null;
+}
+
+export interface DependencyUpgradeItem {
+  name: string;
+  /** npm workspace folder, relative to the npm root (null: the root package). */
+  workspace: string | null;
+  dev: boolean;
+  from: string;
+  to: string;
+  specBefore: string;
+  specAfter: string;
+  change: 'major' | 'minor' | 'patch' | 'downgrade';
+  releasedAt: string | null;
+  ageDays: number | null;
+  /** Younger than the release-age rule (or of unknown age), allowed explicitly. */
+  recent: boolean;
+  /** Advisories the new version is no longer affected by. */
+  fixes: DependencyAdvisory[];
+  /** Advisories that still apply to the new version. */
+  remaining: DependencyAdvisory[];
+  /** Lines from the release notes in between that announce breaking changes. */
+  breaking: string[];
+  /** GitHub repository the notes came from ("owner/name"). */
+  repo: string | null;
+  /** Why notes are missing, when they are. */
+  notesError: string | null;
+}
 
 export type ComposeAction = 'up' | 'start' | 'stop' | 'restart' | 'down';
 export type ComposePull = 'never' | 'missing' | 'always';

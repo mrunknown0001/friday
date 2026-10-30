@@ -257,6 +257,9 @@ describe('tool executor', () => {
         'create_presentation',
         'compose_status',
         'compose_control',
+        'dependency_report',
+        'dependency_changelog',
+        'upgrade_dependencies',
       ].sort(),
     );
     const read = withProject.find((d) => d.name === 'read_file')!;

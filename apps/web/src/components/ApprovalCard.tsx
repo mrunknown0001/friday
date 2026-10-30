@@ -14,6 +14,7 @@ import {
   GitPullRequestArrow,
   KeyRound,
   Loader2,
+  Package as PackageIcon,
   Server,
   ShieldAlert,
   SquareTerminal,
@@ -362,6 +363,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   if (d.kind === 'remote') return <RemoteDetails d={d} />;
   if (d.kind === 'saved_action') return <SavedActionDetails d={d} />;
   if (d.kind === 'compose') return <ComposeDetails d={d} />;
+  if (d.kind === 'dependency_upgrade') return <DependencyUpgradeDetails d={d} />;
   if (d.kind === 'git_remote') return <GitRemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
@@ -627,6 +629,127 @@ function SavedActionDetails({
   );
 }
 
+const CHANGE_TONE: Record<string, Tone> = {
+  patch: 'neutral',
+  minor: 'info',
+  major: 'warning',
+  downgrade: 'warning',
+};
+
+function age(days: number | null): string {
+  if (days === null) return 'release date unknown';
+  if (days < 1) return 'released today';
+  if (days < 60) return `${days} days old`;
+  if (days < 730) return `${Math.round(days / 30)} months old`;
+  return `${Math.round(days / 365)} years old`;
+}
+
+function DependencyUpgradeDetails({
+  d,
+}: {
+  d: Extract<ApprovalDto['details'], { kind: 'dependency_upgrade' }>;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-zinc-300">
+        {d.ecosystem === 'npm' ? 'npm' : 'Composer'} dependencies in{' '}
+        <code className="font-mono text-zinc-100">
+          {d.folder === '.' ? 'the project root' : d.folder}
+        </code>
+        . Versions must be at least {d.minAgeDays} days old unless marked.
+      </p>
+      <ul aria-label="Packages" className="space-y-1.5">
+        {d.packages.map((p) => (
+          <li
+            key={`${p.workspace ?? ''}:${p.name}`}
+            className="rounded-md border border-zinc-800 bg-zinc-950/60 p-2 text-xs"
+          >
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-mono font-medium text-zinc-100">{p.name}</span>
+              <span className="font-mono text-zinc-300">
+                {p.from} → {p.to}
+              </span>
+              <Badge tone={CHANGE_TONE[p.change] ?? 'neutral'}>{p.change}</Badge>
+              {p.dev && <Badge tone="neutral">dev</Badge>}
+              {p.workspace && <span className="font-mono text-zinc-500">{p.workspace}</span>}
+              <span className={p.recent ? 'text-amber-300' : 'text-zinc-500'}>
+                {age(p.ageDays)}
+                {p.recent && ` (under ${d.minAgeDays} days)`}
+              </span>
+              {(p.specBefore !== p.from || p.specAfter !== p.to) && (
+                <span className="ml-auto font-mono text-zinc-500" title="In the manifest">
+                  {p.specBefore} → {p.specAfter}
+                </span>
+              )}
+            </div>
+            {p.fixes.length > 0 && (
+              <p className="mt-1 text-emerald-300">
+                Fixes: {p.fixes.map((a) => `${a.severity} ${a.title}`).join('; ')}
+              </p>
+            )}
+            {p.remaining.length > 0 && (
+              <p className="mt-1 text-red-300">
+                Still affected: {p.remaining.map((a) => `${a.severity} ${a.title}`).join('; ')}
+              </p>
+            )}
+            {p.breaking.length > 0 && (
+              <div className="mt-1">
+                <p className="text-amber-200">
+                  From the release notes{p.repo ? ` (${p.repo})` : ''}, third-party text:
+                </p>
+                <ul
+                  aria-label={`Breaking changes in ${p.name}`}
+                  className="list-disc pl-5 text-zinc-300"
+                >
+                  {p.breaking.map((l, i) => (
+                    <li key={i} className="break-words">
+                      {l}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {p.breaking.length === 0 && p.change !== 'patch' && (
+              <p className="mt-1 text-zinc-500">
+                {p.notesError
+                  ? `Release notes not checked: ${p.notesError}.`
+                  : 'No breaking changes mentioned in the release notes.'}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      {d.commands.map((argv, i) => (
+        <pre
+          key={i}
+          aria-label={d.commands.length > 1 ? `Command ${i + 1}` : 'Exact command'}
+          className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem] text-zinc-100"
+        >
+          <span className="select-none text-zinc-500">$ </span>
+          {displayArgv(argv)}
+        </pre>
+      ))}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        <dt className="text-zinc-500">Runs</dt>
+        <dd className={d.sandbox ? 'text-emerald-300' : 'text-zinc-300'}>
+          {d.sandbox
+            ? `In the project container (${d.sandbox.image}${d.sandbox.network === 'none' ? ', no network' : ''})`
+            : 'On this machine, as your user'}
+        </dd>
+        <dt className="text-zinc-500">Changes</dt>
+        <dd className="font-mono text-zinc-300">{d.files.join(', ')}</dd>
+      </dl>
+      {d.riskReasons.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-200/90">
+          {d.riskReasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const COMPOSE_VERB: Record<string, string> = {
   up: 'Create and start',
   start: 'Start',
@@ -833,7 +956,9 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
             ? KeyRound
             : approval.details.kind === 'compose'
               ? Container
-              : ShieldAlert;
+              : approval.details.kind === 'dependency_upgrade'
+                ? PackageIcon
+                : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);

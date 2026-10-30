@@ -234,6 +234,20 @@ volumes is limited to `down` of the whole project, is rated critical, needs the 
 machine (privileged, the Docker socket, host networking) are listed and raise starts to high risk. Logs are
 redacted like any tool output.
 
+## Dependency upgrades
+
+`dependency_report` and `dependency_changelog` are read-only and run without approval: `npm view` (so the project's
+own registry settings apply), Packagist's public metadata API, `npm audit --package-lock-only` and
+`composer audit --locked --no-plugins --no-scripts`. Only package names and versions leave the machine, and no
+project code runs. Release notes are read through `gh` (GET only) and are labelled as third-party text.
+`upgrade_dependencies` needs approval every time. The model gives exact versions only, and they are checked against
+the registry: a published stable release, at least 14 days old unless the model sets `allow_recent` (shown on the
+card, high risk). The commands are built by Friday (no shell), so package names and versions can't inject
+arguments: both are validated, and names must be direct dependencies of the manifest. Installs are rated like any
+package install in `run_command` (high: downloads code, may run install scripts) and run in the project sandbox
+when it has one. The approval is bound to the hashes of the manifest and lockfiles, the commands and the sandbox
+settings. Changes to those files are recorded for undo.
+
 ## Health monitors
 
 Monitors are created, changed and deleted only through local routes that need the browser client header, and
