@@ -1,6 +1,7 @@
 import type {
   ApprovalDto,
   FileChangeDto,
+  MonitorDto,
   ProcessDto,
   ProjectDto,
   RunDto,
@@ -17,6 +18,7 @@ import { crashed } from './components/Processes';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { ChatView } from './components/ChatView';
 import { MemoryDialog } from './components/MemoryDialog';
+import { investigatePrompt, monitorNotification, MonitorsDialog } from './components/Monitors';
 import { SettingsDialog } from './components/SettingsDialog';
 import { SidePanel } from './components/SidePanel';
 import { Sidebar } from './components/Sidebar';
@@ -73,6 +75,19 @@ export function App() {
   );
   const [runId, setRunId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [monitorsOpen, setMonitorsOpen] = useState(false);
+  const [monitors, setMonitors] = useState<MonitorDto[] | null>(null);
+  const loadMonitors = useCallback(
+    () =>
+      api.monitors().then(
+        (r) => setMonitors(r.monitors),
+        () => undefined,
+      ),
+    [],
+  );
+  useEffect(() => {
+    void loadMonitors();
+  }, [loadMonitors]);
   const [error, setError] = useState<string | null>(null);
 
   const report = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
@@ -172,6 +187,18 @@ export function App() {
     if (n.type === 'mcp_updated') {
       // Settings › Connected apps refreshes itself (e.g. after a browser sign-in finished).
       window.dispatchEvent(new CustomEvent(MCP_UPDATED_EVENT));
+      return;
+    }
+    if (n.type === 'monitor_updated') {
+      const m = n.monitor;
+      setMonitors((cur) => (cur ? cur.map((x) => (x.id === m.id ? m : x)) : cur));
+      // An outage or recovery matters wherever you are, even in this window.
+      if (n.transition)
+        notify({
+          ...monitorNotification(m, n.transition),
+          tag: `monitor-${m.id}`,
+          onClick: () => setMonitorsOpen(true),
+        });
       return;
     }
     if (n.type === 'process_updated') {
@@ -313,6 +340,22 @@ export function App() {
     if (activeId) void loadDetail(activeId);
   };
 
+  /** Open a conversation that asks Friday to find out why a monitor is down. */
+  const investigate = async (m: MonitorDto) => {
+    try {
+      const target = m.projectId && projects.some((p) => p.id === m.projectId) ? m.projectId : null;
+      const session = await api.createSession(target);
+      const { run } = await api.sendMessage(session.id, investigatePrompt(m));
+      setMonitorsOpen(false);
+      setProjectId(target);
+      setActiveId(session.id);
+      await loadDetail(session.id);
+      setRunId(run.id);
+    } catch (e) {
+      report(e);
+    }
+  };
+
   const selectProject = (id: string | null) => {
     if (id === projectId) return;
     setActiveId(null);
@@ -433,6 +476,8 @@ export function App() {
         }
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenMemory={() => setMemoryOpen(true)}
+        onOpenMonitors={() => setMonitorsOpen(true)}
+        monitorsDown={monitors?.filter((m) => m.status === 'down').length ?? 0}
         settingsWarning={!!blockedReason}
       />
       <div className={cn('relative flex flex-[1_1_0]', preview.open ? 'min-w-[400px]' : 'min-w-0')}>
@@ -533,6 +578,16 @@ export function App() {
         />
       )}
       {memoryOpen && <MemoryDialog project={project} onClose={() => setMemoryOpen(false)} />}
+      {monitorsOpen && (
+        <MonitorsDialog
+          monitors={monitors ?? []}
+          projects={projects}
+          defaultProjectId={selectedProject?.id ?? null}
+          onClose={() => setMonitorsOpen(false)}
+          onChanged={() => void loadMonitors()}
+          onInvestigate={(m) => void investigate(m)}
+        />
+      )}
       {/* Mounted only while open so each opening starts from fresh state. */}
       {settingsOpen && (
         <SettingsDialog

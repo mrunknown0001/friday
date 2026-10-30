@@ -133,7 +133,7 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     return { revoked: s.runManager.revokeTaskPermission(id) };
   });
 
-  /** App-wide notices for every conversation (approvals waiting, finished runs, processes). */
+  /** App-wide notices (approvals waiting, finished runs, processes, health monitors). */
   const noticeStreams = new Set<() => void>();
   // These streams stay open for the app's lifetime; end them so shutdown is not held up.
   app.addHook('preClose', async () => {
@@ -155,6 +155,9 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
       s.runManager.onNotice(send),
       s.processes.onChange((process) => send({ type: 'process_updated', process })),
       s.mcp.onChange((serverId) => send({ type: 'mcp_updated', serverId })),
+      s.monitorService.onChange(({ monitor, transition }) =>
+        send({ type: 'monitor_updated', monitor, transition }),
+      ),
     ];
     const heartbeat = setInterval(() => raw.write(': ping\n\n'), SSE_HEARTBEAT_MS);
     const end = () => {

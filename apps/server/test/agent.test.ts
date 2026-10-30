@@ -226,6 +226,7 @@ describe('tool executor', () => {
         'find_files',
         'inspect_docker',
         'inspect_environment',
+        'monitor_status',
         'prepare_deployment_plan',
         'remote_command',
         'remote_diagnose',
@@ -271,6 +272,7 @@ describe('tool executor', () => {
       [
         'inspect_docker',
         'inspect_environment',
+        'monitor_status',
         'prepare_deployment_plan',
         'remember',
         'remote_command',

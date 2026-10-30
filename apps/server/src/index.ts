@@ -60,6 +60,7 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     app.log.info({ signal }, 'shutting down');
+    services.monitorService.stop();
     await services.runManager.shutdown();
     await app.close();
     db.close();
@@ -79,6 +80,8 @@ async function main() {
   parentPort?.postMessage({ type: 'listening', port });
   // OAuth sign-ins return to this port, and screenshots never capture Friday itself.
   services.setListeningPort(port);
+  // Health monitors run while Friday runs.
+  services.monitorService.start();
   app.log.info(
     {
       apiKeyConfigured: services.provider.isConfigured(),

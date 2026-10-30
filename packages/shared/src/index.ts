@@ -686,6 +686,8 @@ export type AppNotice =
       durationMs: number | null;
     }
   | { type: 'process_updated'; process: ProcessDto }
+  /** A health monitor was checked; `transition` is set when it went down or recovered. */
+  | { type: 'monitor_updated'; monitor: MonitorDto; transition: 'down' | 'up' | null }
   | { type: 'mcp_updated'; serverId: string };
 
 /** How Friday may use one tool of a connected MCP server. */
@@ -1130,3 +1132,80 @@ export type RunEvent =
       type: 'run_finished';
       run: RunDto;
     };
+
+// ------------------------------------------------------------------ health monitors
+
+/** What a health monitor checks. Defined only by the user (Monitors panel). */
+export type MonitorTarget =
+  | {
+      kind: 'http';
+      url: string;
+      /** Exact status expected; null means any 2xx or 3xx. */
+      expectedStatus: number | null;
+      /** Text the response body must contain (the body is never stored). */
+      contains: string | null;
+      timeoutSeconds: number;
+    }
+  | {
+      kind: 'ssh';
+      hostId: string;
+      /** A systemd unit that must be active. */
+      service: string | null;
+      /** Disk usage of this path must stay at or under diskMaxPercent. */
+      diskPath: string | null;
+      diskMaxPercent: number | null;
+    }
+  /** A background process of the project (start_process) with this name is running. */
+  | { kind: 'process'; processName: string }
+  /** A service of the project's compose file is running (and healthy if it has a check). */
+  | { kind: 'compose'; service: string; file: string | null };
+
+export type MonitorKind = MonitorTarget['kind'];
+
+export interface MonitorInput {
+  name: string;
+  /** Required for process and compose monitors; optional context for the others. */
+  projectId: string | null;
+  target: MonitorTarget;
+  intervalMinutes: number;
+  /** Consecutive failed checks before the monitor counts as down (and notifies). */
+  failuresBeforeAlert: number;
+  enabled: boolean;
+}
+
+export type MonitorStatus = 'pending' | 'up' | 'down' | 'paused';
+
+export interface MonitorCheckDto {
+  at: string;
+  ok: boolean;
+  durationMs: number | null;
+  message: string;
+}
+
+export interface MonitorDto extends MonitorInput {
+  id: string;
+  status: MonitorStatus;
+  /** When the current up/down status began. */
+  statusSince: string | null;
+  lastCheckedAt: string | null;
+  lastMessage: string | null;
+  consecutiveFailures: number;
+  /** The latest checks, oldest first (at most 30). */
+  recent: MonitorCheckDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MonitorEventDto {
+  at: string;
+  status: 'up' | 'down';
+  message: string;
+}
+
+export interface MonitorDetailDto {
+  monitor: MonitorDto;
+  /** Newest first. */
+  checks: MonitorCheckDto[];
+  /** Status changes, newest first. */
+  events: MonitorEventDto[];
+}

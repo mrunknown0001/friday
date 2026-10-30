@@ -6,6 +6,9 @@ import type {
   FileChangeDto,
   McpServerDto,
   McpToolPolicy,
+  MonitorDetailDto,
+  MonitorDto,
+  MonitorInput,
   HostEnvironment,
   LogSourceDto,
   MemoryCategory,
@@ -270,6 +273,13 @@ export const api = {
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
   sshHosts: () => request<{ hosts: SshHostDto[] }>('GET', '/api/ssh-hosts'),
+  monitors: () => request<{ monitors: MonitorDto[] }>('GET', '/api/monitors'),
+  monitor: (id: string) => request<MonitorDetailDto>('GET', `/api/monitors/${id}`),
+  createMonitor: (body: MonitorInput) => request<MonitorDto>('POST', '/api/monitors', body),
+  updateMonitor: (id: string, body: MonitorInput) =>
+    request<MonitorDto>('PUT', `/api/monitors/${id}`, body),
+  deleteMonitor: (id: string) => request<void>('DELETE', `/api/monitors/${id}`),
+  checkMonitor: (id: string) => request<MonitorDto>('POST', `/api/monitors/${id}/check`, {}),
   savedActions: (projectId: string) =>
     request<{ projectId: string; actions: SavedActionDto[] }>(
       'GET',

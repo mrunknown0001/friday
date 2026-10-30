@@ -14,6 +14,8 @@ import { CaptureRepo } from './repositories/captures.js';
 import { ReviewRepo } from './repositories/reviews.js';
 import { TestRunRepo } from './repositories/testRuns.js';
 import { SavedActionRepo } from './repositories/savedActions.js';
+import { MonitorRepo } from './repositories/monitors.js';
+import { MonitorService } from './monitors/service.js';
 import { WorktreeManager } from './worktree/manager.js';
 import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
@@ -97,6 +99,8 @@ export interface Services {
   reviews: ReviewRepo;
   testRuns: TestRunRepo;
   savedActions: SavedActionRepo;
+  monitors: MonitorRepo;
+  monitorService: MonitorService;
   worktrees: WorktreeManager;
   sshHosts: SshHostRepo;
   ssh: SshService;
@@ -131,6 +135,8 @@ export interface ServiceOverrides {
   registry?: ToolRegistry;
   /** fetch used for MCP servers (tests). */
   mcpFetch?: typeof fetch;
+  /** fetch for HTTP health monitors (tests). */
+  monitorFetch?: typeof fetch;
   /** Screenshot engine (desktop shell or installed Chrome); none by default. */
   captureEngine?: CaptureEngine | null;
   runManager?: {
@@ -215,6 +221,19 @@ export function createServices(
       audit.record({ sessionId, actor: 'system', action, details }),
   });
 
+  const monitors = new MonitorRepo(db);
+  const monitorService = new MonitorService(
+    monitors,
+    {
+      fetch: overrides.monitorFetch ?? fetch,
+      sshHost: (id) => sshHosts.get(id),
+      sshRun: (host, command, opts) => ssh.run(host, command, opts),
+      processes: (projectId) => processes.list(projectId),
+      projectRoot: (projectId) => projects.get(projectId)?.rootPath ?? null,
+    },
+    (text) => redactor.redact(text),
+  );
+
   const runManager = new RunManager({
     provider,
     sessions,
@@ -230,6 +249,7 @@ export function createServices(
     reviews,
     testRuns,
     savedActions,
+    monitors,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
     codeMap,
@@ -266,6 +286,8 @@ export function createServices(
     reviews,
     testRuns,
     savedActions,
+    monitors,
+    monitorService,
     worktrees: new WorktreeManager(projects, config.dataDir),
     sshHosts,
     ssh,

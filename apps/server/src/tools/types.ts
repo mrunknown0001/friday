@@ -17,6 +17,7 @@ import type { ImageInfo } from '../attachments/image.js';
 import type { ReviewScope } from './reviewTools.js';
 import type { ToolDefinition } from '../providers/types.js';
 import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
+import type { MonitorRepo } from '../repositories/monitors.js';
 import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
 import type { CaptureEngine } from '../browser/capture.js';
 import type { CodeMap } from '../codemap/index.js';
@@ -56,6 +57,8 @@ export interface ToolContext {
   reviews?: ReviewContext;
   /** The project's saved actions (runbooks), which only the user can define. */
   savedActions?: { list: (project: ProjectRecord) => SavedActionDto[] };
+  /** Health monitors the user defined (read-only here). */
+  monitors?: Pick<MonitorRepo, 'list' | 'byName' | 'detail'>;
   /** Test runs of this project (run_tests): recording them, and earlier results per test. */
   tests?: TestRunContext;
   /** Screenshots taken in this conversation (absent when not stored, e.g. in tests). */
