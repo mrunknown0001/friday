@@ -9,6 +9,7 @@ import type {
   ReviewFinding,
   ReviewTarget,
   RunReport,
+  SavedActionDto,
   TestRunDto,
 } from '@friday/shared';
 import { z } from 'zod';
@@ -53,6 +54,8 @@ export interface ToolContext {
   capture?: { engine: CaptureEngine; fridayPort: () => number | null };
   /** The code review in progress in this run (review_changes, report_findings). */
   reviews?: ReviewContext;
+  /** The project's saved actions (runbooks), which only the user can define. */
+  savedActions?: { list: (project: ProjectRecord) => SavedActionDto[] };
   /** Test runs of this project (run_tests): recording them, and earlier results per test. */
   tests?: TestRunContext;
   /** Screenshots taken in this conversation (absent when not stored, e.g. in tests). */

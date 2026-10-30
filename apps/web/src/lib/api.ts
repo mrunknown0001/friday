@@ -12,6 +12,8 @@ import type {
   MemoryDto,
   MemoryScope,
   MemorySettingsDto,
+  SavedActionDto,
+  SavedActionInput,
   SshHostDto,
   ConnectionTestResult,
   FileViewDto,
@@ -268,6 +270,16 @@ export const api = {
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
   sshHosts: () => request<{ hosts: SshHostDto[] }>('GET', '/api/ssh-hosts'),
+  savedActions: (projectId: string) =>
+    request<{ projectId: string; actions: SavedActionDto[] }>(
+      'GET',
+      `/api/projects/${projectId}/actions`,
+    ),
+  createSavedAction: (projectId: string, body: SavedActionInput) =>
+    request<SavedActionDto>('POST', `/api/projects/${projectId}/actions`, body),
+  updateSavedAction: (id: string, body: SavedActionInput) =>
+    request<SavedActionDto>('PUT', `/api/actions/${id}`, body),
+  deleteSavedAction: (id: string) => request<void>('DELETE', `/api/actions/${id}`),
   addSshHost: (h: {
     name: string;
     hostname: string;

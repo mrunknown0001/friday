@@ -135,6 +135,13 @@ function approvalAction(d: ApprovalDetails): string | null {
         ...d.files.map((f) => `- edit \`${f}\``),
         ...d.commands.map((c) => `- run \`${displayArgv(c)}\``),
       ].join('\n');
+    case 'saved_action':
+      return d.steps
+        .map(
+          (st, i) =>
+            `${i + 1}. ${st.title} (${st.where.kind === 'local' ? `this machine, ${st.where.cwd}` : `${st.where.host.name}, ${st.where.host.environment}`}):\n\n${fenced(st.command, 'sh')}`,
+        )
+        .join('\n\n');
   }
 }
 

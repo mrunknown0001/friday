@@ -216,6 +216,8 @@ describe('tool executor', () => {
         'find_references',
         'rename_symbol',
         'move_symbol',
+        'list_saved_actions',
+        'run_saved_action',
         'git_diff',
         'git_log',
         'git_show',

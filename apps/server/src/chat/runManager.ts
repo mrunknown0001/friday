@@ -27,6 +27,7 @@ import { toAttachmentDto, type AttachmentRepo } from '../repositories/attachment
 import type { CaptureRepo } from '../repositories/captures.js';
 import type { ReviewRepo } from '../repositories/reviews.js';
 import type { TestRunRepo } from '../repositories/testRuns.js';
+import type { SavedActionRepo } from '../repositories/savedActions.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
@@ -102,6 +103,8 @@ export interface RunManagerDeps {
   reviews?: ReviewRepo;
   /** Test runs (run_tests) and each test's outcome. */
   testRuns?: TestRunRepo;
+  /** Saved actions (runbooks) per project. */
+  savedActions?: SavedActionRepo;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
@@ -1037,6 +1040,14 @@ export class RunManager {
     };
   }
 
+  /** A task worktree uses its parent project's saved actions. */
+  private savedActionContext(): NonNullable<ToolContext['savedActions']> {
+    const repo = this.deps.savedActions!;
+    return {
+      list: (project) => repo.listByProject(project.worktree?.parentId ?? project.id),
+    };
+  }
+
   private captureStore(run: ActiveRun): CaptureStore {
     const captures = this.deps.captures!;
     const attachments = this.deps.attachments;
@@ -1064,6 +1075,7 @@ export class RunManager {
       ...(this.deps.testRuns && project
         ? { tests: this.testRunContext(run, project, callId) }
         : {}),
+      ...(this.deps.savedActions ? { savedActions: this.savedActionContext() } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,

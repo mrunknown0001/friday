@@ -3,7 +3,7 @@ import type { ApprovalDetails, SandboxSettings } from '@friday/shared';
 import { z } from 'zod';
 import { extractLocations } from '../commands/locations.js';
 import { assessCommand } from '../commands/risk.js';
-import { childEnv, runProcess } from '../commands/runner.js';
+import { childEnv, runProcess, type RunResult } from '../commands/runner.js';
 import {
   findCredentials,
   hostPaths,
@@ -136,6 +136,41 @@ export async function sandboxRun(
   };
 }
 
+/**
+ * Run a command prepared by prepareCommand, after approval: in the project's sandbox when it has
+ * one, otherwise on this machine. Output is streamed to the UI.
+ */
+export async function runPrepared(
+  prep: Pick<
+    Awaited<ReturnType<typeof prepareCommand>>,
+    'root' | 'cwd' | 'argv' | 'shellCommand' | 'sandbox' | 'gitDir'
+  >,
+  timeoutSeconds: number,
+  execCtx: ToolContext,
+): Promise<RunResult> {
+  const { root, cwd, argv, shellCommand, sandbox, gitDir } = prep;
+  const run = {
+    timeoutMs: timeoutSeconds * 1000,
+    signal: execCtx.signal,
+    ...(execCtx.emitOutput ? { onOutput: execCtx.emitOutput } : {}),
+  };
+  const result = sandbox
+    ? await runInSandbox(
+        await sandboxRun(
+          root,
+          cwd.rel,
+          sandbox,
+          { argv, shellCommand },
+          gitDir,
+          execCtx.env.sandboxInstance,
+        ),
+        run,
+      )
+    : await runProcess({ argv, shellCommand, cwd: cwd.abs, ...run });
+  if (result.spawnError) throw new WorkspaceError('unsupported', result.spawnError);
+  return result;
+}
+
 export const runCommand = defineTool({
   name: 'run_command',
   description:
@@ -186,27 +221,11 @@ export const runCommand = defineTool({
       fingerprint: `cwd:${cwd.abs}|sandbox:${sandbox ? JSON.stringify(sandbox) : 'off'}`,
       timeoutMs: (args.timeout_seconds + 5) * 1000,
       async apply(execCtx) {
-        const run = {
-          timeoutMs: args.timeout_seconds * 1000,
-          signal: execCtx.signal,
-          ...(execCtx.emitOutput ? { onOutput: execCtx.emitOutput } : {}),
-        };
-        const result = sandbox
-          ? await runInSandbox(
-              await sandboxRun(
-                root,
-                cwd.rel,
-                sandbox,
-                { argv, shellCommand },
-                gitDir,
-                execCtx.env.sandboxInstance,
-              ),
-              run,
-            )
-          : await runProcess({ argv, shellCommand, cwd: cwd.abs, ...run });
-        if (result.spawnError) {
-          throw new WorkspaceError('unsupported', result.spawnError);
-        }
+        const result = await runPrepared(
+          { root, cwd, argv, shellCommand, sandbox, gitDir },
+          args.timeout_seconds,
+          execCtx,
+        );
         const status = result.timedOut
           ? `timed out after ${args.timeout_seconds}s (process killed)`
           : result.cancelled

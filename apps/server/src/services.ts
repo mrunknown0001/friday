@@ -13,6 +13,7 @@ import { AttachmentRepo } from './repositories/attachments.js';
 import { CaptureRepo } from './repositories/captures.js';
 import { ReviewRepo } from './repositories/reviews.js';
 import { TestRunRepo } from './repositories/testRuns.js';
+import { SavedActionRepo } from './repositories/savedActions.js';
 import { WorktreeManager } from './worktree/manager.js';
 import { FileChangeRepo } from './repositories/fileChanges.js';
 import { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from './repositories/devops.js';
@@ -95,6 +96,7 @@ export interface Services {
   captures: CaptureRepo;
   reviews: ReviewRepo;
   testRuns: TestRunRepo;
+  savedActions: SavedActionRepo;
   worktrees: WorktreeManager;
   sshHosts: SshHostRepo;
   ssh: SshService;
@@ -172,6 +174,7 @@ export function createServices(
   const captures = new CaptureRepo(db, attachments);
   const reviews = new ReviewRepo(db);
   const testRuns = new TestRunRepo(db);
+  const savedActions = new SavedActionRepo(db);
   const sshHosts = new SshHostRepo(db);
   const ssh = new SshService(
     sshHosts,
@@ -226,6 +229,7 @@ export function createServices(
     captures,
     reviews,
     testRuns,
+    savedActions,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
     codeMap,
@@ -261,6 +265,7 @@ export function createServices(
     captures,
     reviews,
     testRuns,
+    savedActions,
     worktrees: new WorktreeManager(projects, config.dataDir),
     sshHosts,
     ssh,

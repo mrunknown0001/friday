@@ -129,6 +129,10 @@ export function toolLabel(name: string, argsJson: string): string {
       return `${str(a.name)}${a.references ? ' +refs' : ''}`;
     case 'detect_tests':
       return '';
+    case 'list_saved_actions':
+      return '';
+    case 'run_saved_action':
+      return str(a.name);
     case 'find_references':
       return `${str(a.symbol)}${a.path ? ` in ${str(a.path)}` : ''}`;
     case 'rename_symbol':

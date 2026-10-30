@@ -2,6 +2,7 @@ import type { CodeMapStatusDto, ProjectDto, SandboxStatusDto } from '@friday/sha
 import { Box, Download, Loader2, Network, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { SavedActionsSection } from './SavedActions';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
@@ -277,6 +278,8 @@ export function ProjectSettingsDialog({
         </section>
 
         <CodeMapSection projectId={project.id} />
+
+        <SavedActionsSection projectId={project.id} />
 
         {error && (
           <p role="alert" className="text-sm text-red-400">
