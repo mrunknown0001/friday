@@ -307,9 +307,10 @@ export async function runResearch(
           s.status = 'read';
           s.error = null;
         } catch (e) {
-          if (!(e instanceof WebError)) throw e;
+          if (d.signal.aborted) throw e;
+          // One page must never end the research: it is just not read.
           s.status = 'failed';
-          s.error = e.message;
+          s.error = e instanceof WebError ? e.message : "Friday couldn't read this page.";
         }
         publish();
       }
