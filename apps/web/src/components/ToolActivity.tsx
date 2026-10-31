@@ -3,6 +3,7 @@ import type {
   AttachmentDto,
   BrowserFlowDto,
   DeploymentPlanDto,
+  LoadTestDto,
   ReviewDto,
   TestRunDto,
   ToolCallStatus,
@@ -15,6 +16,7 @@ import { AttachmentThumbs } from './Attachments';
 import { DeploymentPlanCard } from './DeploymentPlanCard';
 import { ReviewCard } from './ReviewCard';
 import { BrowserFlowCard } from './BrowserFlowCard';
+import { LoadTestCard } from './LoadTestCard';
 import { TestRunCard } from './TestRunCard';
 import { isFailedCommand } from './RunRecord';
 
@@ -37,6 +39,8 @@ export interface ToolItem {
   testRun?: TestRunDto | undefined;
   /** Results of a run_browser_flow call. */
   browserFlow?: BrowserFlowDto | undefined;
+  /** Results of a run_load_test call. */
+  loadTest?: LoadTestDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
   /** Images the tool showed the model (view_image). */
@@ -145,6 +149,12 @@ export function toolLabel(name: string, argsJson: string): string {
     case 'create_spreadsheet':
     case 'create_presentation':
       return str(a.path);
+    case 'run_load_test': {
+      const load = Array.isArray(a.stages)
+        ? `${a.stages.length} stage${a.stages.length === 1 ? '' : 's'}`
+        : `${str(a.vus ?? 5)} users, ${str(a.duration_seconds ?? 30)}s`;
+      return `${str(a.target ?? a.process_id)}: ${load}`;
+    }
     case 'database_schema':
       return [a.connection, a.table ?? a.search].filter(Boolean).map(str).join(': ');
     case 'query_database':
@@ -270,6 +280,7 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
   const reviews = items.flatMap((i) => (i.review ? [i.review] : []));
   const testRuns = items.flatMap((i) => (i.testRun ? [i.testRun] : []));
   const flows = items.flatMap((i) => (i.browserFlow ? [i.browserFlow] : []));
+  const loads = items.flatMap((i) => (i.loadTest ? [i.loadTest] : []));
   return (
     <>
       <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
@@ -290,6 +301,9 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
       ))}
       {flows.map((f) => (
         <BrowserFlowCard key={f.id} flow={f} />
+      ))}
+      {loads.map((t) => (
+        <LoadTestCard key={t.id} test={t} />
       ))}
     </>
   );

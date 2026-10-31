@@ -10,6 +10,7 @@ import {
   Container,
   Database,
   FileDiff,
+  Gauge,
   FileText,
   GitCommitHorizontal,
   GitPullRequestArrow,
@@ -61,9 +62,77 @@ const CATEGORY_LABEL: Record<string, string> = {
   process_control: 'Process',
   browser: 'Browser flow',
   database: 'Database query',
+  load_test: 'Load test',
   mcp: 'Connected app',
   mcp_trusted: 'Connected app (allowed)',
 };
+
+function LoadTestDetails({ d }: { d: Extract<ApprovalDto['details'], { kind: 'load_test' }> }) {
+  const where =
+    d.target.environment === 'local'
+      ? 'this machine'
+      : `${d.target.name ?? d.target.origin} (${d.target.environment})`;
+  return (
+    <div className="space-y-2 text-xs">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+        <dt className="text-zinc-500">Target</dt>
+        <dd className="text-zinc-100">
+          <span className="font-mono">{d.target.origin}</span>{' '}
+          <span className="text-zinc-400">({where})</span>
+        </dd>
+        <dt className="text-zinc-500">Load</dt>
+        <dd className="text-zinc-100">
+          {d.stages
+            ? `ramping: ${d.stages.map((s) => `${s.targetVus} users over ${s.durationSeconds}s`).join(' → ')}`
+            : `${d.vus} virtual user${d.vus === 1 ? '' : 's'} for ${d.durationSeconds}s`}
+          <span className="text-zinc-500">
+            {' '}
+            · {d.thinkTimeMs} ms think time · limit {d.limits.maxVus} users,{' '}
+            {d.limits.maxDurationSeconds}s
+          </span>
+        </dd>
+        <dt className="text-zinc-500">Thresholds</dt>
+        <dd className="text-zinc-300">{d.thresholds.length ? d.thresholds.join(' · ') : 'none'}</dd>
+        <dt className="text-zinc-500">Runs with</dt>
+        <dd className="text-zinc-300">{d.k6}, on this machine, no usage report</dd>
+      </dl>
+      <ol
+        aria-label="Requests per iteration"
+        className="list-decimal space-y-0.5 pl-5 text-zinc-100"
+      >
+        {d.requests.map((r) => (
+          <li key={r.name} className="break-all">
+            <span className="font-mono">
+              {r.method} {r.url}
+            </span>
+            {r.expectStatus !== null && (
+              <span className="text-zinc-500"> · expects {r.expectStatus}</span>
+            )}
+            {r.body !== null && (
+              <span className="block font-mono text-zinc-400">body: {r.body}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+      <details>
+        <summary className="cursor-pointer text-zinc-400">The k6 script</summary>
+        <pre
+          aria-label="k6 script"
+          className="mt-1 max-h-72 overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.7rem] text-zinc-200"
+        >
+          {d.script}
+        </pre>
+      </details>
+      {d.riskReasons.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-amber-200">
+          {d.riskReasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function DatabaseQueryDetails({
   d,
@@ -474,6 +543,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   if (d.kind === 'browser_flow') return <BrowserFlowDetails d={d} />;
   if (d.kind === 'database_query') return <DatabaseQueryDetails d={d} />;
+  if (d.kind === 'load_test') return <LoadTestDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
   if (d.kind === 'document')
     return (
@@ -1089,7 +1159,9 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
                   ? MousePointerClick
                   : approval.details.kind === 'database_query'
                     ? Database
-                    : ShieldAlert;
+                    : approval.details.kind === 'load_test'
+                      ? Gauge
+                      : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);

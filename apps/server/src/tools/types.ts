@@ -1,6 +1,7 @@
 import type {
   ApprovalDetails,
   BrowserFlowDto,
+  LoadTestDto,
   DeploymentPlanDto,
   MemoryDto,
   PermissionCategory,
@@ -19,6 +20,7 @@ import type { ReviewScope } from './reviewTools.js';
 import type { ToolDefinition } from '../providers/types.js';
 import type { DeploymentPlanRepo, LogSourceRepo, SshHostRepo } from '../repositories/devops.js';
 import type { MonitorRepo } from '../repositories/monitors.js';
+import type { LoadTargetRepo, NewLoadTest } from '../repositories/loadTests.js';
 import type { DatabaseService } from '../databases/service.js';
 import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
 import type { CaptureEngine } from '../browser/capture.js';
@@ -63,6 +65,10 @@ export interface ToolContext {
   databases?: DatabaseService;
   /** Health monitors the user defined (read-only here). */
   monitors?: Pick<MonitorRepo, 'list' | 'byName' | 'detail'>;
+  /** Hosts the user allows load tests against (Settings). */
+  loadTargets?: Pick<LoadTargetRepo, 'byName' | 'byOrigin'>;
+  /** Record a load test's result (the Load test card). */
+  loadTests?: { record(result: NewLoadTest): LoadTestDto };
   /** Record a browser flow's result (the flow card). */
   browserFlows?: {
     record(

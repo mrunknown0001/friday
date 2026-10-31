@@ -72,6 +72,7 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
       reviews: s.reviews.listBySession(id),
       testRuns: s.testRuns.listBySession(id),
       browserFlows: s.browserFlows.listBySession(id),
+      loadTests: s.loadTests.listBySession(id),
       memoryUsage: s.memoryRepo.usageBySession(id),
     };
   });

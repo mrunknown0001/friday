@@ -3,6 +3,7 @@ import type {
   AttachmentDto,
   BrowserFlowDto,
   DeploymentPlanDto,
+  LoadTestDto,
   MemoryDto,
   MemoryRef,
   PlanStep,
@@ -49,6 +50,8 @@ export interface LiveRun {
   testRuns: TestRunDto[];
   /** Browser flows (run_browser_flow) finished during this run. */
   browserFlows: BrowserFlowDto[];
+  /** Load tests (run_load_test) finished during this run. */
+  loadTests: LoadTestDto[];
   /** Memories shown to the model for this run. */
   memoriesUsed: MemoryRef[];
   /** Memories the agent saved or proposed during this run. */
@@ -74,6 +77,7 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'review',
   'test_run',
   'browser_flow',
+  'load_test',
   'memories_used',
   'memory_saved',
   'message_saved',
@@ -91,6 +95,7 @@ export const initial = (runId: string): LiveRun => ({
   reviews: [],
   testRuns: [],
   browserFlows: [],
+  loadTests: [],
   memoriesUsed: [],
   memoriesSaved: [],
   taskPermission: null,
@@ -147,6 +152,12 @@ export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
       break;
     case 'test_run':
       next.testRuns = [...prev.testRuns.filter((t) => t.id !== event.testRun.id), event.testRun];
+      break;
+    case 'load_test':
+      next.loadTests = [
+        ...prev.loadTests.filter((t) => t.id !== event.loadTest.id),
+        event.loadTest,
+      ];
       break;
     case 'browser_flow':
       next.browserFlows = [...prev.browserFlows.filter((f) => f.id !== event.flow.id), event.flow];

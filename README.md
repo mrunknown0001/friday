@@ -553,6 +553,24 @@ that is down opens a conversation (in its project, if it has one) asking Friday 
 Only you add, change, pause or delete monitors. Friday's `monitor_status` tool can read their status and history
 but not change them. A URL's query string is not shown to the model. Deleting a project deletes its monitors.
 
+### Load tests (k6)
+
+Ask Friday how a page or API holds up under load ("10 signed-in users for 30 seconds, p95 under 200 ms") and it
+runs `run_load_test` with the k6 installed on this machine (`k6` on PATH or `FRIDAY_K6`; Friday never installs it).
+
+- **Friday writes the script** from the model's description: the requests each virtual user makes in order, think
+  time, constant load or ramp stages, and thresholds (p95, p99, error rate, per-request p95). The approval card shows
+  the target, the load, every request with its body, the thresholds and the full script. Redirects are not followed,
+  so the test can't reach another site, and k6's usage report is off.
+- **Targets:** this machine without any setup (up to 100 virtual users for 10 minutes, never Friday itself). Other
+  sites only when listed in **Settings → Load-test targets**, each with its own most users and minutes. Production
+  targets need the name typed for each test. Anything else is refused before a card appears.
+- **Results:** the **Load test** card and the model get the request rate, failed share, latency (median, p90, p95,
+  p99, max), each threshold with the measured value, and, per request, its numbers, the status codes it got and the
+  start of the first unexpected answer, so a failing login shows why.
+- Each virtual user keeps its cookies, so a login request first signs that user in for the rest. Requests that
+  change data are called out on the card.
+
 ### Databases (read-only)
 
 Add a database in **Settings → Databases** (Postgres, MySQL/MariaDB or SQLite), for any conversation or for one

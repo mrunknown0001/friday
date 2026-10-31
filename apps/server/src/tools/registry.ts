@@ -36,6 +36,7 @@ import { viewImage } from './imageTools.js';
 import { screenshot } from './screenshotTool.js';
 import { inspectPage, runBrowserFlow } from './browserTools.js';
 import { databaseSchema, queryDatabase } from './databaseTools.js';
+import { runLoadTest } from './loadTestTools.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
 import { listProcesses, readProcessOutput, startProcess, stopProcess } from './processTools.js';
@@ -151,6 +152,7 @@ export const DEFAULT_TOOLS = [
   monitorStatus,
   databaseSchema,
   queryDatabase,
+  runLoadTest,
   dependencyReport,
   dependencyChangelog,
   upgradeDependencies,

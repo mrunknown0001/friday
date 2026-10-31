@@ -44,6 +44,7 @@ const detail = (messages: MessageDto[]): SessionDetailDto => ({
   reviews: [],
   testRuns: [],
   browserFlows: [],
+  loadTests: [],
   memoryUsage: {},
 });
 
@@ -65,6 +66,7 @@ const props = (d: SessionDetailDto, onSend = vi.fn(async () => true)) => ({
   reviews: [],
   testRuns: [],
   browserFlows: [],
+  loadTests: [],
   onRollback: async () => {},
   onOpenMemory: () => {},
   onRevokeTaskPermission: async () => {},

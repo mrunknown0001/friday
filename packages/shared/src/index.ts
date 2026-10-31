@@ -240,6 +240,8 @@ export type PermissionCategory =
   | 'process_control'
   /** Driving a page of a local site (browser flows): asks every time. */
   | 'browser'
+  /** Sending load to this machine or a host the user listed (k6): asks every time. */
+  | 'load_test'
   /** A tool of a connected MCP server: asks every time. */
   | 'mcp'
   /** An MCP tool the user allowed to run without asking. */
@@ -536,6 +538,33 @@ export type ApprovalDetails =
       minutes: number;
     }
   | {
+      /** run_load_test: the k6 script Friday generated, and where and how hard it hits. */
+      kind: 'load_test';
+      target: LoadTestTargetInfo;
+      /** Constant load, or ramp stages (then vus is the highest stage). */
+      vus: number;
+      stages: Array<{ durationSeconds: number; targetVus: number }> | null;
+      durationSeconds: number;
+      thinkTimeMs: number;
+      /** Each virtual user runs these in order, again and again. */
+      requests: Array<{
+        name: string;
+        method: string;
+        url: string;
+        body: string | null;
+        expectStatus: number | null;
+      }>;
+      /** As k6 writes them, e.g. "p(95) < 500 ms". */
+      thresholds: string[];
+      /** The exact script k6 runs. */
+      script: string;
+      /** The k6 program and version on this machine. */
+      k6: string;
+      /** The most this target allows (Settings for listed hosts). */
+      limits: { maxVus: number; maxDurationSeconds: number };
+      riskReasons: string[];
+    }
+  | {
       /** query_database: one read-only statement against a connection the user added. */
       kind: 'database_query';
       connection: {
@@ -572,6 +601,73 @@ export type ApprovalDetails =
       engine: string;
       riskReasons: string[];
     };
+
+export interface LoadTestTargetInfo {
+  /** The listed target's name; null for this machine. */
+  name: string | null;
+  /** Origin the requests go to, e.g. http://localhost:5173. */
+  origin: string;
+  environment: HostEnvironment | 'local';
+}
+
+/** A host the user allows load tests against (Settings), with its own limits. */
+export interface LoadTargetDto {
+  id: string;
+  name: string;
+  /** http(s) origin, e.g. https://staging.example.com. */
+  origin: string;
+  environment: HostEnvironment;
+  maxVus: number;
+  maxDurationSeconds: number;
+  createdAt: string;
+}
+
+export type LoadTargetInput = Omit<LoadTargetDto, 'id' | 'createdAt'>;
+
+export interface LatencySummary {
+  avg: number;
+  med: number;
+  p90: number;
+  p95: number;
+  p99: number;
+  max: number;
+}
+
+/** A finished k6 run (the Load test card). */
+export interface LoadTestDto {
+  id: string;
+  sessionId: string;
+  runId: string;
+  toolCallId: string;
+  projectId: string | null;
+  target: LoadTestTargetInfo;
+  status: 'passed' | 'failed' | 'error';
+  /** Why it could not run or stopped early. */
+  error: string | null;
+  durationMs: number;
+  vusMax: number;
+  requests: number;
+  /** Requests per second. */
+  rate: number;
+  /** Share of requests that failed (0–1). */
+  failedRate: number;
+  /** Milliseconds. */
+  latency: LatencySummary | null;
+  perRequest: Array<{
+    name: string;
+    count: number;
+    failedRate: number;
+    p95: number | null;
+    avg: number | null;
+    /** The status codes it got, most frequent first (0: no response, e.g. refused). */
+    statuses: Array<{ status: number; count: number }>;
+    /** The start of the first unexpected answer, per status. */
+    errorSamples: Array<{ status: number; body: string }>;
+  }>;
+  thresholds: Array<{ metric: string; condition: string; ok: boolean; actual: string | null }>;
+  checks: Array<{ name: string; passes: number; fails: number }>;
+  createdAt: string;
+}
 
 export interface BrowserFlowStepPreview {
   action: 'goto' | 'click' | 'fill' | 'select' | 'check' | 'uncheck' | 'press' | 'wait' | 'expect';
@@ -1271,6 +1367,7 @@ export interface SessionDetailDto extends SessionSummaryDto {
   reviews: ReviewDto[];
   testRuns: TestRunDto[];
   browserFlows: BrowserFlowDto[];
+  loadTests: LoadTestDto[];
   /** Memories shown to the model, per run id. */
   memoryUsage: Record<string, MemoryRef[]>;
 }
@@ -1310,6 +1407,7 @@ export type RunEvent =
   | { seq: number; type: 'review'; review: ReviewDto }
   | { seq: number; type: 'test_run'; testRun: TestRunDto }
   | { seq: number; type: 'browser_flow'; flow: BrowserFlowDto }
+  | { seq: number; type: 'load_test'; loadTest: LoadTestDto }
   | { seq: number; type: 'memories_used'; memories: MemoryRef[] }
   | { seq: number; type: 'memory_saved'; memory: MemoryDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }
