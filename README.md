@@ -626,6 +626,22 @@ uses `run_tests`, which it builds itself rather than running whatever the model 
 Each test's outcome is kept per project and suite (the last 50 runs), which is how slow and flaky tests are
 recognised over time. Other test commands still work through `run_command`.
 
+**Playwright** (end-to-end) suites are found from a `playwright.config.*` and `@playwright/test` in package.json,
+beside any unit tests in the same folder. `run_tests` runs them only when asked (`framework: "playwright"`), with
+Playwright's JSON reporter and its own retry for flaky tests. The card says which web server the config starts first.
+
+- **Failures** show the first error and `file:line`, the screenshot Playwright saved (opening full size; the model
+  sees the first one), and the trace with the command to open it (`npx playwright show-trace …`). The model also
+  gets the page's accessibility snapshot at the failure, without the instructions Playwright adds to that file.
+- **Related to the changes:** changed specs and specs named after or importing a changed file. End-to-end specs
+  rarely import app code, so when none relate Friday says so and asks for the specs to run.
+- New or changed specs are normal approved edits; Friday writes them with the role and label locators that
+  `inspect_page` reports.
+- Friday never installs Playwright, its browsers or system libraries. When they are missing, the run is reported
+  as an error with the command for you to run. With the command sandbox it runs in the project's container, whose
+  image needs browsers (for example `mcr.microsoft.com/playwright`). A busy port for the config's web server is
+  explained too.
+
 ### Task worktrees
 
 Start a task in its own git worktree with the branch-plus button next to **New conversation**. Friday makes a

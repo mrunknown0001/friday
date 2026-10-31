@@ -1115,7 +1115,7 @@ export interface ReviewFinding {
   status: 'open' | 'fix_requested' | 'dismissed';
 }
 
-export type TestFramework = 'vitest' | 'jest' | 'node' | 'pytest' | 'go';
+export type TestFramework = 'vitest' | 'jest' | 'node' | 'pytest' | 'go' | 'playwright';
 
 /** What a run_tests approval covers beyond the command itself. */
 export interface TestCommandInfo {
@@ -1131,6 +1131,8 @@ export interface TestCommandInfo {
   coverage: boolean;
   /** Failed tests are run once more, the same way, to tell flaky tests from real failures. */
   retryFailures: boolean;
+  /** Playwright: the command its config starts first (webServer), if any. */
+  webServer?: string | null;
 }
 
 export interface TestLocation {
@@ -1148,6 +1150,17 @@ export interface TestFailure {
   at: TestLocation | null;
   /** Failed in an earlier run too (the same test, any code). */
   failedBefore: number;
+  /** Playwright: what it saved when the test failed. */
+  artifacts?: TestArtifacts | null;
+}
+
+export interface TestArtifacts {
+  /** The screenshot, stored with the conversation. */
+  screenshotId: string | null;
+  /** Project-relative trace (open with `npx playwright show-trace <path>`). */
+  trace: string | null;
+  /** Project-relative video, when the config records one. */
+  video: string | null;
 }
 
 export interface TestTiming {

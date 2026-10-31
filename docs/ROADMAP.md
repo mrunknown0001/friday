@@ -320,8 +320,18 @@ approved), credentials never reach the model, and results from other systems are
   live. Original plan: a report of outdated and vulnerable packages, an upgrade plan with changelog highlights and
   breaking changes, then the upgrade and a test run, each step approved. It follows the "releases at least two
   weeks old" rule by default.
-- ⬜ **Playwright tests** (M, added 2026-10-31). Friday detects a project's `@playwright/test` setup and writes and
-  runs its specs: `run_tests` supports Playwright with its JSON reporter. Each failing test shows its first error
+- ✅ **Playwright tests** (M, added 2026-10-31). Done: `detect_tests` finds Playwright suites (config plus
+  `@playwright/test`) beside unit tests. `run_tests` with `framework: "playwright"` uses its JSON reporter
+  (`PLAYWRIGHT_JSON_OUTPUT_FILE`, also in the sandbox) and `--retries=1` for flaky detection. The card shows the
+  config's web server. Failures carry the first error, `file:line`, the screenshot (stored; the first goes to the
+  model), the trace with its `show-trace` command and the page snapshot (cut from error-context.md, without
+  Playwright's AI instructions). Missing browsers or libraries and a busy web-server port make the run an error with
+  the command to run; nothing is installed. Verified on 2026-10-31 with `@playwright/test` 1.63.0 in a scratch
+  project (real Chromium): a real failure with screenshot, trace and snapshot, and missing browsers reported as
+  such. Live with `claude-sonnet-4.6`: it ran the failing spec, fixed the app's off-by-one, wrote a spec for the
+  $15.00 cart total, and the final run passed 4 of 4, marking the run report verified. On the way it dropped the
+  sign-in steps once; the page snapshot showed the login page and it corrected the spec. Original plan: Friday
+  detects a project's `@playwright/test` setup and writes and runs its specs: `run_tests` supports Playwright with its JSON reporter. Each failing test shows its first error
   and `file:line`, plus the screenshot and trace Playwright saved, in the **Tests** card. It runs the specs related to
   the changes first, and new or changed specs are normal approved edits. Browsers and `@playwright/test` are never
   installed by Friday: it says what is missing. Separate from Browser flows, which stays the ad-hoc "click through

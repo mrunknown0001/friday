@@ -655,17 +655,36 @@ function TestsInfo({
           <dd className="font-mono text-zinc-400">{listed(t.testFiles)}</dd>
         </>
       )}
+      {t.framework === 'playwright' && (
+        <>
+          <dt className="text-zinc-500">Web server</dt>
+          <dd className="text-zinc-300">
+            {t.webServer ? (
+              <>
+                Playwright starts <span className="font-mono">{t.webServer}</span> first (webServer
+                in its config), unless it reuses one already running
+              </>
+            ) : (
+              'None in the config: the app must already be running'
+            )}
+          </dd>
+        </>
+      )}
       <dt className="text-zinc-500">Report</dt>
       <dd className="text-zinc-300">
         Written to a temporary folder outside the project, read by Friday, then deleted
         {t.coverage ? '; coverage is measured too' : ''}
+        {t.framework === 'playwright'
+          ? '. Screenshots and traces of failures stay in the project’s test-results folder'
+          : ''}
       </dd>
       {t.retryFailures && (
         <>
           <dt className="text-zinc-500">If tests fail</dt>
           <dd className="text-zinc-300">
-            The failed tests run once more, with the same command limited to them, to tell flaky
-            tests from real failures
+            {t.framework === 'playwright'
+              ? 'Playwright retries each failed test once in the same run, to tell flaky tests from real failures'
+              : 'The failed tests run once more, with the same command limited to them, to tell flaky tests from real failures'}
           </dd>
         </>
       )}

@@ -156,6 +156,8 @@ export interface SandboxRun {
   ports?: number[];
   /** An empty host folder mounted writable at OUTPUT_DIR (test reports written by the runner). */
   outputDir?: string;
+  /** Extra variables Friday sets itself (e.g. where a test reporter writes); never from the host. */
+  env?: Record<string, string>;
 }
 
 export const OUTPUT_DIR = '/friday-out';
@@ -193,6 +195,7 @@ export function dockerRunArgs(r: SandboxRun): string[] {
     ...['HOME=/tmp', 'CI=1', 'TERM=dumb', 'NO_COLOR=1', 'FORCE_COLOR=0', 'LANG=C.UTF-8'].flatMap(
       (e) => ['--env', e],
     ),
+    ...Object.entries(r.env ?? {}).flatMap(([k, v]) => ['--env', `${k}=${v}`]),
     '--mount',
     `type=bind,src=${root},dst=${WORKSPACE}`,
   ];

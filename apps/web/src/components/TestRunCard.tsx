@@ -1,5 +1,7 @@
-import type { TestLocation, TestRunDto } from '@friday/shared';
+import type { TestArtifacts, TestLocation, TestRunDto } from '@friday/shared';
 import { ChevronRight, FlaskConical, Shuffle, Timer } from 'lucide-react';
+import { attachmentUrl } from './Attachments';
+import { Dialog } from './ui/dialog';
 import { useContext, useState } from 'react';
 import { cn } from '../lib/cn';
 import { ReviewActionsContext } from './ReviewCard';
@@ -92,9 +94,60 @@ function Failure({
               {f.message}
             </pre>
           )}
+          {open && f.artifacts && <Artifacts a={f.artifacts} name={f.name} />}
         </div>
       </div>
     </li>
+  );
+}
+
+/** What Playwright saved for a failed test: the screenshot, and how to open the trace. */
+function Artifacts({ a, name }: { a: TestArtifacts; name: string }) {
+  const [view, setView] = useState(false);
+  if (!a.screenshotId && !a.trace && !a.video) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-start gap-3 text-xs">
+      {a.screenshotId && (
+        <button
+          type="button"
+          onClick={() => setView(true)}
+          aria-label={`View the screenshot of ${name}`}
+          className="block overflow-hidden rounded-md border border-zinc-700 bg-zinc-950 hover:border-sky-500"
+        >
+          <img
+            src={attachmentUrl(a.screenshotId)}
+            alt={`Screenshot when “${name}” failed`}
+            loading="lazy"
+            className="h-28 w-auto object-cover object-left-top"
+          />
+        </button>
+      )}
+      <dl className="min-w-0 space-y-1">
+        {a.trace && (
+          <div>
+            <dt className="text-zinc-500">Trace</dt>
+            <dd className="font-mono break-all text-zinc-300">
+              npx playwright show-trace {a.trace}
+            </dd>
+          </div>
+        )}
+        {a.video && (
+          <div>
+            <dt className="text-zinc-500">Video</dt>
+            <dd className="font-mono break-all text-zinc-300">{a.video}</dd>
+          </div>
+        )}
+      </dl>
+      {view && a.screenshotId && (
+        <Dialog open onClose={() => setView(false)} title={`Screenshot: ${name}`}>
+          <img
+            src={attachmentUrl(a.screenshotId)}
+            alt={`Screenshot when “${name}” failed`}
+            className="mx-auto max-h-[70vh] w-auto rounded border border-zinc-800 object-contain"
+          />
+        </Dialog>
+      )}
+    </div>
   );
 }
 

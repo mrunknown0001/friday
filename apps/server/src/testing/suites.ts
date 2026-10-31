@@ -4,9 +4,10 @@ import type { TestFramework } from '@friday/shared';
 import { walk } from '../workspace/walk.js';
 
 /**
- * Finding a project's test suites: each folder with a package.json (Vitest, Jest, `node --test`),
- * a pytest configuration, or a go.mod. Detection only reads files; Friday never installs a test
- * runner or coverage plugin.
+ * Finding a project's test suites: each folder with a package.json (Vitest, Jest, `node --test`,
+ * and Playwright beside them when it has a playwright.config), a pytest configuration, or a
+ * go.mod. Detection only reads files; Friday never installs a test runner, coverage plugin or
+ * browser.
  */
 
 export interface Suite {
@@ -20,6 +21,68 @@ export interface Suite {
   coverage: { available: boolean; note: string | null };
   /** Go module path (for mapping cover profiles and packages to files). */
   goModule?: string;
+  playwright?: PlaywrightInfo;
+}
+
+export interface PlaywrightInfo {
+  /** The config file, relative to the suite folder. */
+  config: string;
+  /** Where the specs are, relative to the suite folder ('.' when the config does not say). */
+  testDir: string;
+  /** The command the config starts first (webServer), when it names one. */
+  webServer: string | null;
+  /** Installed @playwright/test version. */
+  version: string | null;
+}
+
+const PLAYWRIGHT_CONFIGS = ['ts', 'js', 'mjs', 'cjs', 'mts', 'cts'].map(
+  (e) => `playwright.config.${e}`,
+);
+
+/** The parts of a Playwright config Friday shows: read as text, never executed. */
+export function readPlaywrightConfig(text: string): { testDir: string; webServer: string | null } {
+  const testDir = /\btestDir\s*:\s*['"`]([^'"`]+)['"`]/.exec(text)?.[1];
+  const web = /\bwebServer\s*:\s*[[{][\s\S]*?\bcommand\s*:\s*['"`]([^'"`]+)['"`]/.exec(text)?.[1];
+  return {
+    testDir: testDir
+      ? path.posix.normalize(testDir.replace(/^\.\//, '')).replace(/\/$/, '') || '.'
+      : '.',
+    webServer: web ?? null,
+  };
+}
+
+async function playwrightSuite(root: string, dir: string, pkg: PackageJson): Promise<Suite | null> {
+  const abs = path.join(root, dir);
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  let config: string | null = null;
+  for (const name of PLAYWRIGHT_CONFIGS)
+    if (await exists(path.join(abs, name))) {
+      config = name;
+      break;
+    }
+  if (!config || !('@playwright/test' in deps || 'playwright' in deps)) return null;
+  const info = readPlaywrightConfig((await readSmall(path.join(abs, config))) ?? '');
+  const bin = await findModule(root, abs, '.bin/playwright');
+  const manifest = await findModule(root, abs, '@playwright/test/package.json');
+  let version: string | null = null;
+  if (manifest)
+    try {
+      version =
+        (JSON.parse((await readSmall(manifest)) ?? '{}') as { version?: string }).version ?? null;
+    } catch {
+      version = null;
+    }
+  return {
+    dir,
+    framework: 'playwright',
+    runner: [bin ? path.relative(abs, bin).split(path.sep).join('/') : 'playwright', 'test'],
+    missing:
+      bin && manifest
+        ? null
+        : '@playwright/test is not installed (node_modules/.bin/playwright is missing)',
+    coverage: { available: false, note: 'Playwright runs measure no code coverage here.' },
+    playwright: { config, ...info, version },
+  };
 }
 
 const MAX_MANIFEST_BYTES = 512 * 1024;
@@ -198,8 +261,11 @@ export async function detectSuites(root: string, signal?: AbortSignal): Promise<
     if (files.has('package.json')) {
       const text = await readSmall(path.join(abs, 'package.json'));
       try {
-        const s = text ? await nodeSuite(root, dir, JSON.parse(text) as PackageJson) : null;
+        const pkg = text ? (JSON.parse(text) as PackageJson) : null;
+        const s = pkg ? await nodeSuite(root, dir, pkg) : null;
         if (s) suites.push(s);
+        const e2e = pkg ? await playwrightSuite(root, dir, pkg) : null;
+        if (e2e) suites.push(e2e);
       } catch {
         // Not valid JSON: not a suite.
       }
@@ -227,11 +293,26 @@ export function isUnder(file: string, dir: string): boolean {
   return dir === '.' || file === dir || file.startsWith(`${dir}/`);
 }
 
-/** The deepest suite containing the file. */
+/** Where a suite's tests are: its folder, or a Playwright suite's testDir. */
+export function testRoot(suite: Suite): string {
+  const t = suite.playwright?.testDir ?? '.';
+  return t === '.' ? suite.dir : path.posix.normalize(path.posix.join(suite.dir, t));
+}
+
+/**
+ * The suite a file belongs to: the deepest one containing it. A Playwright suite claims only
+ * files under its testDir, and only over a unit-test suite of the same folder when it is a spec.
+ */
 export function suiteFor(suites: Suite[], file: string): Suite | null {
+  const fits = suites.filter((s) =>
+    s.framework === 'playwright' ? isUnder(file, testRoot(s)) : isUnder(file, s.dir),
+  );
   return (
-    suites.filter((s) => isUnder(file, s.dir)).sort((a, b) => depth(b.dir) - depth(a.dir))[0] ??
-    null
+    fits.sort(
+      (a, b) =>
+        depth(b.dir) - depth(a.dir) ||
+        (a.framework === 'playwright' ? -1 : 0) - (b.framework === 'playwright' ? -1 : 0),
+    )[0] ?? null
   );
 }
 
@@ -332,7 +413,7 @@ export async function relatedTests(
 
 /** Every test file of a suite (project-relative), honouring .gitignore. */
 export async function listTestFiles(root: string, suite: Suite): Promise<string[]> {
-  const { entries } = await walk(root, path.join(root, suite.dir), {
+  const { entries } = await walk(root, path.join(root, testRoot(suite)), {
     maxDepth: 12,
     maxEntries: 20_000,
   });
