@@ -14,7 +14,13 @@ import {
   type MenuItemConstructorOptions,
   type UtilityProcess,
 } from 'electron';
-import { captureSession, isLocalUrl, printSession, serveCaptures } from './capture.js';
+import {
+  captureSession,
+  closeAllPages,
+  isLocalUrl,
+  printSession,
+  serveCaptures,
+} from './capture.js';
 
 /**
  * Friday desktop shell. The agent runs in the same local server as the web version, started here
@@ -160,6 +166,7 @@ async function startServer(): Promise<void> {
   let started = false;
   child.once('exit', (code) => {
     if (server === child) server = null;
+    closeAllPages();
     log.end();
     // Startup failures are reported by the caller; this is for crashes afterwards.
     if (started && !stopping && !quitting) void onServerCrash(code);

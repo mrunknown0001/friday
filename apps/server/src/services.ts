@@ -13,6 +13,7 @@ import { AttachmentRepo } from './repositories/attachments.js';
 import { CaptureRepo } from './repositories/captures.js';
 import { ReviewRepo } from './repositories/reviews.js';
 import { TestRunRepo } from './repositories/testRuns.js';
+import { BrowserFlowRepo } from './repositories/browserFlows.js';
 import { SavedActionRepo } from './repositories/savedActions.js';
 import { MonitorRepo } from './repositories/monitors.js';
 import { MonitorService } from './monitors/service.js';
@@ -98,6 +99,7 @@ export interface Services {
   captures: CaptureRepo;
   reviews: ReviewRepo;
   testRuns: TestRunRepo;
+  browserFlows: BrowserFlowRepo;
   savedActions: SavedActionRepo;
   monitors: MonitorRepo;
   monitorService: MonitorService;
@@ -180,6 +182,7 @@ export function createServices(
   const captures = new CaptureRepo(db, attachments);
   const reviews = new ReviewRepo(db);
   const testRuns = new TestRunRepo(db);
+  const browserFlows = new BrowserFlowRepo(db);
   const savedActions = new SavedActionRepo(db);
   const sshHosts = new SshHostRepo(db);
   const ssh = new SshService(
@@ -248,6 +251,7 @@ export function createServices(
     captures,
     reviews,
     testRuns,
+    browserFlows,
     savedActions,
     monitors,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
@@ -285,6 +289,7 @@ export function createServices(
     captures,
     reviews,
     testRuns,
+    browserFlows,
     savedActions,
     monitors,
     monitorService,

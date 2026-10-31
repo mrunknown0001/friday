@@ -238,6 +238,8 @@ export type PermissionCategory =
   | 'deployment'
   | 'task_permission'
   | 'process_control'
+  /** Driving a page of a local site (browser flows): asks every time. */
+  | 'browser'
   /** A tool of a connected MCP server: asks every time. */
   | 'mcp'
   /** An MCP tool the user allowed to run without asking. */
@@ -528,9 +530,65 @@ export type ApprovalDetails =
       files: string[];
       /** Exact commands (argv, no shell) that may run in the project root. */
       commands: string[][];
+      /** Local sites (origins such as http://localhost:5173) browser flows may run on. */
+      sites?: string[];
       maxActions: number;
       minutes: number;
+    }
+  | {
+      /** run_browser_flow: the steps Friday will take on a page of a local site. */
+      kind: 'browser_flow';
+      title: string;
+      startUrl: string;
+      /** e.g. http://localhost:5173 (what a task permission for flows covers). */
+      origin: string;
+      width: number;
+      height: number;
+      /** Each step as it will run, in order; typed values appear in full. */
+      steps: BrowserFlowStepPreview[];
+      /** The browser that runs it. */
+      engine: string;
+      riskReasons: string[];
     };
+
+export interface BrowserFlowStepPreview {
+  action: 'goto' | 'click' | 'fill' | 'select' | 'check' | 'uncheck' | 'press' | 'wait' | 'expect';
+  description: string;
+}
+
+export interface BrowserFlowStepDto {
+  /** 0 is opening the start page; 1 and on are the flow's steps. */
+  index: number;
+  label: string;
+  status: 'passed' | 'failed' | 'skipped';
+  durationMs: number;
+  url: string | null;
+  title: string | null;
+  /** Console errors, uncaught exceptions and failed requests during the step. */
+  problems: string[];
+  /** Dialogs answered, navigations blocked. */
+  notes: string[];
+  error: string | null;
+  /** Screenshot after the step. */
+  attachmentId: string | null;
+}
+
+export interface BrowserFlowDto {
+  id: string;
+  sessionId: string;
+  runId: string;
+  toolCallId: string;
+  projectId: string | null;
+  title: string;
+  startUrl: string;
+  width: number;
+  height: number;
+  engine: string;
+  status: 'passed' | 'failed' | 'cancelled';
+  durationMs: number;
+  steps: BrowserFlowStepDto[];
+  createdAt: string;
+}
 
 export interface DependencyAdvisory {
   title: string;
@@ -819,6 +877,8 @@ export interface TaskPermissionDto {
   runId: string;
   files: string[];
   commands: string[][];
+  /** Local sites browser flows may run on. */
+  sites: string[];
   maxActions: number;
   used: number;
   expiresAt: string;
@@ -1135,6 +1195,7 @@ export interface SessionDetailDto extends SessionSummaryDto {
   deploymentPlans: DeploymentPlanDto[];
   reviews: ReviewDto[];
   testRuns: TestRunDto[];
+  browserFlows: BrowserFlowDto[];
   /** Memories shown to the model, per run id. */
   memoryUsage: Record<string, MemoryRef[]>;
 }
@@ -1173,6 +1234,7 @@ export type RunEvent =
   | { seq: number; type: 'deployment_plan'; plan: DeploymentPlanDto }
   | { seq: number; type: 'review'; review: ReviewDto }
   | { seq: number; type: 'test_run'; testRun: TestRunDto }
+  | { seq: number; type: 'browser_flow'; flow: BrowserFlowDto }
   | { seq: number; type: 'memories_used'; memories: MemoryRef[] }
   | { seq: number; type: 'memory_saved'; memory: MemoryDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }

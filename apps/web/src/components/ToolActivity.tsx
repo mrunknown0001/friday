@@ -1,6 +1,7 @@
 import type {
   ApprovalDto,
   AttachmentDto,
+  BrowserFlowDto,
   DeploymentPlanDto,
   ReviewDto,
   TestRunDto,
@@ -13,6 +14,7 @@ import { ApprovalCard } from './ApprovalCard';
 import { AttachmentThumbs } from './Attachments';
 import { DeploymentPlanCard } from './DeploymentPlanCard';
 import { ReviewCard } from './ReviewCard';
+import { BrowserFlowCard } from './BrowserFlowCard';
 import { TestRunCard } from './TestRunCard';
 import { isFailedCommand } from './RunRecord';
 
@@ -33,6 +35,8 @@ export interface ToolItem {
   review?: ReviewDto | undefined;
   /** Results of a run_tests call. */
   testRun?: TestRunDto | undefined;
+  /** Results of a run_browser_flow call. */
+  browserFlow?: BrowserFlowDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
   /** Images the tool showed the model (view_image). */
@@ -141,6 +145,10 @@ export function toolLabel(name: string, argsJson: string): string {
     case 'create_spreadsheet':
     case 'create_presentation':
       return str(a.path);
+    case 'inspect_page':
+      return `${str(a.url ?? a.process_id)}${a.path ? str(a.path) : ''}`;
+    case 'run_browser_flow':
+      return `${str(a.title)}${Array.isArray(a.steps) ? ` (${a.steps.length} step${a.steps.length === 1 ? '' : 's'})` : ''}`;
     case 'screenshot':
       return `${str(a.url ?? a.process_id)}${a.path ? str(a.path) : ''}${a.full_page ? ' (full page)' : ''}`;
     case 'code_map':
@@ -257,6 +265,7 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
   const plans = items.flatMap((i) => (i.deploymentPlan ? [i.deploymentPlan] : []));
   const reviews = items.flatMap((i) => (i.review ? [i.review] : []));
   const testRuns = items.flatMap((i) => (i.testRun ? [i.testRun] : []));
+  const flows = items.flatMap((i) => (i.browserFlow ? [i.browserFlow] : []));
   return (
     <>
       <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
@@ -274,6 +283,9 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
       ))}
       {testRuns.map((t) => (
         <TestRunCard key={t.id} run={t} />
+      ))}
+      {flows.map((f) => (
+        <BrowserFlowCard key={f.id} flow={f} />
       ))}
     </>
   );

@@ -31,6 +31,7 @@ export function decide(category: PermissionCategory | undefined): PolicyDecision
     case 'remote':
     case 'deployment':
     case 'task_permission':
+    case 'browser': // driving a page of a local site (browser flows)
     case 'mcp':
       return { action: 'require_approval' };
     case undefined:

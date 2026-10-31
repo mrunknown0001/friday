@@ -134,6 +134,7 @@ function approvalAction(d: ApprovalDetails): string | null {
       return [
         ...d.files.map((f) => `- edit \`${f}\``),
         ...d.commands.map((c) => `- run \`${displayArgv(c)}\``),
+        ...(d.sites ?? []).map((site) => `- run browser flows on ${site}`),
       ].join('\n');
     case 'saved_action':
       return d.steps
@@ -149,6 +150,12 @@ function approvalAction(d: ApprovalDetails): string | null {
         ...d.packages.map((p) => `- ${p.name}: ${p.from} → ${p.to} (${p.change})`),
         '',
         fenced(d.commands.map(displayArgv).join('\n'), 'sh'),
+      ].join('\n');
+    case 'browser_flow':
+      return [
+        `On ${d.startUrl}:`,
+        '',
+        ...d.steps.map((st, i) => `${i + 1}. ${st.description}`),
       ].join('\n');
   }
 }

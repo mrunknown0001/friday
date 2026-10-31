@@ -264,9 +264,27 @@ approved), credentials never reach the model, and results from other systems are
 
 **Testing and UI**
 
-- ⬜ **Browser flows** (L). Friday drives a local page (navigate, click, type, wait for text) to test a UI flow end to
-  end, with a screenshot and console errors at each step. Local pages only, on the existing capture engines; a flow
-  is a list of steps the user sees before it runs.
+- ✅ **Browser flows** (L). Done: `inspect_page` (no approval) lists a local page's headings, buttons, links and
+  fields with ready-made targets. `run_browser_flow` (approval, new `browser` category) runs steps: go to, click,
+  type, choose, check, press a key, wait, and expect a text, element, value or address. Elements are named by role
+  and name, label or text, and each step waits until its element is unique, shown, enabled, not covered and stable.
+  Every step records a screenshot, the address, console errors, failed requests and dialogs. The card lists every
+  step with typed values. _Allow more browser flows on this site_ (and `sites` in task permissions) covers re-runs.
+  The model sees one screenshot per flow; the user sees all of them on the result card. A passing flow after the last
+  change verifies the run. Both engines are supported: Chrome over DevTools, and the desktop app's own Chromium
+  through `webContents.debugger`. Verified live on 2026-10-31 with `claude-sonnet-4.6` on a scratch shop with a
+  planted add-to-cart bug: it fixed the bug, a flow with guessed selectors failed and listed the page's elements,
+  and the corrected flow passed (run report verified via the flow). A 12-step flow approved by clicking in the UI
+  then passed. Found and fixed in the live runs:
+  - clicks dropped by a just-loaded page (now waits for painted frames and checks the press arrived);
+  - `{role, label}` targets refused (now read as the name);
+  - the redactor treating a local URL followed by an e-mail in JSON as a URL with a password.
+
+  The desktop engine was checked with an Electron harness (same results, screenshots verified). Original plan:
+  Friday drives a local page (navigate, click, type, wait for text) to test a UI flow end to end, with a
+  screenshot and console errors at each step. Local pages only, on the existing capture engines; a flow is a list
+  of steps the user sees before it runs.
+
 - ✅ **Before/after visuals** (S–M). Done: `screenshot` with `compare` diffs against the latest earlier capture of
   the same page and size (built-in PNG codec and YIQ diff, no new packages), returns the changed share, the areas,
   and a highlighted image, and the run report shows before, after and difference side by side. Verified live on

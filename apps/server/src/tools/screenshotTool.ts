@@ -6,7 +6,13 @@ import { PROCESS_ID } from '../processes/manager.js';
 import { WorkspaceError } from '../workspace/paths.js';
 import { diffImages, type Region } from '../visual/diff.js';
 import { decodePng, encodePng, PngError } from '../visual/png.js';
-import { defineTool, type CaptureComparison, type CaptureStore, type ToolImage } from './types.js';
+import {
+  defineTool,
+  type CaptureComparison,
+  type CaptureStore,
+  type ToolContext,
+  type ToolImage,
+} from './types.js';
 
 export function percent(ratio: number): string {
   if (ratio === 0) return '0%';
@@ -75,6 +81,36 @@ function decodeSize(png: Buffer): { width: number; height: number } | null {
   return info ? { width: info.width, height: info.height } : null;
 }
 
+/** The local page a tool should open: a URL, or a background process's URL, plus a path. */
+export function resolvePageUrl(
+  args: { url?: string | undefined; process_id?: string | undefined; path?: string | undefined },
+  ctx: ToolContext,
+): string {
+  let target = args.url;
+  if (args.process_id) {
+    const p = ctx.processes?.get(args.process_id);
+    if (!p || (ctx.project && p.projectId !== ctx.project.id))
+      throw new WorkspaceError('not_found', `No background process "${args.process_id}".`);
+    if (!p.urls[0])
+      throw new WorkspaceError(
+        'unsupported',
+        `${p.id} "${p.name}" has not printed a local URL; pass url instead.`,
+      );
+    target = p.urls[0];
+  }
+  if (!target) throw new WorkspaceError('invalid_path', 'Provide url or process_id.');
+  try {
+    let url = localPageUrl(target, ctx.capture?.fridayPort() ?? null);
+    if (args.path) url = new URL(args.path, url).toString();
+    // A path like "//example.com" would leave this machine.
+    return localPageUrl(url, ctx.capture?.fridayPort() ?? null);
+  } catch (err) {
+    if (err instanceof PageUrlError || err instanceof TypeError)
+      throw new WorkspaceError('invalid_path', err.message);
+    throw err;
+  }
+}
+
 export const screenshot = defineTool({
   name: 'screenshot',
   description:
@@ -122,27 +158,7 @@ export const screenshot = defineTool({
         'unsupported',
         'No browser is available for screenshots. In the browser version of Friday, install Chrome, Chromium or Edge (or set FRIDAY_CHROME); the desktop app has one built in.',
       );
-    let target = args.url;
-    if (args.process_id) {
-      const p = ctx.processes?.get(args.process_id);
-      if (!p || (ctx.project && p.projectId !== ctx.project.id))
-        throw new WorkspaceError('not_found', `No background process "${args.process_id}".`);
-      if (!p.urls[0])
-        throw new WorkspaceError(
-          'unsupported',
-          `${p.id} "${p.name}" has not printed a local URL; pass url instead.`,
-        );
-      target = p.urls[0];
-    }
-    let url: string;
-    try {
-      url = localPageUrl(target!, ctx.capture.fridayPort());
-      if (args.path) url = new URL(args.path, url).toString();
-    } catch (err) {
-      if (err instanceof PageUrlError || err instanceof TypeError)
-        throw new WorkspaceError('invalid_path', err.message);
-      throw err;
-    }
+    const url = resolvePageUrl(args, ctx);
     let shot;
     try {
       shot = await ctx.capture.engine.capture(url, {

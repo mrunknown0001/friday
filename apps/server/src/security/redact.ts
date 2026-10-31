@@ -16,8 +16,11 @@ const PATTERNS: RegExp[] = [
   /((?<![A-Za-z0-9])[A-Za-z0-9]+_PWD\s*[=:]\s*)["']?[^\s"']{4,}/gi,
 ];
 
-/** user:password@ in URLs (basic auth); the user name is kept. */
-const URL_CREDENTIALS = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi;
+/**
+ * user:password@ in URLs (basic auth); the user name is kept. Neither part runs across a quote
+ * or backslash, so a URL followed by an e-mail address in JSON is not mistaken for one.
+ */
+const URL_CREDENTIALS = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@"'\\]+:)[^\s/@"'\\]+@/gi;
 
 const REDACTED = '[REDACTED]';
 

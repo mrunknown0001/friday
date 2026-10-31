@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { BrowserWindow, session, shell, type Session, type UtilityProcess } from 'electron';
 
@@ -201,6 +202,131 @@ async function capture(req: CaptureRequest) {
   }
 }
 
+// ---------------------------------------------------------------- browser flows
+
+/**
+ * Pages the server drives step by step (browser flows), in the same capture session: hidden
+ * offscreen windows, documents from this machine only, no other windows, no downloads. Only these
+ * DevTools methods are relayed.
+ */
+const PAGE_METHODS = new Set([
+  'Page.enable',
+  'Page.navigate',
+  'Page.getFrameTree',
+  'Page.handleJavaScriptDialog',
+  'Page.captureScreenshot',
+  'Runtime.enable',
+  'Runtime.evaluate',
+  'Runtime.callFunctionOn',
+  'Runtime.releaseObject',
+  'Network.enable',
+  'Input.dispatchMouseEvent',
+  'Input.dispatchKeyEvent',
+  'Input.insertText',
+]);
+const MAX_PAGES = 4;
+const pages = new Map<string, BrowserWindow>();
+
+async function openPage(width: number, height: number, child: UtilityProcess): Promise<string> {
+  if (pages.size >= MAX_PAGES) throw new Error('Too many browser flows are running.');
+  const win = new BrowserWindow({
+    show: false,
+    width,
+    height,
+    useContentSize: true,
+    webPreferences: {
+      session: captureSession(),
+      offscreen: true,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  });
+  const id = randomUUID();
+  const wc = win.webContents;
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // DevTools commands wait for a renderer, which a window gets once it loads something.
+  try {
+    await win.loadURL('about:blank');
+    wc.debugger.attach('1.3');
+  } catch (err) {
+    win.destroy();
+    throw err;
+  }
+  wc.debugger.on('message', (_event, method, params) =>
+    child.postMessage({ type: 'page_event', page: id, method, params }),
+  );
+  win.on('closed', () => pages.delete(id));
+  pages.set(id, win);
+  return id;
+}
+
+async function pageSend(
+  id: string,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const win = pages.get(id);
+  if (!win || win.isDestroyed()) throw new Error('The page is closed.');
+  if (!PAGE_METHODS.has(method)) throw new Error(`${method} is not allowed.`);
+  if (method === 'Page.captureScreenshot') {
+    // An offscreen window paints through its own frames, not the DevTools screencast.
+    const image = await win.webContents.capturePage();
+    const data =
+      params.format === 'jpeg'
+        ? image.toJPEG(typeof params.quality === 'number' ? params.quality : 80)
+        : image.toPNG();
+    return { data: data.toString('base64') };
+  }
+  return win.webContents.debugger.sendCommand(method, params);
+}
+
+function closePage(id: string): void {
+  const win = pages.get(id);
+  pages.delete(id);
+  if (win && !win.isDestroyed()) win.destroy();
+}
+
+interface PageRequest {
+  type: 'page_open' | 'page_send' | 'page_close';
+  id: string;
+  page?: string;
+  width?: number;
+  height?: number;
+  method?: string;
+  params?: Record<string, unknown>;
+}
+
+function servePage(req: PageRequest, child: UtilityProcess): void {
+  const reply = (r: { ok: boolean; result?: unknown; error?: string }) =>
+    child.postMessage({ type: 'page_result', id: req.id, ...r });
+  const fail = (err: unknown) =>
+    reply({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  try {
+    if (req.type === 'page_open') {
+      const width = Math.min(Math.max(Number(req.width) || 1280, 320), 2560);
+      const height = Math.min(Math.max(Number(req.height) || 800, 240), 2000);
+      openPage(width, height, child).then((page) => reply({ ok: true, result: { page } }), fail);
+    } else if (req.type === 'page_close') {
+      closePage(String(req.page));
+      reply({ ok: true });
+    } else {
+      pageSend(String(req.page), String(req.method), req.params ?? {}).then(
+        (result) => reply({ ok: true, result }),
+        fail,
+      );
+    }
+  } catch (err) {
+    fail(err);
+  }
+}
+
+/** Close every driven page (the server stopped). */
+export function closeAllPages(): void {
+  for (const id of [...pages.keys()]) closePage(id);
+}
+
 /** Answer capture requests from the server (utility process). */
 export function serveCaptures(child: UtilityProcess): void {
   child.on('message', (message: unknown) => {
@@ -217,6 +343,14 @@ export function serveCaptures(child: UtilityProcess): void {
         (error) =>
           child.postMessage({ type: 'open_result', id, ok: !error, ...(error ? { error } : {}) }),
       );
+      return;
+    }
+    const page = message as PageRequest;
+    if (
+      (page?.type === 'page_open' || page?.type === 'page_send' || page?.type === 'page_close') &&
+      typeof page.id === 'string'
+    ) {
+      servePage(page, child);
       return;
     }
     const print = message as PrintRequest;

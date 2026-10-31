@@ -586,6 +586,31 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX monitor_events_by_monitor ON monitor_events (monitor_id, id);
     `,
   },
+  {
+    version: 22,
+    name: 'browser_flows',
+    up: `
+      -- Browser flows (run_browser_flow): each step's result and screenshot. The screenshots are
+      -- attachments of the conversation, kept for the user and not sent to the model again.
+      CREATE TABLE browser_flows (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        project_id TEXT,
+        title TEXT NOT NULL,
+        start_url TEXT NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        engine TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('passed', 'failed', 'cancelled')),
+        duration_ms INTEGER NOT NULL,
+        steps TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX browser_flows_session ON browser_flows (session_id, created_at);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

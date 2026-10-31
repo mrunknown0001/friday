@@ -204,6 +204,35 @@ writes Word instead. Spreadsheet values are never written as formulas.
 - **Image files:** PNG, JPEG, WebP, GIF and SVG files in the file tree open as images. SVG is shown with scripts
   disabled.
 
+### Browser flows
+
+Ask Friday to check a UI flow end to end ("sign in, add Green tea to the cart, open the cart") and it clicks through
+your running app the way a person would:
+
+- **Look first** (`inspect_page`, no approval): opens a local page and lists its headings, every visible button, link
+  and form field with its state (filled, checked, disabled), and a ready-made target for each, plus the start of the
+  page's text and console errors.
+- **Run the flow** (`run_browser_flow`, approval): a list of steps: go to a page, click, type into a field, choose
+  an option, check a box, press a key, wait, and check that the page shows a text, an element, a field value or an
+  address (or does not). Elements are named the way you would: `{"role": "button", "name": "Add to cart"}`,
+  `{"label": "Email"}`, `{"text": "Order placed"}`. A test id or CSS selector is the last resort.
+- **The card** lists every step before it runs, typed values included, and says when a step types a password or
+  accepts a confirmation dialog. Tick _Also allow more browser flows on this site_ to let the rest of the task
+  re-run flows on the same local site without asking (a task permission can also list sites).
+- **Each step** waits for its element (up to 5 s by default) until it is shown, enabled, not covered and no longer
+  moving, clicks it with real mouse events, then waits for the page to settle. It records a screenshot, the address,
+  and any console errors, uncaught exceptions, failed requests and dialogs. The flow stops at the first failing step;
+  the error says why (not found, several matches with where each is, hidden, disabled, covered by another element)
+  and lists the elements on the page so the step can be fixed.
+- **The result card** shows every step with its screenshot (each opens full size). The model gets every step as text
+  and one screenshot: the failing step's, or the last. A flow that passed after the last change counts as the
+  task's check in the verification report.
+- Every flow starts in a fresh browser with no cookies, so a flow that needs an account signs in with a test account
+  from the project (seed data, fixtures, README). Friday never asks you for a password. Only `localhost` /
+  `127.0.0.1` pages, never Friday itself; a click that leads to another site fails the step, frames from other sites
+  are blocked, and other windows and downloads are refused. It uses the same browser as screenshots (built in to
+  the desktop app, an installed Chrome, Chromium or Edge otherwise). At most 30 steps and 3 minutes per flow.
+
 ### Connected apps (MCP)
 
 Friday can use your other apps through their MCP servers, the way Claude does. In Settings › **Connected apps**,
@@ -281,8 +310,8 @@ permission for the current task:
   create or edit (a folder written as `src/` covers what is inside), and the exact commands it may run (argv, project
   root, no shell). You approve or reject it like any other action.
 - **You grant one while approving.** On an edit or a command, tick _Also allow further edits to these files_ (or
-  _re-running this exact command_) before **Approve**. That action's files or command are added to the task's
-  permission.
+  _re-running this exact command_, or _more browser flows on this site_) before **Approve**. That action's files,
+  command or site are added to the task's permission.
 
 While a permission is active, matching actions are approved automatically and shown as such. They still go through
 everything else: the re-check right before running (a changed file makes the action stale), the diff in the

@@ -27,6 +27,7 @@ import { toAttachmentDto, type AttachmentRepo } from '../repositories/attachment
 import type { CaptureRepo } from '../repositories/captures.js';
 import type { ReviewRepo } from '../repositories/reviews.js';
 import type { TestRunRepo } from '../repositories/testRuns.js';
+import type { BrowserFlowRepo } from '../repositories/browserFlows.js';
 import type { SavedActionRepo } from '../repositories/savedActions.js';
 import type { MonitorRepo } from '../repositories/monitors.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
@@ -104,6 +105,8 @@ export interface RunManagerDeps {
   reviews?: ReviewRepo;
   /** Test runs (run_tests) and each test's outcome. */
   testRuns?: TestRunRepo;
+  /** Browser flow results (run_browser_flow). */
+  browserFlows?: BrowserFlowRepo;
   /** Saved actions (runbooks) per project. */
   savedActions?: SavedActionRepo;
   /** Health monitors (read-only for the model). */
@@ -278,12 +281,14 @@ export class RunManager {
       for (const f of scope.files) if (!p.files.includes(f)) p.files.push(f);
       for (const c of scope.commands)
         if (!p.commands.some((x) => x.join('\0') === c.join('\0'))) p.commands.push(c);
+      for (const site of scope.sites) if (!p.sites.includes(site)) p.sites.push(site);
     } else {
       p = {
         approvalId,
         runId: run.id,
         files: scope.files,
         commands: scope.commands,
+        sites: scope.sites,
         maxActions: TASK_PERMISSION_LIMITS.defaultActions,
         used: 0,
         expiresAt: Date.now() + TASK_PERMISSION_LIMITS.defaultMinutes * 60_000,
@@ -295,7 +300,13 @@ export class RunManager {
       sessionId: run.sessionId,
       actor: 'user',
       action: 'task_permission_extended',
-      details: { runId: run.id, approvalId, files: scope.files, commands: scope.commands },
+      details: {
+        runId: run.id,
+        approvalId,
+        files: scope.files,
+        commands: scope.commands,
+        sites: scope.sites,
+      },
     });
     this.emit(run, { type: 'task_permission', permission: taskPermissionDto(p) });
   }
@@ -802,14 +813,24 @@ export class RunManager {
           ? []
           : registry
               .definitions(!!project)
-              // A model known not to read images is not offered the tools that show it one, and
-              // screenshots need a browser.
-              .filter(
-                (t) =>
-                  !['view_image', 'screenshot'].includes(t.name) ||
-                  (caps.imageInput !== 'unsupported' &&
-                    (t.name !== 'screenshot' || !!this.deps.capture)),
-              );
+              // A model known not to read images is not offered the tools that show it one;
+              // screenshots need a browser, and browser flows one that can drive a page.
+              .filter((t) => {
+                const sees = caps.imageInput !== 'unsupported';
+                const drives = !!this.deps.capture?.engine.openPage;
+                switch (t.name) {
+                  case 'view_image':
+                    return sees;
+                  case 'screenshot':
+                    return sees && !!this.deps.capture;
+                  case 'run_browser_flow':
+                    return sees && drives;
+                  case 'inspect_page':
+                    return drives;
+                  default:
+                    return true;
+                }
+              });
       // Memory: pinned, session notes, and the most relevant others for this request.
       const memoryRefs =
         this.deps.memory?.retrieve(
@@ -1077,6 +1098,23 @@ export class RunManager {
       ...(this.deps.reviews ? { reviews: this.reviewContext(run, callId) } : {}),
       ...(this.deps.testRuns && project
         ? { tests: this.testRunContext(run, project, callId) }
+        : {}),
+      ...(this.deps.browserFlows
+        ? {
+            browserFlows: {
+              record: (flow) => {
+                const dto = this.deps.browserFlows!.create({
+                  ...flow,
+                  sessionId: run.sessionId,
+                  runId: run.id,
+                  toolCallId: callId,
+                  projectId: project?.id ?? null,
+                });
+                this.emit(run, { type: 'browser_flow', flow: dto });
+                return dto;
+              },
+            },
+          }
         : {}),
       ...(this.deps.savedActions ? { savedActions: this.savedActionContext() } : {}),
       ...(this.deps.monitors ? { monitors: this.deps.monitors } : {}),

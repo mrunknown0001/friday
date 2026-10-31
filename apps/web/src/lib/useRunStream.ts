@@ -1,16 +1,17 @@
 import type {
   ApprovalDto,
   AttachmentDto,
+  BrowserFlowDto,
   DeploymentPlanDto,
   MemoryDto,
   MemoryRef,
   PlanStep,
   ReviewDto,
-  TestRunDto,
   RunDto,
   RunEvent,
   RunPhase,
   TaskPermissionDto,
+  TestRunDto,
   ToolCallStatus,
 } from '@friday/shared';
 import { useEffect, useState } from 'react';
@@ -46,6 +47,8 @@ export interface LiveRun {
   reviews: ReviewDto[];
   /** Test runs (run_tests) finished during this run. */
   testRuns: TestRunDto[];
+  /** Browser flows (run_browser_flow) finished during this run. */
+  browserFlows: BrowserFlowDto[];
   /** Memories shown to the model for this run. */
   memoriesUsed: MemoryRef[];
   /** Memories the agent saved or proposed during this run. */
@@ -70,6 +73,7 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'deployment_plan',
   'review',
   'test_run',
+  'browser_flow',
   'memories_used',
   'memory_saved',
   'message_saved',
@@ -86,6 +90,7 @@ export const initial = (runId: string): LiveRun => ({
   deploymentPlans: [],
   reviews: [],
   testRuns: [],
+  browserFlows: [],
   memoriesUsed: [],
   memoriesSaved: [],
   taskPermission: null,
@@ -142,6 +147,9 @@ export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
       break;
     case 'test_run':
       next.testRuns = [...prev.testRuns.filter((t) => t.id !== event.testRun.id), event.testRun];
+      break;
+    case 'browser_flow':
+      next.browserFlows = [...prev.browserFlows.filter((f) => f.id !== event.flow.id), event.flow];
       break;
     case 'deployment_plan':
       next.deploymentPlans = [

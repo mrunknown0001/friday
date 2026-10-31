@@ -43,6 +43,7 @@ const permission = (over: Partial<TaskPermissionDto> = {}): TaskPermissionDto =>
   runId: 'r1',
   files: ['src/cart.js', 'test/'],
   commands: [['npm', 'test']],
+  sites: [],
   maxActions: 20,
   used: 3,
   expiresAt: new Date(Date.now() + 600_000).toISOString(),
