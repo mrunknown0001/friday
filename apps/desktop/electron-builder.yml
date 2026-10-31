@@ -5,14 +5,15 @@ electronVersion: 44.9.3
 directories:
   output: release
   buildResources: build-resources
-# The app itself is just the compiled shell; the server is one bundled file and the UI is static.
+# The app itself is just the compiled shell; the server is one bundled file (plus the voice
+# packages it loads at runtime) and the UI is static.
 files:
   - dist/**
   - package.json
 extraResources:
   - from: build/server
     to: server
-    filter: ['index.mjs', 'index.mjs.LEGAL.txt']
+    filter: ['index.mjs', 'index.mjs.LEGAL.txt', 'node_modules/**']
   - from: ../web/dist
     to: web
     filter: ['**/*', '!**/*.map']

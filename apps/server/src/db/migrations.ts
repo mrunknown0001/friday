@@ -655,6 +655,21 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX load_tests_session ON load_tests (session_id, created_at);
     `,
   },
+  {
+    version: 25,
+    name: 'spoken_replies',
+    up: `
+      -- The spoken version of a run's reply (voice), kept so replaying it costs no model call.
+      -- Only text: audio is made on demand and never stored.
+      CREATE TABLE spoken_replies (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        model TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

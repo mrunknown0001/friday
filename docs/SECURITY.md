@@ -94,7 +94,7 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Other local programs or users driving the agent (desktop)    | A 256-bit token generated at each launch is required on every request (compared as fixed-length digests). Electron adds it at the network layer to the app's own requests only; page JavaScript never sees it, and it is never logged or stored.                        |
 | Another program taking the desktop server's port             | The server binds port 0 itself and reports the port over the utility-process channel, so there is no gap between choosing a port and binding it.                                                                                                                        |
 | Renderer compromise reaching the OS                          | `contextIsolation`, `sandbox`, no `nodeIntegration`. The preload exposes four calls (folder picker, restart, show config file, focus window); IPC is honoured only from the app window's top frame on the server's origin.                                              |
-| Navigation, pop-ups and permission prompts                   | Navigation and redirects off the app origin are blocked (http/https links open in the system browser), `window.open` and webviews are denied, and every permission except clipboard writes for the app is refused.                                                      |
+| Navigation, pop-ups and permission prompts                   | Navigation and redirects off the app origin are blocked (http/https links open in the system browser), `window.open` and webviews are denied, and every permission except clipboard writes, notifications and the microphone (audio only) for the app is refused.       |
 | Repurposing the packaged binary                              | Electron fuses: `RunAsNode`, `NODE_OPTIONS` and inspector flags disabled; asar integrity validation and app-from-asar-only enabled.                                                                                                                                     |
 | Two servers on one database                                  | A PID lock file in the data folder; a stale lock from a crash is replaced.                                                                                                                                                                                              |
 | API key storage (desktop)                                    | `friday.env` is created `0600` in the user's config folder and read only by the server process. Settings shows its path, never its contents.                                                                                                                            |
@@ -295,6 +295,21 @@ on virtual users and duration that Friday enforces before the card. Production t
 5-minute approval. k6 runs on the host with the allowlisted environment, `--no-usage-report` and no REST API
 server, from a temporary folder that is deleted afterwards. Response samples in the results are cut to 200
 characters, redacted and marked as data. k6 is never installed by Friday.
+
+## Voice
+
+Speech (Kokoro) and transcription (Whisper) run in a worker thread of the local server; recordings and speech are
+processed in memory and never written to disk, logged or sent anywhere. The models are downloaded only when the
+user clicks Download in Settings (audit-logged), from fixed Hugging Face revisions over https; redirects are
+followed by hand and only to `huggingface.co`/`hf.co` hosts, and every file must match its pinned size and SHA-256
+or it is discarded. transformers.js runs with remote loading off, so it reads only those files; Kokoro's voices
+ship inside `kokoro-js`. The one call that leaves the machine is the spoken version of a reply, sent to the model
+provider when a reply is first played: the reply is redacted first and marked as data, and the result is redacted
+and cleaned again (code, paths, links and long hashes removed) before it is stored and spoken. Approval
+announcements are fixed phrases per category and never read the card's contents. Voice never decides an approval.
+The microphone records only while the button is on (no wake word, no background listening); the desktop app grants
+the microphone, and only audio (never camera or screen), to its own origin. Uploads are limited to 2 minutes of
+16 kHz mono WAV and speech requests to 600 characters.
 
 ## Databases
 

@@ -40,10 +40,15 @@ import type {
   SessionDetailDto,
   SessionSummaryDto,
   SettingsDto,
+  SpokenReplyDto,
   SshHostDto,
   SystemInfoDto,
   TreeEntryDto,
   UsageSummaryDto,
+  VoiceModelDto,
+  VoiceModelId,
+  VoiceSettings,
+  VoiceStatusDto,
   WorktreeStatusDto,
 } from '@friday/shared';
 
@@ -78,6 +83,32 @@ async function download(url: string): Promise<{ blob: Blob; name: string }> {
   const disposition = res.headers.get('content-disposition') ?? '';
   const name = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
   return { blob: await res.blob(), name: name ? decodeURIComponent(name) : 'download' };
+}
+
+/** POST JSON and get a binary answer back (speech audio). */
+async function postForBlob(url: string, body: unknown, signal?: AbortSignal): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'x-friday-client': '1', 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    throw new ApiError(
+      0,
+      'server_unreachable',
+      'Cannot reach the Friday server. Is it running?',
+      true,
+    );
+  }
+  if (!res.ok) {
+    const err = ((await res.json().catch(() => null)) as ApiErrorBody | null)?.error;
+    throw new ApiError(res.status, err?.code ?? 'http_error', err?.message ?? `HTTP ${res.status}`);
+  }
+  return res.blob();
 }
 
 async function request<T>(
@@ -277,6 +308,15 @@ export const api = {
   sessionChanges: (id: string) =>
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
+  voice: () => request<VoiceStatusDto>('GET', '/api/voice'),
+  downloadVoiceModel: (id: VoiceModelId) =>
+    request<VoiceModelDto>('POST', `/api/voice/models/${id}/download`),
+  removeVoiceModel: (id: VoiceModelId) => request<void>('DELETE', `/api/voice/models/${id}`),
+  setVoiceSettings: (s: VoiceSettings) => request<VoiceSettings>('PUT', '/api/voice/settings', s),
+  speak: (text: string, signal?: AbortSignal) => postForBlob('/api/voice/speak', { text }, signal),
+  transcribe: (wav: Blob) => request<{ text: string }>('POST', '/api/voice/transcribe', wav),
+  spokenReply: (sessionId: string, runId: string) =>
+    request<SpokenReplyDto>('POST', `/api/sessions/${sessionId}/runs/${runId}/spoken`),
   loadTargets: () => request<{ targets: LoadTargetDto[] }>('GET', '/api/load-targets'),
   addLoadTarget: (t: LoadTargetInput) => request<LoadTargetDto>('POST', '/api/load-targets', t),
   removeLoadTarget: (id: string) => request<void>('DELETE', `/api/load-targets/${id}`),

@@ -571,6 +571,28 @@ runs `run_load_test` with the k6 installed on this machine (`k6` on PATH or `FRI
 - Each virtual user keeps its cookies, so a login request first signs that user in for the rest. Requests that
   change data are called out on the card.
 
+### Voice
+
+Friday can speak its replies and take dictation. Both run on this machine: Kokoro (82M, 8-bit) speaks and Whisper
+base (8-bit) transcribes, through `kokoro-js` and ONNX Runtime on the CPU. Audio never leaves the machine and is
+never stored.
+
+- **Set up once:** **Settings → Voice** lists the two models (about 92 MB and 80 MB) with their source and license.
+  Nothing downloads until you click **Download**. Each file is pinned to a Hugging Face revision and checked against
+  its SHA-256. There you also pick the voice (27 American and British English voices), the speed and the
+  microphone language.
+- **Speak replies:** the speaker button in the composer. When a reply finishes, Friday speaks it. Every reply also
+  has a play/stop button under it. What is spoken is a short spoken version, written by one extra model call the
+  first time a reply is played and then kept: prose is said, while code, logs, diffs, tables, paths, links and
+  hashes are described, never read out ("the fix is the comparison on line 12, which now uses
+  less-than-or-equal"). Redacted values stay hidden. When an approval card appears, Friday says what it needs
+  ("Friday needs your approval to run a command"), never what is on it.
+- **Dictate:** the microphone button records while it is on, with a red indicator, the elapsed time and the level
+  (2 minutes at most). Click it again and the transcript goes into the message box to edit and send. Nothing is
+  sent by itself, and voice never approves anything: saying "approve" is just a message.
+- On Linux, `npm install` skips ONNX Runtime's CUDA download (`.npmrc`); speech runs on the CPU. The models load on
+  first use and are unloaded after 5 idle minutes.
+
 ### Databases (read-only)
 
 Add a database in **Settings → Databases** (Postgres, MySQL/MariaDB or SQLite), for any conversation or for one

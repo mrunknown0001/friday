@@ -62,6 +62,7 @@ async function main() {
     app.log.info({ signal }, 'shutting down');
     services.monitorService.stop();
     await services.runManager.shutdown();
+    await services.voice.close();
     await app.close();
     db.close();
     process.exit(0);

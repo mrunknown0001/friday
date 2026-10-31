@@ -36,12 +36,16 @@ import { RunRepo } from './repositories/runs.js';
 import { SessionRepo } from './repositories/sessions.js';
 import { SettingsRepo } from './repositories/settings.js';
 import { LoadTargetRepo, LoadTestRepo } from './repositories/loadTests.js';
+import { SpokenReplyRepo } from './repositories/spokenReplies.js';
 import { AuditRepo, ProviderCallRepo, UsageRepo } from './repositories/telemetry.js';
 import { ToolCallRepo } from './repositories/toolCalls.js';
 import { Redactor } from './security/redact.js';
 import { ToolRegistry } from './tools/registry.js';
 import type { ToolEnvironment } from './workspace/environment.js';
 
+import { LocalVoiceEngine, type VoiceEngine } from './voice/engine.js';
+import { VoiceModelStore } from './voice/models.js';
+import { VoiceService, voiceModelsDir } from './voice/service.js';
 export const MODEL_SETTING = 'provider.model';
 const modelSettingSchema = z.string().min(1).max(200);
 
@@ -134,6 +138,7 @@ export interface Services {
   modelSettings: ModelSettings;
   catalog: ModelCatalog;
   runManager: RunManager;
+  voice: VoiceService;
 }
 
 export interface ServiceOverrides {
@@ -148,6 +153,10 @@ export interface ServiceOverrides {
   monitorFetch?: typeof fetch;
   /** Screenshot engine (desktop shell or installed Chrome); none by default. */
   captureEngine?: CaptureEngine | null;
+  /** Speech engine and model downloads (tests). */
+  voiceEngine?: VoiceEngine;
+  voiceFetch?: typeof fetch;
+  voiceModelsDir?: string;
   runManager?: {
     checkpointIntervalMs?: number;
     retainFinishedMs?: number;
@@ -251,6 +260,23 @@ export function createServices(
     (text) => redactor.redact(text),
   );
 
+  const voiceStore = new VoiceModelStore(
+    overrides.voiceModelsDir ??
+      voiceModelsDir(config.dataDir === ':memory:' ? os.tmpdir() : config.dataDir),
+    overrides.voiceFetch ?? fetch,
+  );
+  const voice = new VoiceService({
+    store: voiceStore,
+    engine: overrides.voiceEngine ?? new LocalVoiceEngine(voiceStore),
+    settings,
+    spoken: new SpokenReplyRepo(db),
+    messages,
+    runs,
+    provider,
+    redactor,
+    resolveModel: () => modelSettings.resolve().model,
+  });
+
   const runManager = new RunManager({
     provider,
     sessions,
@@ -339,5 +365,6 @@ export function createServices(
     modelSettings,
     catalog: new ModelCatalog(provider),
     runManager,
+    voice,
   };
 }

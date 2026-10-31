@@ -435,26 +435,37 @@ approved), credentials never reach the model, and results from other systems are
   live on 2026-10-30 by exporting the push-and-PR test conversation through the UI as a full PDF. Original plan:
   export a conversation (messages, tool results, approvals and the run report) as Markdown or PDF with the
   document generator; secrets are redacted as everywhere else.
-- ⬜ **Voice replies and voice input** (M–L, added 2026-10-31).
-  - **Spoken replies.** A **Voice** toggle in the composer makes Friday also speak its replies. The text reply
-    still appears as usual, and each spoken reply gets play and stop controls inline.
-  - **What is spoken.** Friday speaks the prose and a description of the technical parts, not the parts
-    themselves. Code, logs, diffs, command output, tables, paths and hashes are never read out. A code block is
-    described in a sentence or two: what it is, what it does and its significant line, for example "the fix is
-    the comparison on line 12, which now uses less-than-or-equal, so the last item is counted". Approval cards are
-    announced ("Friday needs your approval to run the tests"), and redacted values stay redacted.
-  - **Voice input.** A microphone button in the composer records while it is on, with a visible recording
-    indicator. The transcript goes into the message box to edit and send. The microphone is used only while the
-    button is on: nothing listens in the background, there is no wake word, and the audio is not stored.
-  - **Voice never approves anything.** Saying "yes" or "approve" is just a message. Approvals still need a click
-    on the card, as now.
-  - Open questions:
-    - Which speech engines. Options are the browser's built-in speech (free, local, quality varies, and
-      recognition does not work in Electron), NoTokenLimit audio models if it offers any, or a local engine such
-      as Piper or whisper.cpp (a new dependency that needs approval).
-    - How the spoken version is written: a second short model call after each reply (costs tokens), or the
-      model writing it alongside the reply.
-    - Whether a transcript should send itself after a pause or always wait for **Send**.
+- ✅ **Voice replies and voice input** (M–L, added 2026-10-31). Done, on this machine: Kokoro 82M speaks and Whisper
+  base transcribes (8-bit ONNX through `kokoro-js` and transformers.js, in a worker thread of the server). The
+  user's choices:
+  - engines on the server (NoTokenLimit has no audio models; browser recognition doesn't work in Electron and sends
+    audio to Google);
+  - models downloaded only on a click in Settings → Voice, pinned to a Hugging Face revision and checked against
+    each file's SHA-256 (about 92 MB and 80 MB);
+  - the spoken version written by a second short model call when a reply is first played, then kept (one row per run);
+  - the transcript always waits for **Send**.
+
+  The composer has a **Speak replies** toggle and a microphone button (red indicator, elapsed time, level, 2 minutes
+  at most); every reply has play and stop. Code, logs, diffs, tables, paths, links and hashes are described, never
+  read, and a cleanup pass removes any the model left in. Approval cards are announced by category, never by their
+  contents. Settings → Voice also has the voice (27 English voices), speed and microphone language. The desktop
+  app grants its own page the microphone and nothing else, and ships the voice packages next to the server bundle.
+
+  Verified on 2026-10-31 with `claude-sonnet-4.6`:
+  - Both models downloaded and checked in 12 s.
+  - A reply with a fixed function was spoken as "the key line is the condition that was using strict less-than…
+    changing it to less-than-or-equal now includes those items", without reading the code.
+  - Dictation through Chromium's fake microphone put "Please run the unit tasks and tell me which ones fail." in the
+    box (Whisper base heard "tests" as "tasks").
+  - A new reply spoke by itself when it finished. The first test had a 6-second pause between chunks: Kokoro makes
+    speech at about 0.7× real time on this CPU, and a 14-second chunk followed a 4-second one. Chunks now grow
+    gradually and are all requested at once, and the re-run had no pauses.
+  - Stop aborted the remaining chunks.
+  - In the desktop app, dictation, speech and the microphone permission worked, and the camera stayed refused.
+
+  Original plan: a Voice toggle that speaks replies (prose, with technical parts described), approvals announced,
+  a microphone that records only while on, the transcript into the box, and voice never approving anything.
+
 - ⬜ **Web search and deep research** (L, added 2026-10-31). Friday has no web access today, apart from tools an
   MCP server provides.
   - **Search and read.** `web_search` runs a query and returns titles, links and snippets. `read_web_page` fetches a
