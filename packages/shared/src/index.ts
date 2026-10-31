@@ -610,6 +610,58 @@ export interface LoadTestTargetInfo {
   environment: HostEnvironment | 'local';
 }
 
+/** Voice: Kokoro speaks replies, Whisper transcribes the microphone, both on this machine. */
+export type VoiceModelId = 'speech' | 'transcription';
+
+export interface VoiceModelDto {
+  id: VoiceModelId;
+  /** e.g. "Kokoro 82M (8-bit)". */
+  label: string;
+  /** "onnx-community/Kokoro-82M-v1.0-ONNX" */
+  repo: string;
+  /** The pinned Hugging Face revision (commit). */
+  revision: string;
+  /** The model's page at that revision. */
+  url: string;
+  license: string;
+  sizeBytes: number;
+  state: 'missing' | 'downloading' | 'ready' | 'error';
+  receivedBytes: number;
+  error: string | null;
+}
+
+export interface VoiceOption {
+  id: string;
+  name: string;
+  accent: 'American' | 'British';
+  gender: 'female' | 'male';
+}
+
+export interface VoiceSettings {
+  voice: string;
+  /** 0.7–1.4 */
+  speed: number;
+  /** What the microphone hears: English, or detected per recording. */
+  language: 'english' | 'auto';
+}
+
+export interface VoiceStatusDto {
+  /** False when the speech packages are missing from this build. */
+  installed: boolean;
+  models: VoiceModelDto[];
+  voices: VoiceOption[];
+  settings: VoiceSettings;
+}
+
+/** The spoken version of a run's reply: prose, with code and output described instead of read. */
+export interface SpokenReplyDto {
+  runId: string;
+  text: string;
+  /** The text split for synthesis, in order (sentences, a few hundred characters at most). */
+  chunks: string[];
+  model: string;
+}
+
 /** A host the user allows load tests against (Settings), with its own limits. */
 export interface LoadTargetDto {
   id: string;

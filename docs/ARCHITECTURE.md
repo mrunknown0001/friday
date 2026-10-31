@@ -209,6 +209,22 @@ status-code counts and answer samples. `handleSummary` writes the summary JSON w
 machine, or `LoadTargetRepo`, stored under the `loadTargets` setting) and enforces its limits. It records the
 result in `load_tests` (migration 24, emitted as `load_test`) for the Load test card.
 
+### Voice (`voice/`, `routes/voice.ts`)
+
+`models.ts` pins Kokoro 82M and Whisper base (8-bit ONNX) to Hugging Face revisions with each file's size and
+SHA-256, and `VoiceModelStore` downloads them on request into `<data>/voice-models/<repo>/` (the layout
+transformers.js reads with remote loading off). `engine.ts` runs `kokoro-js` and the transformers.js speech
+recognition pipeline in one `eval` worker thread, loaded from the packages' CommonJS entries. Jobs run one at a time,
+a job whose request was closed is skipped, and the worker stops after 5 idle minutes. `spoken.ts` writes the spoken
+version of a reply (one non-streamed `complete` call, operation `spoken_reply`), cleans it, and splits it into
+chunks that grow by 1.3× from 100 characters so synthesis stays ahead of playback. `service.ts` ties these together
+with the voice settings (setting `voice`) and `spoken_replies` (migration 25, one row per run). Routes:
+`GET /api/voice`, `POST|DELETE /api/voice/models/:id`, `PUT /api/voice/settings`, `POST /api/voice/speak` (WAV out),
+`POST /api/voice/transcribe` (16 kHz WAV in), `POST /api/sessions/:id/runs/:runId/spoken`. On the web side,
+`lib/voice.ts` holds the player (Web Audio, all chunks requested back to back, abortable), the recorder
+(MediaRecorder, decoded and resampled to 16 kHz WAV in the browser) and the status; `VoiceControls.tsx` and
+`VoiceSettings.tsx` are the composer buttons and the settings section.
+
 ### Databases (`databases/`, `tools/databaseTools.ts`, `routes/databases.ts`)
 
 `db_connections` (migration 23) holds where to connect and the name of the secret variable. `DatabaseService`
@@ -321,6 +337,7 @@ pasted, dropped or picked.
 | `tools/dependencyTools.ts`  | Read-only `dependency_report` and `dependency_changelog`; approval-gated `upgrade_dependencies` (commands via `prepareCommand`/`runPrepared`, file changes recorded).                                                                                                         |
 | `browser/flow.ts`           | Browser flows: step types and descriptions, in-page element finding and page outline, `PageDriver` (waits, clicks, typing, dialogs, problems), `runFlow`.                                                                                                                     |
 | `loadtest/`                 | k6 load tests: script generation from a plan (`script.ts`), summary parsing incl. status counts and answer samples (`summary.ts`), finding k6 and its argv (`k6.ts`).                                                                                                         |
+| `voice/`                    | Voice: pinned model downloads (`models.ts`), Kokoro and Whisper in a worker (`engine.ts`), the spoken version and its chunks (`spoken.ts`), WAV in and out (`wav.ts`), `VoiceService` (`service.ts`).                                                                         |
 | `tools/loadTestTools.ts`    | Approval-gated `run_load_test`: target resolution (this machine or listed targets), limits, risk, the card, running k6 and recording the result.                                                                                                                              |
 | `databases/`                | Read-only databases: statement check (`sql.ts`), Postgres/MySQL/SQLite clients with read-only sessions, row and time limits, `EXPLAIN` and connection tests (`clients.ts`), connections and secrets by variable name (`service.ts`).                                          |
 | `tools/databaseTools.ts`    | Read-only `database_schema` (catalog queries); approval-gated `query_database` (category `database`, production confirmation, masked columns).                                                                                                                                |
@@ -388,8 +405,9 @@ Electron main process                     utilityProcess                       R
 ```
 
 - The server is the same code as the web version, bundled by esbuild into one ESM file
-  (`apps/desktop/scripts/bundle-server.mjs`). With `node:sqlite` there is no native module, so the package contains no
-  `node_modules` and runs on Electron's bundled Node.
+  (`apps/desktop/scripts/bundle-server.mjs`) that runs on Electron's bundled Node. The only `node_modules` shipped
+  are the voice packages, which the server loads at runtime: the script copies `kokoro-js` and what it needs at
+  runtime (transformers.js, ONNX Runtime and sharp, both N-API, for this platform only, and the English voices).
 - `main.ts` resolves paths (packaged: `~/.config/Friday/{friday.env,data,logs}`, resources for the server and UI;
   from a checkout: the repository's `.env` and `.data`), starts the server with `FRIDAY_PORT=0`, waits for the server to report the port it bound (over the
   utility-process message channel, so no other program can take the port in between), and loads the UI

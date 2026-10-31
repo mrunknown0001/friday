@@ -323,16 +323,32 @@ function lockDownContents(): void {
     contents.on('will-attach-webview', (event) => event.preventDefault());
   });
 
-  // Only clipboard writes ("Copy code") and notifications are allowed, and only for the app itself.
-  const allowed = (permission: string, requestingUrl: string | undefined) =>
-    (permission === 'clipboard-sanitized-write' || permission === 'notifications') &&
+  // Only clipboard writes ("Copy code"), notifications and the microphone (dictation; never the
+  // camera or the screen) are allowed, and only for the app itself.
+  const allowed = (
+    permission: string,
+    requestingUrl: string | undefined,
+    mediaTypes: readonly string[] = [],
+  ) =>
+    (permission === 'clipboard-sanitized-write' ||
+      permission === 'notifications' ||
+      (permission === 'media' &&
+        mediaTypes.length > 0 &&
+        mediaTypes.every((t) => t === 'audio'))) &&
     !!requestingUrl &&
     new URL(requestingUrl).origin === origin;
-  session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
-    callback(allowed(permission, contents.getURL())),
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(
+      allowed(
+        permission,
+        contents.getURL(),
+        'mediaTypes' in details ? (details.mediaTypes ?? []) : [],
+      ),
+    ),
   );
-  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
-    allowed(permission, requestingOrigin),
+  session.defaultSession.setPermissionCheckHandler(
+    (_contents, permission, requestingOrigin, details) =>
+      allowed(permission, requestingOrigin, details.mediaType ? [details.mediaType] : []),
   );
 }
 

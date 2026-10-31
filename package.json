@@ -36,6 +36,8 @@
     "typescript-eslint": "^8.72.1"
   },
   "overrides": {
-    "image-size": "2.0.4"
+    "image-size": "2.0.4",
+    "@huggingface/jinja": "0.5.10",
+    "sharp": "0.35.5"
   }
 }

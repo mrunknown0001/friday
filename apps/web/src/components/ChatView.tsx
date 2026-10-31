@@ -50,6 +50,14 @@ import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
 import { ToolActivity, type ToolItem } from './ToolActivity';
 import { cn } from '../lib/cn';
+import {
+  approvalAnnouncement,
+  modelReady,
+  player,
+  useSpeakReplies,
+  useVoiceStatus,
+} from '../lib/voice';
+import { SpeakReplyButton, VoiceControls } from './VoiceControls';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
@@ -221,15 +229,24 @@ function withRunRecords(
   return out;
 }
 
-function MessageFooter({ m }: { m: MessageDto }) {
+function MessageFooter({ m, speak }: { m: MessageDto; speak?: ReactNode }) {
   const status = m.status !== 'complete' ? MESSAGE_STATUS_LABEL[m.status] : null;
-  if (!status && !m.model) return null;
+  if (!status && !m.model && !speak) return null;
   return (
     <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500">
       {status && <Badge tone={status.tone}>{status.label}</Badge>}
       {m.model && <span>{m.model}</span>}
+      {speak}
     </div>
   );
+}
+
+/** The last assistant message with text in each run: where its reply's play button goes. */
+function lastReplyOfRuns(messages: MessageDto[]): Set<number> {
+  const last = new Map<string, number>();
+  for (const m of messages)
+    if (m.runId && m.role === 'assistant' && m.content.trim()) last.set(m.runId, m.id);
+  return new Set(last.values());
 }
 
 function RunProblem({
@@ -385,6 +402,8 @@ export function ChatView(props: Props) {
   const [unseen, setUnseen] = useState(false);
   const running = !!live && !live.finished;
   const sessionId = detail?.id;
+  const voiceStatus = useVoiceStatus();
+  const speakReplies = useSpeakReplies() && modelReady(voiceStatus, 'speech');
 
   const isNearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 
@@ -501,9 +520,37 @@ export function ChatView(props: Props) {
   };
   const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {}, cards);
   const pending = approvals.filter((a) => a.status === 'pending');
+  const replyEnds = lastReplyOfRuns(messages);
   const latest = detail?.latestRun;
   const showProblem =
     !running && latest && ['failed', 'cancelled', 'interrupted', 'blocked'].includes(latest.status);
+
+  // Speak replies: a run's reply when it finishes, and an approval card when it appears. Turning
+  // the toggle on, or opening another conversation, does not replay what is already there.
+  const finishedId = live?.finished?.status === 'completed' ? live.finished.id : null;
+  const spokenRun = useRef<string | null>(null);
+  useEffect(() => {
+    if (!finishedId || spokenRun.current === finishedId) return;
+    spokenRun.current = finishedId;
+    if (speakReplies && sessionId) void player.playRun(sessionId, finishedId);
+    // Only a newly finished run starts speech.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finishedId]);
+  const pendingKey = pending.map((a) => a.id).join(',');
+  const announced = useRef<{ session: string | undefined; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    const seen = announced.current;
+    if (!seen || seen.session !== sessionId || !speakReplies) {
+      announced.current = { session: sessionId, ids: new Set(pending.map((a) => a.id)) };
+      return;
+    }
+    const fresh = pending.filter((a) => !seen.ids.has(a.id));
+    for (const a of fresh) seen.ids.add(a.id);
+    if (fresh[0])
+      void player.say(`approval:${fresh[0].id}`, approvalAnnouncement(fresh[0].category));
+    // pendingKey stands for the pending list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingKey, sessionId, speakReplies]);
 
   const reviewActions = {
     projectId: project?.available ? project.id : null,
@@ -656,7 +703,16 @@ export function ChatView(props: Props) {
                   <AssistantRow
                     key={r.m.id}
                     content={r.m.content}
-                    footer={<MessageFooter m={r.m} />}
+                    footer={
+                      <MessageFooter
+                        m={r.m}
+                        speak={
+                          sessionId && r.m.runId && replyEnds.has(r.m.id) ? (
+                            <SpeakReplyButton sessionId={sessionId} runId={r.m.runId} />
+                          ) : undefined
+                        }
+                      />
+                    }
                   />
                 ) : r.kind === 'record' ? (
                   <div key={`rec-${r.runId}`} className="space-y-2">
@@ -755,7 +811,7 @@ export function ChatView(props: Props) {
                 addImages(files);
               }}
               className={cn(
-                'rounded-xl border bg-zinc-900 p-2 focus-within:border-zinc-600',
+                'relative rounded-xl border bg-zinc-900 p-2 focus-within:border-zinc-600',
                 dragging ? 'border-sky-500' : 'border-zinc-800',
               )}
             >
@@ -803,13 +859,18 @@ export function ChatView(props: Props) {
                     addImages(files);
                   }}
                   onKeyDown={onKeyDown}
+                  title="Enter sends · Shift+Enter for a new line"
                   rows={Math.min(10, Math.max(1, draft.split('\n').length))}
                   placeholder={
-                    project
-                      ? `Ask about ${project.name}… (Shift+Enter for a new line)`
-                      : 'Ask about code, DevOps, deployments… (Shift+Enter for a new line)'
+                    project ? `Ask about ${project.name}…` : 'Ask about code, DevOps, deployments…'
                   }
                   className="max-h-64 min-h-[2.25rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.94rem] outline-none placeholder:text-zinc-500"
+                />
+                <VoiceControls
+                  onTranscript={(text) =>
+                    setDraft((d) => (d.trim() ? `${d.trimEnd()} ${text}` : text))
+                  }
+                  onOpenSettings={onOpenSettings}
                 />
                 {running ? (
                   <Button
