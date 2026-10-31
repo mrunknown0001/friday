@@ -336,8 +336,24 @@ approved), credentials never reach the model, and results from other systems are
   the changes first, and new or changed specs are normal approved edits. Browsers and `@playwright/test` are never
   installed by Friday: it says what is missing. Separate from Browser flows, which stays the ad-hoc "click through
   this page" check.
-- ⬜ **k6 load tests** (M, added 2026-10-31). Friday writes k6 scripts (virtual users, duration, thresholds) and runs
-  them with the installed `k6` binary. The approval card shows the target URL, virtual users, duration and
+- ✅ **k6 load tests** (M, added 2026-10-31). Done: `run_load_test` with the installed k6 (never installed by Friday).
+  Friday writes the script from the model's plan (the user chose this over running project scripts):
+  - requests per iteration, think time, constant load or ramp stages, and p95/p99/error-rate/per-request thresholds;
+  - only the approved origin, no redirects followed, no usage report;
+  - the full script on the card.
+
+  This machine needs no setup (up to 100 users for 10 minutes, never Friday itself). Other sites must be listed in
+  Settings → Load-test targets with their own limits, and production needs the name typed. Results:
+  - request rate, failed share and latency percentiles;
+  - thresholds with measured values;
+  - per-request numbers, the status codes each request got, and the start of the first unexpected answer.
+
+  Verified on 2026-10-31 with k6 v2.3.0 (downloaded to the scratch folder only, checksum checked) and
+  `claude-sonnet-4.6` on the scratch shop. In the first runs every request failed: the model had made up a login,
+  then guessed at cookies because only "100% failed" was reported. Friday now reports status codes and the first
+  failing answer. With those, the run passed (10 users, 59 requests/s, p95 about 3 ms). A follow-up asking for an
+  unlisted staging host was declined, pointing to Settings. Original plan: Friday writes k6 scripts (virtual users,
+  duration, thresholds) and runs them with the installed `k6` binary. The approval card shows the target URL, virtual users, duration and
   thresholds. The result summarises request rate, p95/p99 latency, error rate and which thresholds failed.
   - Targets: localhost and the project's dev server freely. Other hosts only when the user listed them as load-test
     targets in Settings. Production is refused unless it is listed and its name is typed to confirm.

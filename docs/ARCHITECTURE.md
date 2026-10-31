@@ -199,6 +199,16 @@ stored as an attachment of the tool message and sent in `tool_finished.attachmen
 once. The preview pane is an iframe (loopback `frame-src`). `POST /api/preview/screenshot` captures a page into a
 pending attachment for the composer. `GET /api/projects/:id/raw` serves image files for the file viewer.
 
+### Load tests (`loadtest/`, `tools/loadTestTools.ts`, `routes/loadTargets.ts`)
+
+`script.ts` turns a `LoadPlan` into a k6 script: a `constant-vus` or `ramping-vus` scenario, `maxRedirects: 0`, the
+user's thresholds, and always-passing per-request thresholds so that k6 reports each request. Checks named
+`status:<request>:<code>` and, once per virtual user, `body:<request>:<code>:<text>` turn k6's check totals into
+status-code counts and answer samples. `handleSummary` writes the summary JSON where `--env FRIDAY_SUMMARY` says;
+`summary.ts` reads it. `k6.ts` finds the binary and builds the argv. `run_load_test` resolves the target (this
+machine, or `LoadTargetRepo`, stored under the `loadTargets` setting) and enforces its limits. It records the
+result in `load_tests` (migration 24, emitted as `load_test`) for the Load test card.
+
 ### Databases (`databases/`, `tools/databaseTools.ts`, `routes/databases.ts`)
 
 `db_connections` (migration 23) holds where to connect and the name of the secret variable. `DatabaseService`
@@ -310,6 +320,8 @@ pasted, dropped or picked.
 | `deps/`                     | Dependency upgrades: versions and advisory ranges (`versions.ts`), manifests and lockfiles incl. npm workspaces (`manifests.ts`), npm view / Packagist (`registry.ts`), audits (`audit.ts`), targets under the age rule (`report.ts`), GitHub release notes (`changelog.ts`). |
 | `tools/dependencyTools.ts`  | Read-only `dependency_report` and `dependency_changelog`; approval-gated `upgrade_dependencies` (commands via `prepareCommand`/`runPrepared`, file changes recorded).                                                                                                         |
 | `browser/flow.ts`           | Browser flows: step types and descriptions, in-page element finding and page outline, `PageDriver` (waits, clicks, typing, dialogs, problems), `runFlow`.                                                                                                                     |
+| `loadtest/`                 | k6 load tests: script generation from a plan (`script.ts`), summary parsing incl. status counts and answer samples (`summary.ts`), finding k6 and its argv (`k6.ts`).                                                                                                         |
+| `tools/loadTestTools.ts`    | Approval-gated `run_load_test`: target resolution (this machine or listed targets), limits, risk, the card, running k6 and recording the result.                                                                                                                              |
 | `databases/`                | Read-only databases: statement check (`sql.ts`), Postgres/MySQL/SQLite clients with read-only sessions, row and time limits, `EXPLAIN` and connection tests (`clients.ts`), connections and secrets by variable name (`service.ts`).                                          |
 | `tools/databaseTools.ts`    | Read-only `database_schema` (catalog queries); approval-gated `query_database` (category `database`, production confirmation, masked columns).                                                                                                                                |
 | `tools/browserTools.ts`     | Read-only `inspect_page`; approval-gated `run_browser_flow` (flat step schema, local-only checks, screenshots stored per step, `BrowserFlowRepo`).                                                                                                                            |

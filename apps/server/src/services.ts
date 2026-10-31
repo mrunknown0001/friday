@@ -35,6 +35,7 @@ import { ProjectRepo } from './repositories/projects.js';
 import { RunRepo } from './repositories/runs.js';
 import { SessionRepo } from './repositories/sessions.js';
 import { SettingsRepo } from './repositories/settings.js';
+import { LoadTargetRepo, LoadTestRepo } from './repositories/loadTests.js';
 import { AuditRepo, ProviderCallRepo, UsageRepo } from './repositories/telemetry.js';
 import { ToolCallRepo } from './repositories/toolCalls.js';
 import { Redactor } from './security/redact.js';
@@ -101,6 +102,8 @@ export interface Services {
   captures: CaptureRepo;
   reviews: ReviewRepo;
   testRuns: TestRunRepo;
+  loadTests: LoadTestRepo;
+  loadTargets: LoadTargetRepo;
   browserFlows: BrowserFlowRepo;
   savedActions: SavedActionRepo;
   monitors: MonitorRepo;
@@ -186,6 +189,8 @@ export function createServices(
   const captures = new CaptureRepo(db, attachments);
   const reviews = new ReviewRepo(db);
   const testRuns = new TestRunRepo(db);
+  const loadTests = new LoadTestRepo(db);
+  const loadTargets = new LoadTargetRepo(settings);
   const browserFlows = new BrowserFlowRepo(db);
   const savedActions = new SavedActionRepo(db);
   const sshHosts = new SshHostRepo(db);
@@ -260,6 +265,8 @@ export function createServices(
     captures,
     reviews,
     testRuns,
+    loadTests,
+    loadTargets,
     browserFlows,
     savedActions,
     monitors,
@@ -299,6 +306,8 @@ export function createServices(
     captures,
     reviews,
     testRuns,
+    loadTests,
+    loadTargets,
     browserFlows,
     savedActions,
     monitors,

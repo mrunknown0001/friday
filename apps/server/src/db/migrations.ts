@@ -637,6 +637,24 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 24,
+    name: 'load_tests',
+    up: `
+      -- k6 load test results (run_load_test), per conversation: the Load test card.
+      CREATE TABLE load_tests (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        project_id TEXT,
+        status TEXT NOT NULL CHECK (status IN ('passed', 'failed', 'error')),
+        data TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX load_tests_session ON load_tests (session_id, created_at);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

@@ -10,6 +10,8 @@ import type {
   FileChangeDto,
   FileViewDto,
   HostEnvironment,
+  LoadTargetDto,
+  LoadTargetInput,
   LogSourceDto,
   McpServerDto,
   McpToolPolicy,
@@ -275,6 +277,9 @@ export const api = {
   sessionChanges: (id: string) =>
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
+  loadTargets: () => request<{ targets: LoadTargetDto[] }>('GET', '/api/load-targets'),
+  addLoadTarget: (t: LoadTargetInput) => request<LoadTargetDto>('POST', '/api/load-targets', t),
+  removeLoadTarget: (id: string) => request<void>('DELETE', `/api/load-targets/${id}`),
   databases: () => request<{ connections: DbConnectionDto[] }>('GET', '/api/databases'),
   addDatabase: (c: DbConnectionInput) => request<DbConnectionDto>('POST', '/api/databases', c),
   updateDatabase: (id: string, c: DbConnectionInput) =>

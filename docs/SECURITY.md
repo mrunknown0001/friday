@@ -284,6 +284,18 @@ server's timer without approval because the user configured exactly what runs:
 Check messages are redacted and capped at 500 characters before they are stored or sent. The model sees a URL
 without its query string, which can hold tokens.
 
+## Load tests
+
+`run_load_test` needs approval every time (category `load_test`). The model only describes the test; Friday generates
+the k6 script, puts every model value in as a JSON literal, and shows the script on the card. The approval is bound
+to its hash. The script calls only the approved origin with `maxRedirects: 0`, so a redirect can't send load
+elsewhere, and runs exactly the approved scenario (constant or ramping virtual users, 10-second graceful stop).
+Targets are this machine (never Friday's own port) or origins the user listed in Settings, with per-target limits
+on virtual users and duration that Friday enforces before the card. Production targets need their name typed and a
+5-minute approval. k6 runs on the host with the allowlisted environment, `--no-usage-report` and no REST API
+server, from a temporary folder that is deleted afterwards. Response samples in the results are cut to 200
+characters, redacted and marked as data. k6 is never installed by Friday.
+
 ## Databases
 
 Connections are created and changed only in Settings (`routes/databases.ts`, strict schemas: a `password` field is

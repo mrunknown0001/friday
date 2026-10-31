@@ -18,6 +18,7 @@ import { registerReviewRoutes } from './http/routes/reviews.js';
 import { registerSavedActionRoutes } from './http/routes/savedActions.js';
 import { registerMonitorRoutes } from './http/routes/monitors.js';
 import { registerDatabaseRoutes } from './http/routes/databases.js';
+import { registerLoadTargetRoutes } from './http/routes/loadTargets.js';
 import { registerSessionRoutes } from './http/routes/sessions.js';
 import { registerUsageRoutes } from './http/routes/usage.js';
 import { registerWorktreeRoutes } from './http/routes/worktrees.js';
@@ -121,6 +122,7 @@ export async function buildApp(
   registerSavedActionRoutes(app, services);
   registerMonitorRoutes(app, services);
   registerDatabaseRoutes(app, services);
+  registerLoadTargetRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {

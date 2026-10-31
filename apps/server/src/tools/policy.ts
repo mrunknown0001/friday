@@ -34,6 +34,7 @@ export function decide(category: PermissionCategory | undefined): PolicyDecision
     case 'task_permission':
     case 'browser': // driving a page of a local site (browser flows)
     case 'database': // one read-only statement on a connection the user added
+    case 'load_test': // k6 load against this machine or a host the user listed
     case 'mcp':
       return { action: 'require_approval' };
     case undefined:

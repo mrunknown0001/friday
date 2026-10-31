@@ -20,6 +20,7 @@ import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
 import { DatabaseSettings } from './DatabaseSettings';
 import { DevopsSettings } from './DevopsSettings';
+import { LoadTargetSettings } from './LoadTargetSettings';
 import { McpSettings } from './McpSettings';
 import { UsageSettings } from './UsageSettings';
 import { Dialog } from './ui/dialog';
@@ -469,6 +470,7 @@ export function SettingsDialog({
       <McpSettings />
       <DevopsSettings />
       <DatabaseSettings />
+      <LoadTargetSettings />
       <UsageSettings />
       <Section
         title="Recent provider calls"

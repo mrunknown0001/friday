@@ -28,6 +28,7 @@ import type { CaptureRepo } from '../repositories/captures.js';
 import type { ReviewRepo } from '../repositories/reviews.js';
 import type { TestRunRepo } from '../repositories/testRuns.js';
 import type { BrowserFlowRepo } from '../repositories/browserFlows.js';
+import type { LoadTargetRepo, LoadTestRepo } from '../repositories/loadTests.js';
 import type { DatabaseService } from '../databases/service.js';
 import type { SavedActionRepo } from '../repositories/savedActions.js';
 import type { MonitorRepo } from '../repositories/monitors.js';
@@ -106,6 +107,9 @@ export interface RunManagerDeps {
   reviews?: ReviewRepo;
   /** Test runs (run_tests) and each test's outcome. */
   testRuns?: TestRunRepo;
+  /** Load test results and the hosts the user allows them against. */
+  loadTests?: LoadTestRepo;
+  loadTargets?: LoadTargetRepo;
   /** Browser flow results (run_browser_flow). */
   browserFlows?: BrowserFlowRepo;
   /** Saved actions (runbooks) per project. */
@@ -1118,6 +1122,26 @@ export class RunManager {
                   projectId: project?.id ?? null,
                 });
                 this.emit(run, { type: 'browser_flow', flow: dto });
+                return dto;
+              },
+            },
+          }
+        : {}),
+      ...(this.deps.loadTargets ? { loadTargets: this.deps.loadTargets } : {}),
+      ...(this.deps.loadTests
+        ? {
+            loadTests: {
+              record: (result) => {
+                const dto = this.deps.loadTests!.create(
+                  {
+                    sessionId: run.sessionId,
+                    runId: run.id,
+                    toolCallId: callId,
+                    projectId: project?.id ?? null,
+                  },
+                  result,
+                );
+                this.emit(run, { type: 'load_test', loadTest: dto });
                 return dto;
               },
             },
