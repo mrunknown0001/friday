@@ -45,8 +45,11 @@ function currentHash(abs: string): string | null {
   }
 }
 
-/** Tools whose approvals are commands (run_tests builds its own test command). */
-const COMMAND_TOOLS = new Set(['run_command', 'run_tests']);
+/**
+ * Tools whose approvals are commands (run_tests builds its own test command). A browser flow
+ * checks the running app, so it counts as a check too: exit 0 when every step passed.
+ */
+const COMMAND_TOOLS = new Set(['run_command', 'run_tests', 'run_browser_flow']);
 
 const exitCodeOf = (summary: string | null): number | null => {
   const m = /^exit code (\d+)/.exec(summary ?? '');
@@ -93,11 +96,16 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
       const d = a.details;
       const full =
         d.kind === 'command' ? (d.argv ? displayArgv(d.argv) : (d.shellCommand ?? '')) : a.title;
+      const flow = d.kind === 'browser_flow';
       return {
         title: full,
         result: a.resultSummary ?? a.status,
-        exitCode: exitCodeOf(a.resultSummary),
-        verification: isVerificationCommand(full),
+        exitCode: flow
+          ? a.status === 'executed' && /^passed\b/.test(a.resultSummary ?? '')
+            ? 0
+            : 1
+          : exitCodeOf(a.resultSummary),
+        verification: flow || isVerificationCommand(full),
         afterLastChange: lastChangeAt !== null && a.createdAt > lastChangeAt,
       };
     });
@@ -134,7 +142,7 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
   if (!last) {
     return {
       status: 'unverified',
-      note: `Files changed, but no test, build, lint or type-check command ran after the last change.${driftNote}`,
+      note: `Files changed, but no test, build, lint or type-check command or browser flow ran after the last change.${driftNote}`,
       files,
       commands,
       commits,

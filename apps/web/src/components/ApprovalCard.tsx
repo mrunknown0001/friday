@@ -14,6 +14,7 @@ import {
   GitPullRequestArrow,
   KeyRound,
   Loader2,
+  MousePointerClick,
   Package as PackageIcon,
   Server,
   ShieldAlert,
@@ -57,9 +58,43 @@ const CATEGORY_LABEL: Record<string, string> = {
   deployment: 'Production change',
   task_permission: 'Task permission',
   process_control: 'Process',
+  browser: 'Browser flow',
   mcp: 'Connected app',
   mcp_trusted: 'Connected app (allowed)',
 };
+
+function BrowserFlowDetails({
+  d,
+}: {
+  d: Extract<ApprovalDto['details'], { kind: 'browser_flow' }>;
+}) {
+  return (
+    <div className="space-y-2 text-xs">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+        <dt className="text-zinc-500">Starts at</dt>
+        <dd className="font-mono break-all text-zinc-100">{d.startUrl}</dd>
+        <dt className="text-zinc-500">Browser</dt>
+        <dd className="text-zinc-300">
+          {d.engine}, a fresh {d.width}×{d.height} window with no cookies; other sites are blocked
+        </dd>
+      </dl>
+      <ol aria-label="Steps" className="list-decimal space-y-0.5 pl-5 text-zinc-100">
+        {d.steps.map((s, i) => (
+          <li key={i} className="break-words">
+            {s.description}
+          </li>
+        ))}
+      </ol>
+      {d.riskReasons.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-amber-200">
+          {d.riskReasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function TaskPermissionDetails({
   d,
@@ -98,6 +133,18 @@ function TaskPermissionDetails({
             Exactly as written, in the project root, without a shell.
           </span>
         </dd>
+        {d.sites?.length ? (
+          <>
+            <dt className="text-zinc-500">Browser flows on</dt>
+            <dd>
+              <ul className="space-y-0.5 font-mono text-zinc-100">
+                {d.sites.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        ) : null}
         <dt className="text-zinc-500">Limits</dt>
         <dd className="text-zinc-300">
           This task only, up to {d.maxActions} actions within {d.minutes} minutes. You can revoke it
@@ -366,6 +413,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   if (d.kind === 'dependency_upgrade') return <DependencyUpgradeDetails d={d} />;
   if (d.kind === 'git_remote') return <GitRemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
+  if (d.kind === 'browser_flow') return <BrowserFlowDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
   if (d.kind === 'document')
     return (
@@ -958,7 +1006,9 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
               ? Container
               : approval.details.kind === 'dependency_upgrade'
                 ? PackageIcon
-                : ShieldAlert;
+                : approval.details.kind === 'browser_flow'
+                  ? MousePointerClick
+                  : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);
@@ -1027,10 +1077,13 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
               <span>
                 {similar === 'files'
                   ? 'Also allow further edits to these files for this task without asking.'
-                  : 'Also allow re-running this exact command for this task without asking.'}{' '}
+                  : similar === 'site' && approval.details.kind === 'browser_flow'
+                    ? `Also allow more browser flows on ${approval.details.origin} for this task without asking.`
+                    : 'Also allow re-running this exact command for this task without asking.'}{' '}
                 <span className="text-zinc-500">
-                  Each one is still checked, shown and undoable; up to 20 actions within 30 minutes;
-                  you can revoke it.
+                  {similar === 'site'
+                    ? 'Each flow and its steps are still shown here; up to 20 actions within 30 minutes; you can revoke it.'
+                    : 'Each one is still checked, shown and undoable; up to 20 actions within 30 minutes; you can revoke it.'}
                 </span>
               </span>
             </label>

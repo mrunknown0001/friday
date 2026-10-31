@@ -30,6 +30,7 @@ export function TaskPermissionBanner({
   const scope = [
     ...permission.files,
     ...permission.commands.map((c) => `$ ${displayArgv(c)}`),
+    ...permission.sites.map((s) => `browser flows on ${s}`),
   ].join('\n');
 
   if (!permission.active) {
@@ -55,6 +56,9 @@ export function TaskPermissionBanner({
           {permission.files.length === 1 ? '' : 's'}
           {permission.commands.length
             ? ` and ${permission.commands.length} command${permission.commands.length === 1 ? '' : 's'}`
+            : ''}
+          {permission.sites.length
+            ? `, browser flows on ${permission.sites.length === 1 ? permission.sites[0] : `${permission.sites.length} sites`}`
             : ''}
           .
         </span>

@@ -199,6 +199,22 @@ stored as an attachment of the tool message and sent in `tool_finished.attachmen
 once. The preview pane is an iframe (loopback `frame-src`). `POST /api/preview/screenshot` captures a page into a
 pending attachment for the composer. `GET /api/projects/:id/raw` serves image files for the file viewer.
 
+Browser flows (`browser/flow.ts`, `tools/browserTools.ts`, `repositories/browserFlows.ts`): engines with
+`openPage` return a `PageSession` (send a DevTools command, receive its events, close). `ChromeEngine` launches a
+headless browser per flow with `Fetch` interception for documents, closes other targets and denies downloads.
+`DesktopEngine` relays `page_open` / `page_send` / `page_close` over the utility-process channel. The shell opens an
+offscreen window in the capture partition, loads `about:blank`, attaches `webContents.debugger`, relays an allowlist
+of methods and their events, and answers `Page.captureScreenshot` with `capturePage()`. `PageDriver` tracks
+requests, loads, console, exceptions and dialogs, and implements the steps. It finds elements with an in-page
+script (an accessible-name approximation over the DOM and open shadow roots) and waits until one is unique, shown,
+enabled, not covered and stable over two painted frames. It clicks with `Input.dispatchMouseEvent`, checks the press
+arrived (input sent before a new page has painted can be dropped) and retries if not, and types with
+`Input.insertText`. `runFlow` runs the steps with a JPEG screenshot after each. `run_browser_flow` (category
+`browser`) stores every screenshot as a conversation attachment that is not bound to the tool message, records the
+flow in `browser_flows` (migration 22) and emits `browser_flow`. Only the failing or last screenshot is bound to the
+tool message, so only that one goes to the model. Pending-upload cleanup skips attachments that have a session.
+Task permissions gain `sites`, and `buildRunReport` counts flows as checks.
+
 Before and after (`visual/`, `repositories/captures.ts`): each screenshot is stored at once through
 `ToolContext.captures`, and recorded in `page_captures` (migration 16) with its URL and size. Its `ToolImage`
 carries the `attachmentId`, so the tool message binds the stored image rather than storing it again. With
@@ -275,6 +291,8 @@ pasted, dropped or picked.
 | `tools/monitorTools.ts`     | Read-only `monitor_status`; monitors are edited only through `routes/monitors.ts`.                                                                                                                                                                                            |
 | `deps/`                     | Dependency upgrades: versions and advisory ranges (`versions.ts`), manifests and lockfiles incl. npm workspaces (`manifests.ts`), npm view / Packagist (`registry.ts`), audits (`audit.ts`), targets under the age rule (`report.ts`), GitHub release notes (`changelog.ts`). |
 | `tools/dependencyTools.ts`  | Read-only `dependency_report` and `dependency_changelog`; approval-gated `upgrade_dependencies` (commands via `prepareCommand`/`runPrepared`, file changes recorded).                                                                                                         |
+| `browser/flow.ts`           | Browser flows: step types and descriptions, in-page element finding and page outline, `PageDriver` (waits, clicks, typing, dialogs, problems), `runFlow`.                                                                                                                     |
+| `tools/browserTools.ts`     | Read-only `inspect_page`; approval-gated `run_browser_flow` (flat step schema, local-only checks, screenshots stored per step, `BrowserFlowRepo`).                                                                                                                            |
 | `refactor/`                 | Rename and move: comment/string-aware scanner (`lexer.ts`), imports per language (`modules.ts`), reference split (`references.ts`), TS/JS move planner (`move.ts`).                                                                                                           |
 | `tools/refactorTools.ts`    | `find_references`, and approval-gated `rename_symbol` and `move_symbol` (one all-or-nothing multi-file change, `applyAll`).                                                                                                                                                   |
 | `testing/`                  | Test insights: suite detection and related tests (`suites.ts`), changed lines and the code fingerprint (`changes.ts`), report parsers (`results.ts`).                                                                                                                         |

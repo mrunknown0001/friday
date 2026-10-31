@@ -3,7 +3,8 @@ import type { Proposal } from '../tools/types.js';
 
 /**
  * A task permission: the user approved, in one decision, a bounded set of actions for the current
- * run (exact files to create or modify, exact commands to run in the project root). Matching
+ * run (exact files to create or modify, exact commands to run in the project root, browser flows
+ * on named local sites). Matching
  * actions are approved automatically; they are still re-checked right before execution, recorded
  * as approvals linked to this one, and undoable. Anything else still asks the user.
  */
@@ -12,6 +13,8 @@ export interface TaskPermission {
   runId: string;
   files: string[];
   commands: string[][];
+  /** Origins (http://localhost:5173) where browser flows may run. */
+  sites: string[];
   maxActions: number;
   used: number;
   expiresAt: number;
@@ -21,6 +24,7 @@ export interface TaskPermission {
 export const TASK_PERMISSION_LIMITS = {
   maxFiles: 30,
   maxCommands: 10,
+  maxSites: 5,
   defaultActions: 20,
   maxActions: 40,
   defaultMinutes: 30,
@@ -30,6 +34,7 @@ export const TASK_PERMISSION_LIMITS = {
 /** Tools whose actions a task permission can cover. Nothing else ever can. */
 const FILE_TOOLS = new Set(['write_file', 'edit_file', 'edit_files']);
 const COMMAND_TOOL = 'run_command';
+const FLOW_TOOL = 'run_browser_flow';
 
 export function toDto(p: TaskPermission, now = Date.now()): TaskPermissionDto {
   const ended =
@@ -39,6 +44,7 @@ export function toDto(p: TaskPermission, now = Date.now()): TaskPermissionDto {
     runId: p.runId,
     files: p.files,
     commands: p.commands,
+    sites: p.sites,
     maxActions: p.maxActions,
     used: p.used,
     expiresAt: new Date(p.expiresAt).toISOString(),
@@ -59,25 +65,28 @@ type Reviewable = Pick<Proposal, 'risk' | 'details' | 'confirmationRequired'>;
 
 /**
  * What "allow similar actions for this task" may cover when the user approves this action:
- * exactly its files (created or modified) or exactly its command (argv, project root, no shell,
- * no network). Null when the action is not eligible: everything else is always asked per action.
+ * exactly its files (created or modified), exactly its command (argv, project root, no shell,
+ * no network), or browser flows on the same local site. Null when the action is not eligible:
+ * everything else is always asked per action.
  */
 export function similarScope(
   toolName: string,
   proposal: Reviewable,
-): { files: string[]; commands: string[][] } | null {
+): { files: string[]; commands: string[][]; sites: string[] } | null {
   if (proposal.confirmationRequired) return null;
   if (proposal.risk === 'high' || proposal.risk === 'critical') return null;
   const d = proposal.details;
   if (FILE_TOOLS.has(toolName) && d.kind === 'file_change') {
     if (!d.changes.length || d.changes.some((c) => c.change !== 'create' && c.change !== 'modify'))
       return null;
-    return { files: d.changes.map((c) => c.path), commands: [] };
+    return { files: d.changes.map((c) => c.path), commands: [], sites: [] };
   }
   if (toolName === COMMAND_TOOL && d.kind === 'command') {
     if (d.shell || !d.argv || d.cwd !== '.' || d.network) return null;
-    return { files: [], commands: [d.argv] };
+    return { files: [], commands: [d.argv], sites: [] };
   }
+  if (toolName === FLOW_TOOL && d.kind === 'browser_flow')
+    return { files: [], commands: [], sites: [d.origin] };
   return null;
 }
 
@@ -115,5 +124,6 @@ export function covers(
       p.commands.some((c) => sameArgv(c, d.argv!))
     );
   }
+  if (toolName === FLOW_TOOL && d.kind === 'browser_flow') return p.sites.includes(d.origin);
   return false;
 }

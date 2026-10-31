@@ -134,18 +134,26 @@ export class AttachmentRepo {
     return out;
   }
 
-  /** Remove a pending upload (the user took it out of the composer). */
+  /**
+   * Remove a pending upload (the user took it out of the composer). Uploads have no session
+   * until sent; images a tool stored for a conversation (browser flow steps) are not uploads.
+   */
   deletePending(id: string): boolean {
     return (
-      this.db.prepare('DELETE FROM attachments WHERE id = ? AND message_id IS NULL').run(id)
-        .changes > 0
+      this.db
+        .prepare(
+          'DELETE FROM attachments WHERE id = ? AND message_id IS NULL AND session_id IS NULL',
+        )
+        .run(id).changes > 0
     );
   }
 
   /** Uploads never sent within `maxAgeMs` (closed tab, removed draft). */
   deleteStalePending(maxAgeMs: number, now = Date.now()): number {
     return this.db
-      .prepare('DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?')
+      .prepare(
+        'DELETE FROM attachments WHERE message_id IS NULL AND session_id IS NULL AND created_at < ?',
+      )
       .run(new Date(now - maxAgeMs).toISOString()).changes;
   }
 }

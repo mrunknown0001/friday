@@ -79,6 +79,12 @@ describe('Redactor', () => {
     expect(r.redact('https://deploy:s3cret@git.example.com/r.git')).toBe(
       'https://deploy:[REDACTED]@git.example.com/r.git',
     );
+    expect(r.redact('{"url":"https://deploy:s3cret@git.example.com"}')).toBe(
+      '{"url":"https://deploy:[REDACTED]@git.example.com"}',
+    );
+    // A local URL followed by an e-mail address in JSON is not a URL with a password.
+    const flow = '{"url":"http://localhost:5199","steps":[{"value":"demo@flowshop.test"}]}';
+    expect(r.redact(flow)).toBe(flow);
     for (const ok of ['PWD=/home/u/app', 'max_tokens: 4096', 'The token is valid', 'node --test'])
       expect(r.redact(ok)).toBe(ok);
   });

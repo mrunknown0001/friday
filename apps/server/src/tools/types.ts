@@ -1,5 +1,6 @@
 import type {
   ApprovalDetails,
+  BrowserFlowDto,
   DeploymentPlanDto,
   MemoryDto,
   PermissionCategory,
@@ -59,6 +60,15 @@ export interface ToolContext {
   savedActions?: { list: (project: ProjectRecord) => SavedActionDto[] };
   /** Health monitors the user defined (read-only here). */
   monitors?: Pick<MonitorRepo, 'list' | 'byName' | 'detail'>;
+  /** Record a browser flow's result (the flow card). */
+  browserFlows?: {
+    record(
+      flow: Omit<
+        BrowserFlowDto,
+        'id' | 'createdAt' | 'sessionId' | 'runId' | 'toolCallId' | 'projectId'
+      >,
+    ): BrowserFlowDto;
+  };
   /** Test runs of this project (run_tests): recording them, and earlier results per test. */
   tests?: TestRunContext;
   /** Screenshots taken in this conversation (absent when not stored, e.g. in tests). */
@@ -81,6 +91,7 @@ export interface ToolContext {
   grantTaskPermission?: (grant: {
     files: string[];
     commands: string[][];
+    sites: string[];
     maxActions: number;
     minutes: number;
   }) => { expiresAt: string };

@@ -45,9 +45,28 @@ export interface PrintOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * A live page driven over the DevTools protocol (browser flows). Documents may only come from
+ * this machine, other windows and downloads are refused, and the viewport is fixed at open.
+ */
+export interface PageSession {
+  send(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  /** DevTools events of this page. */
+  on(handler: (method: string, params: Record<string, unknown>) => void): void;
+  close(): Promise<void>;
+}
+
+export interface PageOptions {
+  width: number;
+  height: number;
+  signal?: AbortSignal;
+}
+
 export interface CaptureEngine {
   readonly name: string;
   capture(url: string, opts: CaptureOptions): Promise<CaptureResult>;
+  /** Open a blank page to drive step by step; absent for engines that only take screenshots. */
+  openPage?(opts: PageOptions): Promise<PageSession>;
   /**
    * Print a self-contained HTML document to PDF. Scripts are off and every network request is
    * refused, so only the given HTML (and its inline styles) is rendered.
@@ -271,6 +290,15 @@ export class ChromeEngine implements CaptureEngine {
   }
 
   private async withBrowser<T>(fn: (cdp: Cdp) => Promise<T>): Promise<T> {
+    const browser = await this.launch();
+    try {
+      return await fn(browser.cdp);
+    } finally {
+      await browser.dispose();
+    }
+  }
+
+  private async launch(): Promise<{ cdp: Cdp; dispose: () => Promise<void> }> {
     const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'friday-chrome-'));
     const child = spawn(
       this.executable,
@@ -280,6 +308,11 @@ export class ChromeEngine implements CaptureEngine {
       },
     );
     let cdp: Cdp | null = null;
+    const dispose = async () => {
+      cdp?.close();
+      child.kill('SIGKILL');
+      await fs.rm(profile, { recursive: true, force: true }).catch(() => undefined);
+    };
     try {
       const wsUrl = await new Promise<string>((resolve, reject) => {
         let err = '';
@@ -305,11 +338,68 @@ export class ChromeEngine implements CaptureEngine {
         });
       });
       cdp = await Cdp.connect(wsUrl);
-      return await fn(cdp);
-    } finally {
-      cdp?.close();
-      child.kill('SIGKILL');
-      await fs.rm(profile, { recursive: true, force: true }).catch(() => undefined);
+      return { cdp, dispose };
+    } catch (err) {
+      await dispose();
+      throw err;
+    }
+  }
+
+  async openPage(opts: PageOptions): Promise<PageSession> {
+    const { cdp, dispose } = await this.launch();
+    try {
+      // Downloads are refused, and any other window the page opens is closed at once.
+      await cdp.send('Browser.setDownloadBehavior', { behavior: 'deny' });
+      const { targetId } = (await cdp.send('Target.createTarget', { url: 'about:blank' })) as {
+        targetId: string;
+      };
+      const { sessionId } = (await cdp.send('Target.attachToTarget', {
+        targetId,
+        flatten: true,
+      })) as { sessionId: string };
+      const send = (method: string, params: Record<string, unknown> = {}) =>
+        cdp.send(method, params, sessionId);
+      const handlers = new Set<(method: string, params: Record<string, unknown>) => void>();
+      cdp.on((m) => {
+        if (m.method === 'Target.targetCreated') {
+          const info = (m.params as { targetInfo?: { targetId: string; type: string } }).targetInfo;
+          if (info && info.type === 'page' && info.targetId !== targetId)
+            void cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => undefined);
+          return;
+        }
+        if (m.sessionId !== sessionId || !m.method) return;
+        if (m.method === 'Fetch.requestPaused') {
+          // Documents (the page, its frames and redirects) may only come from this machine; a
+          // refused one shows up as a failed request.
+          const p = m.params as CdpEvent;
+          void send(
+            isLocalUrl(p.request!.url) ? 'Fetch.continueRequest' : 'Fetch.failRequest',
+            isLocalUrl(p.request!.url)
+              ? { requestId: p.requestId }
+              : { requestId: p.requestId, errorReason: 'BlockedByClient' },
+          ).catch(() => undefined);
+          return;
+        }
+        for (const h of handlers) h(m.method, m.params ?? {});
+      });
+      await cdp.send('Target.setDiscoverTargets', { discover: true });
+      await send('Fetch.enable', {
+        patterns: [{ resourceType: 'Document', requestStage: 'Request' }],
+      });
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: opts.width,
+        height: opts.height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      return {
+        send,
+        on: (h) => void handlers.add(h),
+        close: dispose,
+      };
+    } catch (err) {
+      await dispose();
+      throw err;
     }
   }
 
@@ -465,7 +555,8 @@ interface ParentPort {
 }
 
 interface DesktopReply {
-  type: 'capture_result' | 'print_result' | 'open_result';
+  type: 'capture_result' | 'print_result' | 'open_result' | 'page_result';
+  result?: Record<string, unknown>;
   pdf?: string;
   id: string;
   ok: boolean;
@@ -484,6 +575,10 @@ interface DesktopReply {
 export class DesktopEngine implements CaptureEngine {
   readonly name = 'desktop (built-in Chromium)';
   private readonly pending = new Map<string, (reply: DesktopReply) => void>();
+  private readonly pageHandlers = new Map<
+    string,
+    (method: string, params: Record<string, unknown>) => void
+  >();
 
   constructor(private readonly port: ParentPort) {
     port.on('message', (e) => {
@@ -491,10 +586,60 @@ export class DesktopEngine implements CaptureEngine {
       if (
         reply?.type === 'capture_result' ||
         reply?.type === 'print_result' ||
-        reply?.type === 'open_result'
+        reply?.type === 'open_result' ||
+        reply?.type === 'page_result'
       )
         this.pending.get(reply.id)?.(reply);
+      const event = e.data as {
+        type?: string;
+        page?: string;
+        method?: string;
+        params?: Record<string, unknown>;
+      };
+      if (event?.type === 'page_event' && event.page && event.method)
+        this.pageHandlers.get(event.page)?.(event.method, event.params ?? {});
     });
+  }
+
+  /** One request to the shell's page driver, answered with a page_result. */
+  private pageRequest(
+    message: Record<string, unknown>,
+    timeoutMs = 30_000,
+  ): Promise<Record<string, unknown>> {
+    const id = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new CaptureError('The browser did not answer in time.'));
+      }, timeoutMs);
+      this.pending.set(id, (r) => {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        if (r.ok) resolve(r.result ?? {});
+        else reject(new CaptureError(r.error ?? 'The browser command failed.'));
+      });
+      this.port.postMessage({ ...message, id });
+    });
+  }
+
+  async openPage(opts: PageOptions): Promise<PageSession> {
+    const { page } = (await this.pageRequest({
+      type: 'page_open',
+      width: opts.width,
+      height: opts.height,
+    })) as { page: string };
+    const handlers = new Set<(method: string, params: Record<string, unknown>) => void>();
+    this.pageHandlers.set(page, (method, params) => {
+      for (const h of handlers) h(method, params);
+    });
+    return {
+      send: (method, params = {}) => this.pageRequest({ type: 'page_send', page, method, params }),
+      on: (h) => void handlers.add(h),
+      close: async () => {
+        this.pageHandlers.delete(page);
+        await this.pageRequest({ type: 'page_close', page }).catch(() => undefined);
+      },
+    };
   }
 
   capture(url: string, opts: CaptureOptions): Promise<CaptureResult> {

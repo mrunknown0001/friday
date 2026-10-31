@@ -1,14 +1,15 @@
 import type {
-  AttachmentDto,
   ApprovalDto,
+  AttachmentDto,
+  BrowserFlowDto,
   DeploymentPlanDto,
   MemoryRef,
   MessageDto,
   ProjectDto,
   ReviewDto,
-  TestRunDto,
   RunDto,
   SessionDetailDto,
+  TestRunDto,
 } from '@friday/shared';
 import {
   AlertTriangle,
@@ -129,9 +130,10 @@ type Row =
 export interface CallCards {
   reviews: Map<string, ReviewDto>;
   testRuns: Map<string, TestRunDto>;
+  browserFlows: Map<string, BrowserFlowDto>;
 }
 
-const NO_CARDS: CallCards = { reviews: new Map(), testRuns: new Map() };
+const NO_CARDS: CallCards = { reviews: new Map(), testRuns: new Map(), browserFlows: new Map() };
 
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
 /** Tool results shown elsewhere (suggest_next_steps becomes chips) rather than as tool rows. */
@@ -168,6 +170,7 @@ export function toRows(
         deploymentPlan: m.toolCallId ? plans.get(m.toolCallId) : undefined,
         review: m.toolCallId ? cards.reviews.get(m.toolCallId) : undefined,
         testRun: m.toolCallId ? cards.testRuns.get(m.toolCallId) : undefined,
+        browserFlow: m.toolCallId ? cards.browserFlows.get(m.toolCallId) : undefined,
         attachments: m.attachments,
       };
       const last = rows.at(-1);
@@ -316,6 +319,7 @@ function LiveOutput({
         deploymentPlan: plans.get(b.callId),
         review: cards.reviews.get(b.callId),
         testRun: cards.testRuns.get(b.callId),
+        browserFlow: cards.browserFlows.get(b.callId),
       };
       const last = groups.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -475,6 +479,12 @@ export function ChatView(props: Props) {
     ),
     testRuns: new Map(
       [...(detail?.testRuns ?? []), ...(live?.testRuns ?? [])].map((r) => [r.toolCallId, r]),
+    ),
+    browserFlows: new Map(
+      [...(detail?.browserFlows ?? []), ...(live?.browserFlows ?? [])].map((f) => [
+        f.toolCallId,
+        f,
+      ]),
     ),
   };
   const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {}, cards);

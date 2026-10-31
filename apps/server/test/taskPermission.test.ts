@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ApprovalDto, AppNotice, RunEvent, TaskPermissionDto } from '@friday/shared';
 import { afterEach, describe, expect, it } from 'vitest';
-import { covers, type TaskPermission } from '../src/approvals/taskPermission.js';
+import { covers, similarScope, type TaskPermission } from '../src/approvals/taskPermission.js';
 import type { Proposal } from '../src/tools/types.js';
 import { detectToolEnvironment } from '../src/workspace/environment.js';
 import { call, cleanupProjects, makeProject, ScriptedProvider, testServices } from './helpers.js';
@@ -15,6 +15,7 @@ const permission = (over: Partial<TaskPermission> = {}): TaskPermission => ({
   runId: 'run-1',
   files: ['src/cart.js', 'test/'],
   commands: [['npm', 'test']],
+  sites: [],
   maxActions: 5,
   used: 0,
   expiresAt: Date.now() + 60_000,
@@ -64,7 +65,41 @@ const commandProposal = (
   apply: async () => ({ content: '', summary: '' }),
 });
 
+const flowProposal = (origin: string): Proposal => ({
+  title: 't',
+  summary: 's',
+  category: 'browser',
+  risk: 'medium',
+  details: {
+    kind: 'browser_flow',
+    title: 'Sign in',
+    startUrl: `${origin}/login`,
+    origin,
+    width: 1280,
+    height: 800,
+    steps: [{ action: 'click', description: 'Click button "Sign in"' }],
+    engine: 'chrome',
+    riskReasons: [],
+  },
+  fingerprint: 'f',
+  apply: async () => ({ content: '', summary: '' }),
+});
+
 describe('what a task permission covers', () => {
+  it('covers browser flows only on the listed sites', () => {
+    const p = permission({ sites: ['http://localhost:5173'] });
+    expect(covers(p, 'run_browser_flow', flowProposal('http://localhost:5173'))).toBe(true);
+    expect(covers(p, 'run_browser_flow', flowProposal('http://localhost:3000'))).toBe(false);
+    expect(covers(permission(), 'run_browser_flow', flowProposal('http://localhost:5173'))).toBe(
+      false,
+    );
+    expect(similarScope('run_browser_flow', flowProposal('http://localhost:5173'))).toEqual({
+      files: [],
+      commands: [],
+      sites: ['http://localhost:5173'],
+    });
+  });
+
   it('covers listed files and folders, only for creating or modifying them', () => {
     const p = permission();
     expect(covers(p, 'edit_file', fileProposal([{ path: 'src/cart.js', change: 'modify' }]))).toBe(

@@ -248,6 +248,24 @@ package install in `run_command` (high: downloads code, may run install scripts)
 when it has one. The approval is bound to the hashes of the manifest and lockfiles, the commands and the sandbox
 settings. Changes to those files are recorded for undo.
 
+## Browser flows
+
+`inspect_page` only loads a local page, like `screenshot`. `run_browser_flow` acts on the app (clicks and typing can
+change its data), so it needs approval every time, in a new `browser` permission category, unless the user allowed
+more flows on that same site for the current task. The card shows every step exactly as it will run, typed values
+included; nothing typed is hidden from the user, and the model is told to use the project's test accounts and never
+to ask the user for a password. Steps that look like they type a password, and steps that accept confirmation
+dialogs, are called out on the card. Dialogs a step does not accept are dismissed.
+
+Each flow runs in a new page with no cookies or storage from earlier flows: a throwaway Chrome profile, or a hidden
+offscreen window in the desktop app's `friday-capture` session (no permissions, downloads cancelled). Documents,
+redirects and frames may only come from this machine, and never from Friday's own port (checked when the card is
+prepared and again when each step opens a page). A step that leads the page elsewhere fails. New windows are closed
+(Chrome) or denied (desktop). In the desktop app, the server can use only a fixed list of DevTools methods on these
+windows. The approval is bound to a hash of the start address, the steps and the window size. Step labels, errors
+and page problems are redacted before they are stored; page text returned to the model is marked as data. Page
+scripts run with the page's own rights, as in a normal browser.
+
 ## Health monitors
 
 Monitors are created, changed and deleted only through local routes that need the browser client header, and
@@ -337,6 +355,8 @@ other tool output. Signatures are untrusted text, like file contents.
 - Secret detection is pattern-based; a secret phrased unusually (e.g. a plain dictionary word as a password) can
   slip through. Review saved memories periodically.
 - Risk notes on commands are heuristics for the reviewer; they never relax the approval requirement.
+- Browser flows find elements with JavaScript in the page itself, so a page can mislead them (for example by
+  replacing `querySelectorAll`). This only affects the user's own local app, and the result is treated as data.
 
 - In the **web app**, any process running as the same OS user can call the API on `127.0.0.1:4317`. The desktop app
   closes this with its per-launch token. In both, a process running as you can still read the data folder and the
