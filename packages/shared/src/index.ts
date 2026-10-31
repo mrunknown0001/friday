@@ -13,6 +13,8 @@ export type ProviderErrorKind =
   | 'model_not_found'
   | 'unsupported'
   | 'server'
+  /** NoTokenLimit could not get an answer from the model's own provider (an outage on its side). */
+  | 'upstream'
   | 'malformed'
   | 'cancelled'
   | 'unknown';

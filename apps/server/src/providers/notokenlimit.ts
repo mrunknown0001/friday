@@ -8,7 +8,7 @@ import type {
 import { z } from 'zod';
 import type { Redactor } from '../security/redact.js';
 import { classifyError, ProviderError } from './errors.js';
-import { withRetry } from './retry.js';
+import { abortableSleep, retryDelay, withRetry } from './retry.js';
 import { estimateRequestTokens, estimateTokens } from './tokens.js';
 import type {
   ChatMessage,
@@ -32,7 +32,9 @@ export interface NoTokenLimitOptions {
   recorder?: ProviderCallRecorder;
   /** Injected in tests to serve canned HTTP responses through the real SDK. */
   fetch?: typeof fetch;
+  /** Retry timing (tests shorten it). */
   retryBaseDelayMs?: number;
+  retryMaxDelayMs?: number;
 }
 
 const modelListSchema = z.object({
@@ -103,14 +105,17 @@ export class NoTokenLimitProvider implements LLMProvider {
 
   private classify = (err: unknown) => classifyError(err, this.opts.redactor);
 
-  private retryOpts(signal?: AbortSignal) {
+  private retryTiming() {
     return {
-      maxRetries: this.opts.maxRetries,
-      signal,
       ...(this.opts.retryBaseDelayMs !== undefined
         ? { baseDelayMs: this.opts.retryBaseDelayMs }
         : {}),
+      ...(this.opts.retryMaxDelayMs !== undefined ? { maxDelayMs: this.opts.retryMaxDelayMs } : {}),
     };
+  }
+
+  private retryOpts(signal?: AbortSignal) {
+    return { maxRetries: this.opts.maxRetries, signal, ...this.retryTiming() };
   }
 
   private record(
@@ -195,7 +200,7 @@ export class NoTokenLimitProvider implements LLMProvider {
       idleTimer = setTimeout(() => ctrl.abort(new IdleTimeout()), this.opts.timeoutMs);
     };
 
-    let attempts = 1;
+    let attempts = 0;
     let usage: Usage | null = null;
     let finished = false;
     let output = '';
@@ -205,32 +210,58 @@ export class NoTokenLimitProvider implements LLMProvider {
         stream: true as const,
         stream_options: { include_usage: true },
       };
-      const result = await withRetry(
-        () => client.chat.completions.create(body, { signal: ctrl.signal }),
-        this.classify,
-        this.retryOpts(ctrl.signal),
-      );
-      attempts = result.attempts;
-
-      armIdleTimer();
       const tools = new ToolCallAccumulator();
       let finishReason: FinishReason = 'unknown';
-      for await (const chunk of result.value as AsyncIterable<ChatCompletionChunk>) {
-        armIdleTimer();
-        if (!chunk || typeof chunk !== 'object')
-          throw new ProviderError('malformed', 'invalid stream chunk');
-        if (chunk.usage) usage = toUsage(chunk.usage);
-        const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : undefined;
-        if (!choice) continue;
-        const delta = choice.delta ?? {};
-        // Reasoning fields (e.g. `reasoning_content`) are deliberately ignored: hidden reasoning
-        // is not shown to users or stored.
-        if (typeof delta.content === 'string' && delta.content.length > 0) {
-          output += delta.content;
-          yield { type: 'text', delta: delta.content };
+      // NoTokenLimit can accept a request and then report an error inside the stream (e.g.
+      // "Upstream provider failed"). Before anything reached the caller the request is simply
+      // sent again, like a failed connection; after that, retrying would duplicate output.
+      for (let round = 1; ; round++) {
+        // Opening the stream retries on its own (connection errors, 5xx, rate limits).
+        const result = await withRetry(
+          () => client.chat.completions.create(body, { signal: ctrl.signal }),
+          this.classify,
+          this.retryOpts(ctrl.signal),
+        ).catch((raw: unknown) => {
+          const err = this.classify(raw);
+          err.attempts += attempts;
+          throw err;
+        });
+        attempts += result.attempts;
+        let delivered = false;
+        try {
+          armIdleTimer();
+          for await (const chunk of result.value as AsyncIterable<ChatCompletionChunk>) {
+            armIdleTimer();
+            if (!chunk || typeof chunk !== 'object')
+              throw new ProviderError('malformed', 'invalid stream chunk');
+            if (chunk.usage) usage = toUsage(chunk.usage);
+            const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : undefined;
+            if (!choice) continue;
+            const delta = choice.delta ?? {};
+            // Reasoning fields (e.g. `reasoning_content`) are deliberately ignored: hidden
+            // reasoning is not shown to users or stored.
+            if (typeof delta.content === 'string' && delta.content.length > 0) {
+              delivered = true;
+              output += delta.content;
+              yield { type: 'text', delta: delta.content };
+            }
+            if (Array.isArray(delta.tool_calls)) {
+              delivered = true;
+              tools.add(delta.tool_calls);
+            }
+            if (choice.finish_reason) finishReason = mapFinishReason(choice.finish_reason);
+          }
+          break;
+        } catch (raw) {
+          if (ctrl.signal.aborted || delivered) throw raw;
+          const err = this.classify(raw);
+          if (!err.retryable || round > this.opts.maxRetries) {
+            err.attempts = attempts;
+            throw err;
+          }
+          clearTimeout(idleTimer);
+          await abortableSleep(retryDelay(round, err, this.retryTiming()), ctrl.signal);
         }
-        if (Array.isArray(delta.tool_calls)) tools.add(delta.tool_calls);
-        if (choice.finish_reason) finishReason = mapFinishReason(choice.finish_reason);
       }
       clearTimeout(idleTimer);
       // The SDK ends iteration silently on abort; never report an aborted stream as finished.
@@ -250,7 +281,11 @@ export class NoTokenLimitProvider implements LLMProvider {
           : req.signal?.aborted
             ? new ProviderError('cancelled')
             : this.classify(raw);
-      this.record(req, started, { error: err, attempts: Math.max(attempts, err.attempts), usage });
+      this.record(req, started, {
+        error: err,
+        attempts: Math.max(attempts, err.attempts, 1),
+        usage,
+      });
       throw err;
     } finally {
       clearTimeout(idleTimer);
