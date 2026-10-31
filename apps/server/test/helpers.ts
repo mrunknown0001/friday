@@ -44,6 +44,7 @@ export function testConfig(overrides: Partial<AppConfig['provider']> = {}): AppC
       maxConsecutiveToolFailures: 3,
     },
     approvalTtlMs: 60_000,
+    web: { tavilyApiKey: null },
   };
 }
 

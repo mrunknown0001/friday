@@ -29,6 +29,9 @@ import type { ReviewRepo } from '../repositories/reviews.js';
 import type { TestRunRepo } from '../repositories/testRuns.js';
 import type { BrowserFlowRepo } from '../repositories/browserFlows.js';
 import type { LoadTargetRepo, LoadTestRepo } from '../repositories/loadTests.js';
+import type { ResearchRepo } from '../repositories/research.js';
+import { ResearchError } from '../web/research.js';
+import type { WebService } from '../web/service.js';
 import type { DatabaseService } from '../databases/service.js';
 import type { SavedActionRepo } from '../repositories/savedActions.js';
 import type { MonitorRepo } from '../repositories/monitors.js';
@@ -112,6 +115,9 @@ export interface RunManagerDeps {
   loadTargets?: LoadTargetRepo;
   /** Browser flow results (run_browser_flow). */
   browserFlows?: BrowserFlowRepo;
+  /** Web search and pages, and the deep research records (the Research card). */
+  web?: WebService;
+  research?: ResearchRepo;
   /** Saved actions (runbooks) per project. */
   savedActions?: SavedActionRepo;
   /** Health monitors (read-only for the model). */
@@ -819,7 +825,7 @@ export class RunManager {
         caps.toolCalling === 'unsupported'
           ? []
           : registry
-              .definitions(!!project)
+              .definitions(!!project, this.unavailableWebTools())
               // A model known not to read images is not offered the tools that show it one;
               // screenshots need a browser, and browser flows one that can drive a page.
               .filter((t) => {
@@ -861,6 +867,10 @@ export class RunManager {
             tools.filter((t) => t.name.startsWith('mcp__')).map((t) => t.name.split('__')[1]!),
           ),
         ],
+        web: {
+          read: tools.some((t) => t.name === 'read_web_page'),
+          search: tools.some((t) => t.name === 'web_search'),
+        },
       });
 
       for (;;) {
@@ -1097,10 +1107,74 @@ export class RunManager {
     };
   }
 
+  /** Web tools not offered now: all of them while the switch is off, search without a key. */
+  private unavailableWebTools(): Set<string> {
+    const a = this.deps.web?.available() ?? { read: false, search: false };
+    return new Set([
+      ...(a.read ? [] : ['read_web_page']),
+      ...(a.search ? [] : ['web_search', 'deep_research']),
+    ]);
+  }
+
+  private webContext(
+    run: ActiveRun,
+    project: ProjectRecord | null,
+    callId: string,
+  ): ToolContext['web'] {
+    const web = this.deps.web;
+    const research = this.deps.research;
+    if (!web || !research || !web.available().read) return undefined;
+    const model = this.deps.runs.get(run.id)?.model ?? this.deps.resolveModel() ?? '';
+    return {
+      service: web,
+      complete: async (system, user, maxTokens) => {
+        try {
+          const result = await this.deps.provider.complete({
+            model,
+            operation: 'research',
+            sessionId: run.sessionId,
+            signal: run.controller.signal,
+            maxOutputTokens: maxTokens,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+            ],
+          });
+          return result.text;
+        } catch (e) {
+          if (e instanceof ProviderError && e.kind !== 'cancelled')
+            throw new ResearchError(`A model call during the research failed: ${e.message}`);
+          throw e;
+        }
+      },
+      research: {
+        create: (state) => {
+          const dto = research.create(
+            {
+              sessionId: run.sessionId,
+              runId: run.id,
+              toolCallId: callId,
+              projectId: project?.id ?? null,
+            },
+            state,
+          );
+          this.emit(run, { type: 'research', research: dto });
+          return dto;
+        },
+        update: (id, state) => {
+          const dto = research.update(id, state);
+          if (dto) this.emit(run, { type: 'research', research: dto });
+        },
+      },
+    };
+  }
+
   private toolContext(run: ActiveRun, project: ProjectRecord | null, callId: string): ToolContext {
     let streamed = 0;
+    const web = this.webContext(run, project, callId);
     return {
       callId,
+      ...(web ? { web } : {}),
       ...(this.deps.devops ? { devops: this.deps.devops } : {}),
       ...(this.deps.processes ? { processes: this.deps.processes } : {}),
       ...(this.deps.codeMap ? { codeMap: this.deps.codeMap } : {}),
@@ -1215,7 +1289,7 @@ export class RunManager {
         spec,
         label,
         ctx,
-        limits.toolTimeoutMs,
+        spec.timeoutMs ?? limits.toolTimeoutMs,
       );
       return { exec, approvalId: null, outcome: 'none' };
     }

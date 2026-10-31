@@ -231,6 +231,39 @@ with the voice settings (setting `voice`) and `spoken_replies` (migration 25, on
 (MediaRecorder, decoded and resampled to 16 kHz WAV in the browser) and the status; `VoiceControls.tsx` and
 `VoiceSettings.tsx` are the composer buttons and the settings section.
 
+### Web search and research (`web/`, `tools/webTools.ts`, `routes/web.ts`)
+
+`fetch.ts` is the only way Friday fetches a web page. `fetchPublic` makes plain `http(s).get` requests with
+`agent: false` and a DNS `lookup` hook (`publicLookup`) that refuses the connection if any resolved address is in a
+`net.BlockList` of loopback, private, link-local, reserved and documentation ranges (IPv4-mapped IPv6 is judged as
+IPv4). `checkPublicUrl` rejects bad schemes, credentials, IP literals in those ranges and local names before any
+request. Redirects are followed by hand, each target checked again. Bodies are decompressed (gzip, br, deflate) and
+cut at the byte limit. `extract.ts` runs Readability on a linkedom document and walks the result into Markdown
+(headings, fenced code with its language, lists, absolute links, quotes, tables). `query.ts` decides whether a search
+query may be sent, using `secretReason` (`security/secrets.ts`, shared with memory) plus checks for code, paths,
+private addresses and the user's SSH and database host names. `tavily.ts` calls Tavily's search API with the key as
+a bearer token. `service.ts` (`WebService`) holds the settings (setting `web`), says which tools are available
+(reading needs the switch, searching also needs the key), and redacts results and page text.
+
+`research.ts` (`runResearch`) is the deep research pipeline, run inside the `deep_research` tool with the run's
+model through `provider.complete` (operation `research`):
+
+1. A plan of sub-questions, each with search queries, as JSON (`parsePlan`).
+2. Searches, within the search limit.
+3. `choosePages`, which picks pages round-robin across sub-questions and prefers a site not yet chosen.
+4. Pages read three at a time.
+5. One findings call per sub-question, citing `[n]` and with each page wrapped as an untrusted `<source>`.
+6. The report.
+
+It leaves 25 seconds of the time limit per remaining writing step, so the report is always written. `linkCitations`
+turns `[n]` into links to the pages read and removes any other number. Friday appends the source list itself. Each
+step updates a `ResearchDto` that `ResearchRepo` stores in `research` (migration 26) and the run emits as
+`research`. Unfinished rows are marked stopped at startup. The tools have category `network` (allowed by policy) and
+are left out of the tool list and the system prompt's Web section while the switch is off. `deep_research` has its
+own timeout (the hard time limit plus 3 minutes). Routes: `GET /api/web`, `PUT /api/web/settings` (audit-logged),
+`GET /api/research/:id/export?format=md|docx|pdf` (Markdown through the document renderers). On the web side,
+`ResearchCard.tsx` shows the progress and the report, and `WebSettings.tsx` is the settings section.
+
 ### Databases (`databases/`, `tools/databaseTools.ts`, `routes/databases.ts`)
 
 `db_connections` (migration 23) holds where to connect and the name of the secret variable. `DatabaseService`

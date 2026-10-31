@@ -670,6 +670,24 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 26,
+    name: 'research',
+    up: `
+      -- Deep research (deep_research), per conversation: plan, searches, sources and the report.
+      CREATE TABLE research (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        project_id TEXT,
+        status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'stopped', 'failed')),
+        data TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX research_session ON research (session_id, created_at);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

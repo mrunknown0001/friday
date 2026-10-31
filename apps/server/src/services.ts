@@ -37,6 +37,7 @@ import { SessionRepo } from './repositories/sessions.js';
 import { SettingsRepo } from './repositories/settings.js';
 import { LoadTargetRepo, LoadTestRepo } from './repositories/loadTests.js';
 import { SpokenReplyRepo } from './repositories/spokenReplies.js';
+import { ResearchRepo } from './repositories/research.js';
 import { AuditRepo, ProviderCallRepo, UsageRepo } from './repositories/telemetry.js';
 import { ToolCallRepo } from './repositories/toolCalls.js';
 import { Redactor } from './security/redact.js';
@@ -46,6 +47,7 @@ import type { ToolEnvironment } from './workspace/environment.js';
 import { LocalVoiceEngine, type VoiceEngine } from './voice/engine.js';
 import { VoiceModelStore } from './voice/models.js';
 import { VoiceService, voiceModelsDir } from './voice/service.js';
+import { WebService, type WebDeps } from './web/service.js';
 export const MODEL_SETTING = 'provider.model';
 const modelSettingSchema = z.string().min(1).max(200);
 
@@ -139,6 +141,8 @@ export interface Services {
   catalog: ModelCatalog;
   runManager: RunManager;
   voice: VoiceService;
+  web: WebService;
+  research: ResearchRepo;
 }
 
 export interface ServiceOverrides {
@@ -158,6 +162,9 @@ export interface ServiceOverrides {
   voiceEngine?: VoiceEngine;
   voiceFetch?: typeof fetch;
   voiceModelsDir?: string;
+  /** Web search and page fetching (tests). */
+  webSearchFetch?: typeof fetch;
+  webPageFetch?: WebDeps['pageFetch'];
   runManager?: {
     checkpointIntervalMs?: number;
     retainFinishedMs?: number;
@@ -170,7 +177,7 @@ export function createServices(
   db: Db,
   overrides: ServiceOverrides = {},
 ): Services {
-  const redactor = new Redactor([config.provider.apiKey]);
+  const redactor = new Redactor([config.provider.apiKey, config.web.tavilyApiKey]);
   const providerCalls = new ProviderCallRepo(db);
   const provider =
     overrides.provider ??
@@ -281,6 +288,20 @@ export function createServices(
     resolveModel: () => modelSettings.resolve().model,
   });
 
+  const web = new WebService({
+    settings,
+    redactor,
+    envFile: config.envFile,
+    tavilyApiKey: config.web.tavilyApiKey,
+    privateHosts: () => [
+      ...sshHosts.list().map((h) => h.hostname),
+      ...dbConnections.list().flatMap((c) => (c.host ? [c.host] : [])),
+    ],
+    ...(overrides.webSearchFetch ? { searchFetch: overrides.webSearchFetch } : {}),
+    ...(overrides.webPageFetch ? { pageFetch: overrides.webPageFetch } : {}),
+  });
+  const research = new ResearchRepo(db);
+
   const runManager = new RunManager({
     provider,
     sessions,
@@ -298,6 +319,8 @@ export function createServices(
     loadTests,
     loadTargets,
     browserFlows,
+    web,
+    research,
     savedActions,
     monitors,
     databases,
@@ -370,5 +393,7 @@ export function createServices(
     catalog: new ModelCatalog(provider),
     runManager,
     voice,
+    web,
+    research,
   };
 }

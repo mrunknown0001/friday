@@ -22,6 +22,7 @@ import { registerLoadTargetRoutes } from './http/routes/loadTargets.js';
 import { registerSessionRoutes } from './http/routes/sessions.js';
 import { registerUsageRoutes } from './http/routes/usage.js';
 import { registerVoiceRoutes } from './http/routes/voice.js';
+import { registerWebRoutes } from './http/routes/web.js';
 import { registerWorktreeRoutes } from './http/routes/worktrees.js';
 import { registerLocalOnlyGuards } from './http/security.js';
 import type { Services } from './services.js';
@@ -125,6 +126,7 @@ export async function buildApp(
   registerDatabaseRoutes(app, services);
   registerLoadTargetRoutes(app, services);
   registerVoiceRoutes(app, services);
+  registerWebRoutes(app, services);
 
   const webDist = opts.webDist;
   if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {

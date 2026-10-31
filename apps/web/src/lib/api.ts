@@ -49,6 +49,8 @@ import type {
   VoiceModelId,
   VoiceSettings,
   VoiceStatusDto,
+  WebSettings,
+  WebStatusDto,
   WorktreeStatusDto,
 } from '@friday/shared';
 
@@ -308,6 +310,11 @@ export const api = {
   sessionChanges: (id: string) =>
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),
+  web: () => request<WebStatusDto>('GET', '/api/web'),
+  setWebSettings: (s: WebSettings) => request<WebSettings>('PUT', '/api/web/settings', s),
+  /** A research report as Markdown, Word or PDF. */
+  exportResearch: (id: string, format: 'md' | 'docx' | 'pdf') =>
+    download(`/api/research/${id}/export?format=${format}`),
   voice: () => request<VoiceStatusDto>('GET', '/api/voice'),
   downloadVoiceModel: (id: VoiceModelId) =>
     request<VoiceModelDto>('POST', `/api/voice/models/${id}/download`),

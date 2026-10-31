@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RunEvent } from '@friday/shared';
+import type { PermissionCategory, RunEvent } from '@friday/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ProviderError } from '../src/providers/errors.js';
@@ -55,7 +55,7 @@ describe('tool executor', () => {
     const deployer = defineTool({
       name: 'deploy',
       description: 'd',
-      category: 'network',
+      category: 'telepathy' as PermissionCategory,
       risk: 'critical',
       requiresProject: true,
       schema: z.object({}),
@@ -257,6 +257,9 @@ describe('tool executor', () => {
         'database_schema',
         'query_database',
         'run_load_test',
+        'web_search',
+        'read_web_page',
+        'deep_research',
         'create_document',
         'create_spreadsheet',
         'create_presentation',
@@ -291,12 +294,18 @@ describe('tool executor', () => {
         'database_schema',
         'query_database',
         'run_load_test',
+        'web_search',
+        'read_web_page',
+        'deep_research',
         'search_logs',
         'search_memory',
         'suggest_next_steps',
         'update_plan',
       ].sort(),
     );
+    // While the user's switch is off (or without a search key), web tools are not offered.
+    const off = new Set(['web_search', 'read_web_page', 'deep_research']);
+    expect(registry.definitions(false, off).map((d) => d.name)).not.toContain('read_web_page');
   });
 });
 

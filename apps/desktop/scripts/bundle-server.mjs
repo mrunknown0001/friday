@@ -59,6 +59,13 @@ function locate(name, fromDir) {
   }
 }
 
+const libc = process.report?.getReport().header.glibcVersionRuntime ? 'glibc' : 'musl';
+/** A package built for the other C library (its package.json "libc" field). */
+function otherLibc(dir) {
+  const { libc: wants } = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  return Array.isArray(wants) && !wants.includes(libc);
+}
+
 const modulesOut = path.join(outDir, 'node_modules');
 fs.rmSync(modulesOut, { recursive: true, force: true });
 const seen = new Set();
@@ -87,8 +94,9 @@ while (queue.length) {
   ]) {
     if (SKIP.has(dep)) continue;
     const found = locate(dep, dir);
-    // Optional dependencies for other platforms are not installed.
-    if (found) queue.push(found);
+    // Optional dependencies for other platforms are not installed; ones for another C library
+    // (musl on a glibc system) can be, and are left out.
+    if (found && !otherLibc(found)) queue.push(found);
     else if (!(pkg.optionalDependencies ?? {})[dep])
       throw new Error(`${pkg.name} needs ${dep}, which is not installed.`);
   }

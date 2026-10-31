@@ -466,32 +466,52 @@ approved), credentials never reach the model, and results from other systems are
   Original plan: a Voice toggle that speaks replies (prose, with technical parts described), approvals announced,
   a microphone that records only while on, the transcript into the box, and voice never approving anything.
 
-- ⬜ **Web search and deep research** (L, added 2026-10-31). Friday has no web access today, apart from tools an
-  MCP server provides.
-  - **Search and read.** `web_search` runs a query and returns titles, links and snippets. `read_web_page` fetches a
-    public page and returns its readable text. Both are read-only GET requests, with no cookies or credentials,
-    time and size limits, and http(s) only. Local and private network addresses are refused.
-  - **Deep research.** For a bigger question ("which PDF library fits this project", "why does this error appear
-    after the upgrade", "what changed in the API between the version we use and the latest"), Friday:
-    - plans sub-questions;
-    - runs several searches and reads the sources;
-    - compares what they say and notes where they disagree;
-    - writes a report with every claim linked to its source, and lists the sources it read.
+- ✅ **Web search and deep research** (L, added 2026-10-31). Done: `web_search` (Tavily), `read_web_page` and
+  `deep_research`. The user's choices:
+  - Tavily for search, with the key in `.env` (`TAVILY_API_KEY`). It never appears in chat, and the browser only
+    learns whether it is set.
+  - Readability and linkedom to turn pages into readable Markdown.
+  - The tools run without approval and every query and page is shown. **Settings → Web** has an on/off switch and
+    the research limits.
+  - Queries may hold public identifiers only. Friday refuses secrets, code, paths, private addresses and the user's
+    own host names, and shows the refusal on the card.
 
-    Progress shows live and can be stopped. Each research has limits on searches, pages and time. The report can be
-    saved with the document generator.
+  Pages are fetched by plain GET, with no cookies or credentials, at most 3 MB, 15 seconds and 5 redirects, each
+  redirect checked again. Every resolved address must be public, checked at connect time. Page addresses with a known
+  secret pattern are refused.
 
-  - **Combined with the code.** Answers are checked against the project: the installed version, how the code
-    actually calls the API, and the lockfile, so advice matches what is in use.
-  - **What leaves the machine.** Only search queries and page addresses. Never file contents or secrets, and
-    queries are checked for secrets the same way memory writes are. Every query and page is shown in the tool
-    activity. Page text is untrusted data: it can inform an answer but cannot trigger an action, and any change it
-    suggests is a normal approved change.
-  - Open questions:
-    - Which search provider. NoTokenLimit may offer none. Options are Brave Search or Tavily (an API key kept in
-      Friday's config, never in chat) or a self-hosted SearXNG.
-    - Whether searches run freely (queries visible), need one approval per research, or one approval per query.
-    - Whether queries may include project details such as an error message or a package name.
+  Deep research:
+  - plans sub-questions and searches for each;
+  - reads up to the page limit, three pages at a time;
+  - notes findings and disagreements per sub-question, with pages wrapped as untrusted data;
+  - writes a report: answer, details, disagreements, how it applies to the project, and gaps.
+
+  Citations link to the pages read, unknown numbers are removed and counted, and Friday writes the source list. The
+  **Research** card shows the plan, each query and each page (read or why not) live, then the report. The report
+  can be saved as Markdown, Word or PDF. Limits are 12 searches, 15 pages and 5 minutes by default (at most 30, 40
+  and 15), and Stop ends a research. To combine findings with the code, the model is told to read the project first
+  and to pass the versions it found as `project_context`. The report's "For this project" section applies the
+  findings to them. Friday doesn't check the lockfile itself.
+
+  Verified on 2026-10-31 with `claude-sonnet-4.6` against real pages. Search results came from a stand-in for
+  Tavily, because no Tavily key was set. It returned real documentation URLs for each query.
+  - `read_web_page` read vite.dev's migration guide (Vite 8 by now) into Markdown with headings and code blocks.
+  - With real DNS, `localhost`, `169.254.169.254`, `127.0.0.1.nip.io`, `10.0.0.1.nip.io` and `[::ffff:127.0.0.1]`
+    were all refused, and vite.dev was read.
+  - The model once said local addresses "were refused" without calling the tool. When told to call it, it declined
+    to try them. Either way nothing was fetched.
+  - "Our app uses Vite 5.4.2 on Node 18.19. Should we upgrade to Vite 6?" as a deep research took 2 min 10 s.
+    - It ran 8 searches, with public terms only ("Vite 6 Node.js 18 compatibility minimum version"), and read 5
+      pages.
+    - The report advised upgrading Node first (18 is end of life), then going straight to the current Vite. Every
+      claim was cited, and it listed what the sources didn't say.
+    - It saved as Word. Topic titles ran into the paragraphs, so the report prompt now asks for `###` headings, and
+      a second research came out with them.
+
+  Original plan: search and read tools with GET only and local addresses refused; deep research with sub-questions,
+  sources compared, cited report, live progress, limits and stop; answers checked against the project; only queries
+  and addresses leave the machine, with page text as untrusted data. Open questions were the search provider,
+  approvals, and project details in queries.
 
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,

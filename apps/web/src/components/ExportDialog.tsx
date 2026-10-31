@@ -9,7 +9,7 @@ type Format = 'md' | 'pdf';
 type Detail = 'summary' | 'full';
 
 /** Hand a downloaded file to the browser (the desktop app asks where to save it). */
-function save(blob: Blob, name: string) {
+export function saveDownload(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -90,7 +90,7 @@ export function ExportDialog({ sessionId, onClose }: { sessionId: string; onClos
         detail,
         tzOffsetMinutes: -new Date().getTimezoneOffset(),
       });
-      save(blob, name);
+      saveDownload(blob, name);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
