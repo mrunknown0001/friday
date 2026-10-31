@@ -132,8 +132,11 @@ export class WebService {
     let text: string;
     if (type === 'text/html' || type === 'application/xhtml+xml' || type === '') {
       const html = decodeBody(page.body, page.contentType);
-      const extracted = extractHtml(html, page.url);
-      ({ title, byline, publishedAt, text } = extracted);
+      try {
+        ({ title, byline, publishedAt, text } = extractHtml(html, page.url));
+      } catch {
+        throw new WebError(`Friday couldn't get the text out of ${page.url}.`);
+      }
     } else if (type.startsWith('text/')) {
       text = decodeBody(page.body, page.contentType);
     } else if (type === 'application/json' || type.endsWith('+json')) {
@@ -150,6 +153,8 @@ export class WebService {
           : `${page.url} is ${type}, not a page Friday can read.`,
       );
     }
+    if (!text.trim())
+      throw new WebError(`${page.url} has no readable text (it may need JavaScript or a sign-in).`);
     const max = o.maxChars ?? 40_000;
     const clean = this.d.redactor.redact(text.replaceAll('\u0000', ''));
     return {

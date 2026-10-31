@@ -107,7 +107,9 @@ function toText(root: El, base: string): string {
       const alt = node.getAttribute?.('alt');
       if (alt) out.push(`[image: ${alt}]`);
     } else if (tag === 'blockquote') {
-      const inner = toText(node, base)
+      const inner = Array.from(node.childNodes)
+        .map((n) => toText(n, base))
+        .join('\n\n')
         .trim()
         .split('\n')
         .map((l) => `> ${l}`)
