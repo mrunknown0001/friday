@@ -611,6 +611,32 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX browser_flows_session ON browser_flows (session_id, created_at);
     `,
   },
+  {
+    version: 23,
+    name: 'db_connections',
+    up: `
+      -- Database connections the user adds in Settings (read-only queries). Only where to
+      -- connect and the NAME of the variable holding the password or URL are stored, never a
+      -- secret. Only the user creates or edits them (HTTP routes).
+      CREATE TABLE db_connections (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        engine TEXT NOT NULL CHECK (engine IN ('postgres', 'mysql', 'sqlite')),
+        project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+        environment TEXT NOT NULL CHECK (environment IN ('development', 'staging', 'production')),
+        host TEXT,
+        port INTEGER,
+        database TEXT,
+        username TEXT,
+        secret_var TEXT,
+        secret_kind TEXT NOT NULL DEFAULT 'password' CHECK (secret_kind IN ('password', 'url')),
+        ssl TEXT NOT NULL DEFAULT 'disable' CHECK (ssl IN ('disable', 'require', 'verify')),
+        path TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

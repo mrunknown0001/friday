@@ -199,6 +199,24 @@ stored as an attachment of the tool message and sent in `tool_finished.attachmen
 once. The preview pane is an iframe (loopback `frame-src`). `POST /api/preview/screenshot` captures a page into a
 pending attachment for the composer. `GET /api/projects/:id/raw` serves image files for the file viewer.
 
+### Databases (`databases/`, `tools/databaseTools.ts`, `routes/databases.ts`)
+
+`db_connections` (migration 23) holds where to connect and the name of the secret variable. `DatabaseService`
+picks the connections a conversation may use (any-conversation ones, plus its project's own) and builds a
+`DbTarget` when connecting. It reads the variable from the project's `.env`, Friday's config file (`util.parseEnv`,
+read fresh each time) or the environment, and resolves the SQLite path. `clients.ts` opens a new connection per call
+with `pg` or `mysql2` (both pinned), or a worker thread running `node:sqlite` for SQLite, and closes it afterwards.
+Postgres limits rows with a cursor (`DECLARE … CURSOR FOR` then `FETCH n+1`); MySQL streams rows and drops the
+connection at the limit. `query_database` runs `classifySql`, then `explain`, then shows the card, then `runQuery`
+(resolving the secret again). It formats rows as a table with sensitive column names masked. `database_schema`
+queries `pg_catalog` / `information_schema` / `sqlite_schema` and pragmas with parameters. The run loop counts tool
+failures once per model turn, and `query_database` refuses to run in the same turn as `database_schema`, so a
+batch of guesses written before the schema was seen gets corrected instead of stopping the run.
+
+Tests in `test/databases.test.ts` run against real servers when `FRIDAY_TEST_PG_PORT` / `FRIDAY_TEST_PG_PASSWORD`
+(user `postgres`, database `shop`) and `FRIDAY_TEST_MYSQL_PORT` / `FRIDAY_TEST_MYSQL_PASSWORD` (user `reader`) are
+set, with a `users` table of 250 rows and an `orders` table.
+
 Browser flows (`browser/flow.ts`, `tools/browserTools.ts`, `repositories/browserFlows.ts`): engines with
 `openPage` return a `PageSession` (send a DevTools command, receive its events, close). `ChromeEngine` launches a
 headless browser per flow with `Fetch` interception for documents, closes other targets and denies downloads.
@@ -292,6 +310,8 @@ pasted, dropped or picked.
 | `deps/`                     | Dependency upgrades: versions and advisory ranges (`versions.ts`), manifests and lockfiles incl. npm workspaces (`manifests.ts`), npm view / Packagist (`registry.ts`), audits (`audit.ts`), targets under the age rule (`report.ts`), GitHub release notes (`changelog.ts`). |
 | `tools/dependencyTools.ts`  | Read-only `dependency_report` and `dependency_changelog`; approval-gated `upgrade_dependencies` (commands via `prepareCommand`/`runPrepared`, file changes recorded).                                                                                                         |
 | `browser/flow.ts`           | Browser flows: step types and descriptions, in-page element finding and page outline, `PageDriver` (waits, clicks, typing, dialogs, problems), `runFlow`.                                                                                                                     |
+| `databases/`                | Read-only databases: statement check (`sql.ts`), Postgres/MySQL/SQLite clients with read-only sessions, row and time limits, `EXPLAIN` and connection tests (`clients.ts`), connections and secrets by variable name (`service.ts`).                                          |
+| `tools/databaseTools.ts`    | Read-only `database_schema` (catalog queries); approval-gated `query_database` (category `database`, production confirmation, masked columns).                                                                                                                                |
 | `tools/browserTools.ts`     | Read-only `inspect_page`; approval-gated `run_browser_flow` (flat step schema, local-only checks, screenshots stored per step, `BrowserFlowRepo`).                                                                                                                            |
 | `refactor/`                 | Rename and move: comment/string-aware scanner (`lexer.ts`), imports per language (`modules.ts`), reference split (`references.ts`), TS/JS move planner (`move.ts`).                                                                                                           |
 | `tools/refactorTools.ts`    | `find_references`, and approval-gated `rename_symbol` and `move_symbol` (one all-or-nothing multi-file change, `applyAll`).                                                                                                                                                   |

@@ -16,6 +16,8 @@ import { TestRunRepo } from './repositories/testRuns.js';
 import { BrowserFlowRepo } from './repositories/browserFlows.js';
 import { SavedActionRepo } from './repositories/savedActions.js';
 import { MonitorRepo } from './repositories/monitors.js';
+import { DbConnectionRepo } from './repositories/dbConnections.js';
+import { DatabaseService } from './databases/service.js';
 import { MonitorService } from './monitors/service.js';
 import { WorktreeManager } from './worktree/manager.js';
 import { FileChangeRepo } from './repositories/fileChanges.js';
@@ -102,6 +104,8 @@ export interface Services {
   browserFlows: BrowserFlowRepo;
   savedActions: SavedActionRepo;
   monitors: MonitorRepo;
+  dbConnections: DbConnectionRepo;
+  databases: DatabaseService;
   monitorService: MonitorService;
   worktrees: WorktreeManager;
   sshHosts: SshHostRepo;
@@ -225,6 +229,11 @@ export function createServices(
   });
 
   const monitors = new MonitorRepo(db);
+  const dbConnections = new DbConnectionRepo(db);
+  const databases = new DatabaseService(dbConnections, projects, {
+    envFile: config.envFile,
+    dataDir: config.dataDir,
+  });
   const monitorService = new MonitorService(
     monitors,
     {
@@ -254,6 +263,7 @@ export function createServices(
     browserFlows,
     savedActions,
     monitors,
+    databases,
     devops: { hosts: sshHosts, ssh, logSources, plans: deploymentPlans },
     processes,
     codeMap,
@@ -293,6 +303,8 @@ export function createServices(
     savedActions,
     monitors,
     monitorService,
+    dbConnections,
+    databases,
     worktrees: new WorktreeManager(projects, config.dataDir),
     sshHosts,
     ssh,

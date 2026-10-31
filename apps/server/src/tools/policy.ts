@@ -11,7 +11,8 @@ export type PolicyDecision =
  * - File creation, modification, deletion/movement and local commands always need a fresh,
  *   per-action approval from the user. There is no "always allow" or autonomous mode.
  * - Git mutations, remote (SSH) operations and deployments also need approval; production
- *   deployments additionally need a typed confirmation. Network and database categories are denied until their tools and
+ *   deployments additionally need a typed confirmation. Database queries (read-only, on connections
+ *   the user added) need approval. The network category is denied until its tools and
  *   safeguards exist. Unknown categories are denied.
  *
  * Nothing here can be changed by a tool call or by model output.
@@ -32,6 +33,7 @@ export function decide(category: PermissionCategory | undefined): PolicyDecision
     case 'deployment':
     case 'task_permission':
     case 'browser': // driving a page of a local site (browser flows)
+    case 'database': // one read-only statement on a connection the user added
     case 'mcp':
       return { action: 'require_approval' };
     case undefined:

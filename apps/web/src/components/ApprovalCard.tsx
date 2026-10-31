@@ -8,6 +8,7 @@ import type {
 import {
   Check,
   Container,
+  Database,
   FileDiff,
   FileText,
   GitCommitHorizontal,
@@ -59,9 +60,67 @@ const CATEGORY_LABEL: Record<string, string> = {
   task_permission: 'Task permission',
   process_control: 'Process',
   browser: 'Browser flow',
+  database: 'Database query',
   mcp: 'Connected app',
   mcp_trusted: 'Connected app (allowed)',
 };
+
+function DatabaseQueryDetails({
+  d,
+}: {
+  d: Extract<ApprovalDto['details'], { kind: 'database_query' }>;
+}) {
+  const engine = { postgres: 'Postgres', mysql: 'MySQL', sqlite: 'SQLite' }[d.connection.engine];
+  return (
+    <div className="space-y-2 text-xs">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+        <dt className="text-zinc-500">Connection</dt>
+        <dd className="text-zinc-100">
+          <span className="font-mono">{d.connection.name}</span>{' '}
+          <span className="text-zinc-400">
+            ({engine}, {d.connection.environment})
+          </span>
+        </dd>
+        <dt className="text-zinc-500">Where</dt>
+        <dd className="font-mono break-all text-zinc-300">{d.connection.target}</dd>
+        {d.credential && (
+          <>
+            <dt className="text-zinc-500">Credentials</dt>
+            <dd className="text-zinc-300">{d.credential} (value not shown)</dd>
+          </>
+        )}
+        <dt className="text-zinc-500">Limits</dt>
+        <dd className="text-zinc-300">
+          at most {d.maxRows} row{d.maxRows === 1 ? '' : 's'}, {d.timeoutSeconds} s
+          {d.estimatedRows !== null && (
+            <span className="text-zinc-500">
+              {' '}
+              · the planner expects about {d.estimatedRows.toLocaleString()} rows
+            </span>
+          )}
+        </dd>
+      </dl>
+      <pre
+        aria-label="SQL"
+        className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.75rem] text-zinc-100"
+      >
+        {d.sql}
+      </pre>
+      <ul aria-label="Safeguards" className="list-disc space-y-0.5 pl-5 text-zinc-400">
+        {d.safeguards.map((s) => (
+          <li key={s}>{s}</li>
+        ))}
+      </ul>
+      {d.riskReasons.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-amber-200">
+          {d.riskReasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function BrowserFlowDetails({
   d,
@@ -414,6 +473,7 @@ function Details({ approval }: { approval: ApprovalDto }) {
   if (d.kind === 'git_remote') return <GitRemoteDetails d={d} />;
   if (d.kind === 'task_permissions') return <TaskPermissionDetails d={d} />;
   if (d.kind === 'browser_flow') return <BrowserFlowDetails d={d} />;
+  if (d.kind === 'database_query') return <DatabaseQueryDetails d={d} />;
   if (d.kind === 'mcp') return <McpDetails d={d} />;
   if (d.kind === 'document')
     return (
@@ -1008,7 +1068,9 @@ export function ApprovalCard({ approval, onDecide, onCancelRun, compact }: Appro
                 ? PackageIcon
                 : approval.details.kind === 'browser_flow'
                   ? MousePointerClick
-                  : ShieldAlert;
+                  : approval.details.kind === 'database_query'
+                    ? Database
+                    : ShieldAlert;
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(decision);

@@ -553,6 +553,30 @@ that is down opens a conversation (in its project, if it has one) asking Friday 
 Only you add, change, pause or delete monitors. Friday's `monitor_status` tool can read their status and history
 but not change them. A URL's query string is not shown to the model. Deleting a project deletes its monitors.
 
+### Databases (read-only)
+
+Add a database in **Settings → Databases** (Postgres, MySQL/MariaDB or SQLite), for any conversation or for one
+project, marked development, staging or production. Then ask Friday about the data.
+
+- **No passwords in Friday.** A connection stores the host, port, database and user, plus the _name_ of a variable
+  that holds the password (`DB_PASSWORD`) or the whole connection URL (`DATABASE_URL`). Friday reads the value when it
+  connects: from the project's `.env` (project connections), then Friday's config file, then its environment. The
+  value is never stored, logged or shown to the model. SQLite takes a file path (absolute, or inside the project).
+  **Test** connects and warns when the database user could write; a read-only user is safest.
+- **Schema** (`database_schema`, no approval): the connections available here, a database's tables and views with
+  row estimates, and a table's columns, keys, foreign keys and indexes. No table data is read.
+- **Queries** (`query_database`, approval every time): one read statement (SELECT, WITH … SELECT, VALUES,
+  EXPLAIN, SHOW, SQLite PRAGMA reads). Friday refuses writes, locking reads, `SELECT INTO` and several statements
+  before asking, and checks the statement with `EXPLAIN` so mistakes come back without a card. The card shows the
+  exact SQL, the connection, where the password comes from, the row and time limits (100 rows and 15 s by default,
+  at most 1,000 and 120 s) and the planner's row estimate. Production connections need the name typed.
+- **Read-only in the database too.** Postgres and MySQL run the statement in a read-only transaction in a read-only
+  session, so the database refuses any write even from a user who could write; SQLite files are opened read-only.
+  Every query uses a new connection that is closed afterwards.
+- **Results:** the rows go to the model as a table. Values of columns named like passwords, tokens or keys are hidden
+  and anything that looks like a secret is redacted. If you want data changed, Friday gives you the SQL to run
+  yourself.
+
 ### Rename and move code
 
 Ask Friday to rename a function, class, type, constant or method, or to move a top-level TypeScript/JavaScript

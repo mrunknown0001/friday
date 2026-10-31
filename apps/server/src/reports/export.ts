@@ -151,6 +151,8 @@ function approvalAction(d: ApprovalDetails): string | null {
         '',
         fenced(d.commands.map(displayArgv).join('\n'), 'sh'),
       ].join('\n');
+    case 'database_query':
+      return `On ${d.connection.name} (${d.connection.engine}, ${d.connection.environment}), at most ${d.maxRows} rows:\n\n${fenced(d.sql, 'sql')}`;
     case 'browser_flow':
       return [
         `On ${d.startUrl}:`,

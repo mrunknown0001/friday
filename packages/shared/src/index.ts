@@ -536,6 +536,28 @@ export type ApprovalDetails =
       minutes: number;
     }
   | {
+      /** query_database: one read-only statement against a connection the user added. */
+      kind: 'database_query';
+      connection: {
+        name: string;
+        engine: DbEngine;
+        environment: HostEnvironment;
+        /** user@host:port/database, or the SQLite file. */
+        target: string;
+      };
+      /** The exact statement. */
+      sql: string;
+      maxRows: number;
+      timeoutSeconds: number;
+      /** Where the password comes from, e.g. "DB_PASSWORD in the project's .env"; null for SQLite. */
+      credential: string | null;
+      /** How read-only is enforced, as shown to the user. */
+      safeguards: string[];
+      /** The planner's row estimate, when the database gives one. */
+      estimatedRows: number | null;
+      riskReasons: string[];
+    }
+  | {
       /** run_browser_flow: the steps Friday will take on a page of a local site. */
       kind: 'browser_flow';
       title: string;
@@ -626,6 +648,46 @@ export type ComposeAction = 'up' | 'start' | 'stop' | 'restart' | 'down';
 export type ComposePull = 'never' | 'missing' | 'always';
 
 export type HostEnvironment = 'development' | 'staging' | 'production';
+
+// ------------------------------------------------------------------ databases (read-only)
+
+export type DbEngine = 'postgres' | 'mysql' | 'sqlite';
+export type DbSslMode = 'disable' | 'require' | 'verify';
+
+/**
+ * A database connection the user added. Friday stores where to connect and the NAME of the
+ * variable holding the password (or the whole connection URL), never its value.
+ */
+export interface DbConnectionDto {
+  id: string;
+  name: string;
+  engine: DbEngine;
+  /** Only this project's conversations may use it; null: any conversation. */
+  projectId: string | null;
+  environment: HostEnvironment;
+  /** postgres/mysql with separate fields (null when the URL variable holds them). */
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  username: string | null;
+  /** postgres/mysql: a variable holding the password, or the whole connection URL. */
+  secretVar: string | null;
+  secretKind: 'password' | 'url';
+  ssl: DbSslMode;
+  /** sqlite: the database file (absolute, or relative to the project). */
+  path: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DbConnectionInput = Omit<DbConnectionDto, 'id' | 'createdAt' | 'updatedAt'>;
+
+export interface DbConnectionTestResult {
+  ok: boolean;
+  message: string;
+  /** Advice, e.g. the database user can also write. */
+  warnings: string[];
+}
 
 export interface SshHostDto {
   id: string;

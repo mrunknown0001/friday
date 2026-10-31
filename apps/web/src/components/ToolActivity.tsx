@@ -145,6 +145,10 @@ export function toolLabel(name: string, argsJson: string): string {
     case 'create_spreadsheet':
     case 'create_presentation':
       return str(a.path);
+    case 'database_schema':
+      return [a.connection, a.table ?? a.search].filter(Boolean).map(str).join(': ');
+    case 'query_database':
+      return `${str(a.connection)}: ${str(a.sql).replace(/\s+/g, ' ').slice(0, 80)}`;
     case 'inspect_page':
       return `${str(a.url ?? a.process_id)}${a.path ? str(a.path) : ''}`;
     case 'run_browser_flow':
