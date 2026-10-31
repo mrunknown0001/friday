@@ -53,6 +53,7 @@ export function testServices(
   const db = openDatabase(overrides.dbFile ?? ':memory:');
   return createServices(overrides.config ?? testConfig(), db, {
     retryBaseDelayMs: 1,
+    retryMaxDelayMs: 5,
     ...overrides,
     runManager: { checkpointIntervalMs: 0, retainFinishedMs: 60_000, ...overrides.runManager },
   });

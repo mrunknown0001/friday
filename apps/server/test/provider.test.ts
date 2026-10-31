@@ -1,3 +1,4 @@
+import OpenAI from 'openai';
 import { describe, expect, it } from 'vitest';
 import { classifyError, ProviderError } from '../src/providers/errors.js';
 import { NoTokenLimitProvider, ToolCallAccumulator } from '../src/providers/notokenlimit.js';
@@ -28,6 +29,7 @@ function makeProvider(
     recorder: (r) => records.push(r),
     fetch: mock.fetch,
     retryBaseDelayMs: 1,
+    retryMaxDelayMs: 5,
   });
   return { provider, calls: mock.calls, records };
 }
@@ -315,6 +317,90 @@ describe('NoTokenLimitProvider', () => {
       },
     );
     await expect(collect(provider.streamChat(req))).rejects.toMatchObject({ kind: 'quota' });
+  });
+
+  it('retries a stream that fails upstream before any output, then succeeds', async () => {
+    const upstream = (s: AbortSignal | null) =>
+      sseResponse(
+        [
+          { id: 'c1', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] },
+          { error: { type: 'api_error', message: 'Upstream provider failed' } },
+        ],
+        {},
+        s,
+      );
+    const { provider, calls, records } = makeProvider([
+      (_c, s) => upstream(s),
+      (_c, s) => sseResponse(textChunks(['ok']), {}, s),
+    ]);
+    const events = await collect(provider.streamChat(req));
+    expect(events.filter((e) => e.type === 'text')).toEqual([{ type: 'text', delta: 'ok' }]);
+    expect(calls).toHaveLength(2);
+    expect(records[0]).toMatchObject({ status: 'ok', attempts: 2 });
+  });
+
+  it('reports a lasting upstream outage clearly, after retrying', async () => {
+    const { provider, calls, records } = makeProvider(
+      [
+        (_c, s) =>
+          sseResponse(
+            [{ error: { type: 'api_error', message: 'Upstream provider failed' } }],
+            {},
+            s,
+          ),
+      ],
+      { maxRetries: 2 },
+    );
+    const err = (await collect(provider.streamChat(req)).catch((e: unknown) => e)) as ProviderError;
+    expect(err.kind).toBe('upstream');
+    expect(err.retryable).toBe(true);
+    expect(err.message).toBe(
+      "NoTokenLimit couldn't get an answer from the model's provider. This is on NoTokenLimit's side: try again in a few minutes, or choose another model in Settings. (Upstream provider failed)",
+    );
+    expect(calls).toHaveLength(3);
+    expect(records[0]).toMatchObject({ status: 'error', errorKind: 'upstream', attempts: 3 });
+  });
+
+  it('does not retry once text has reached the caller', async () => {
+    const { provider, calls } = makeProvider([
+      (_c, s) =>
+        sseResponse(
+          [
+            ...textChunks(['Hel']).slice(0, 1),
+            { error: { type: 'api_error', message: 'Upstream provider failed' } },
+          ],
+          {},
+          s,
+        ),
+    ]);
+    const seen: string[] = [];
+    const err = await (async () => {
+      for await (const e of provider.streamChat(req)) if (e.type === 'text') seen.push(e.delta);
+    })().catch((e: unknown) => e);
+    expect(seen).toEqual(['Hel']);
+    expect(err).toMatchObject({ kind: 'upstream' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('treats 502 and 504 as upstream outages and retries them', async () => {
+    const { provider, calls } = makeProvider([
+      () => new Response('error code: 502', { status: 502 }),
+      () =>
+        jsonResponse(200, {
+          choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'pong' } }],
+        }),
+    ]);
+    await expect(provider.complete(req)).resolves.toMatchObject({ text: 'pong' });
+    expect(calls).toHaveLength(2);
+    const redactor = new Redactor([]);
+    const http = (status: number) =>
+      classifyError(
+        new OpenAI.APIError(status, { message: 'x' }, undefined, new Headers()),
+        redactor,
+      );
+    expect([502, 504].map((s) => http(s).kind)).toEqual(['upstream', 'upstream']);
+    expect([500, 503].map((s) => http(s).kind)).toEqual(['server', 'server']);
+    expect(http(502).retryAfterMs).toBe(2_000);
   });
 
   it('validates non-streaming completions', async () => {

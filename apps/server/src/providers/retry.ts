@@ -24,6 +24,21 @@ export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> 
   });
 }
 
+/** The wait before retry number `attempt` (1-based): jittered exponential backoff, at least the
+ * error's retry-after, at most the cap. */
+export function retryDelay(
+  attempt: number,
+  err: ProviderError,
+  opts: Pick<RetryOptions, 'baseDelayMs' | 'maxDelayMs' | 'random'> = {},
+): number {
+  const base = opts.baseDelayMs ?? 500;
+  const cap = opts.maxDelayMs ?? 30_000;
+  const random = opts.random ?? Math.random;
+  const backoff = Math.min(cap, base * 2 ** (attempt - 1));
+  const jittered = backoff / 2 + random() * (backoff / 2);
+  return Math.min(cap, Math.max(jittered, err.retryAfterMs ?? 0));
+}
+
 /**
  * Run `fn` with bounded exponential backoff. Only errors marked retryable (rate limits, timeouts,
  * network and 5xx errors) are retried; auth, quota, and validation errors fail immediately.
@@ -34,10 +49,7 @@ export async function withRetry<T>(
   classify: (err: unknown) => ProviderError,
   opts: RetryOptions,
 ): Promise<{ value: T; attempts: number }> {
-  const base = opts.baseDelayMs ?? 500;
-  const cap = opts.maxDelayMs ?? 30_000;
   const sleep = opts.sleep ?? abortableSleep;
-  const random = opts.random ?? Math.random;
 
   for (let attempt = 1; ; attempt++) {
     if (opts.signal?.aborted) throw new ProviderError('cancelled');
@@ -50,10 +62,7 @@ export async function withRetry<T>(
         err.attempts = attempt;
         throw err;
       }
-      const backoff = Math.min(cap, base * 2 ** (attempt - 1));
-      const jittered = backoff / 2 + random() * (backoff / 2);
-      const delay = Math.min(cap, Math.max(jittered, err.retryAfterMs ?? 0));
-      await sleep(delay, opts.signal);
+      await sleep(retryDelay(attempt, err, opts), opts.signal);
     }
   }
 }

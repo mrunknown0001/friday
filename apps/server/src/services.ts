@@ -145,6 +145,7 @@ export interface ServiceOverrides {
   provider?: LLMProvider;
   fetch?: typeof fetch;
   retryBaseDelayMs?: number;
+  retryMaxDelayMs?: number;
   toolEnv?: ToolEnvironment;
   registry?: ToolRegistry;
   /** fetch used for MCP servers (tests). */
@@ -183,6 +184,9 @@ export function createServices(
       ...(overrides.fetch ? { fetch: overrides.fetch } : {}),
       ...(overrides.retryBaseDelayMs !== undefined
         ? { retryBaseDelayMs: overrides.retryBaseDelayMs }
+        : {}),
+      ...(overrides.retryMaxDelayMs !== undefined
+        ? { retryMaxDelayMs: overrides.retryMaxDelayMs }
         : {}),
     });
 

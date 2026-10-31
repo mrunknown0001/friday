@@ -7,6 +7,7 @@ const RETRYABLE: ReadonlySet<ProviderErrorKind> = new Set([
   'timeout',
   'network',
   'server',
+  'upstream',
 ]);
 
 const USER_MESSAGES: Record<ProviderErrorKind, string> = {
@@ -22,6 +23,8 @@ const USER_MESSAGES: Record<ProviderErrorKind, string> = {
   model_not_found: 'The selected model is not available to your account.',
   unsupported: 'The selected model does not support a feature this request needs.',
   server: 'NoTokenLimit returned a server error.',
+  upstream:
+    "NoTokenLimit couldn't get an answer from the model's provider. This is on NoTokenLimit's side: try again in a few minutes, or choose another model in Settings.",
   malformed: 'NoTokenLimit returned a response that could not be understood.',
   cancelled: 'The request was cancelled.',
   unknown: 'Unexpected error while calling NoTokenLimit.',
@@ -75,6 +78,11 @@ function extractProviderDetail(err: InstanceType<typeof OpenAI.APIError>): {
 const QUOTA_HINT =
   /quota|credit|balance|insufficient|billing|payment|exhausted|plan limit|limit reached/i;
 const MODEL_HINT = /model/i;
+/** NoTokenLimit's wording when the model's own provider fails or is unreachable. */
+const UPSTREAM_HINT =
+  /upstream|bad gateway|gateway time-?out|service unavailable|overloaded|provider (failed|error|unavailable)/i;
+/** Upstream outages last longer than a blip: wait at least this long before retrying. */
+const UPSTREAM_RETRY_MS = 2_000;
 const UNSUPPORTED_HINT =
   /not support|unsupported|tool_choice|tools? (are|is) not|function calling/i;
 
@@ -102,6 +110,11 @@ export function classifyError(err: unknown, redactor: Redactor): ProviderError {
     const detail = redactor.redact(message || code || `HTTP ${status ?? '?'}`).slice(0, 300);
     const retryAfterMs = parseRetryAfter(err.headers);
     const opts = { status, retryAfterMs, cause: err };
+    const upstream = () =>
+      new ProviderError('upstream', detail, {
+        ...opts,
+        retryAfterMs: Math.max(retryAfterMs ?? 0, UPSTREAM_RETRY_MS),
+      });
 
     switch (true) {
       case status === 401:
@@ -132,13 +145,17 @@ export function classifyError(err: unknown, redactor: Redactor): ProviderError {
           detail,
           opts,
         );
+      // A bad gateway or gateway timeout: NoTokenLimit got no good answer from the model's provider.
+      case status === 502 || status === 504:
+        return upstream();
       case status !== null && status >= 500:
-        return new ProviderError('server', detail, opts);
+        return UPSTREAM_HINT.test(text) ? upstream() : new ProviderError('server', detail, opts);
       default:
         // Errors embedded in an SSE stream arrive without an HTTP status.
         if (QUOTA_HINT.test(text)) return new ProviderError('quota', detail, opts);
         if (/rate.?limit|too many requests/i.test(text))
           return new ProviderError('rate_limit', detail, opts);
+        if (UPSTREAM_HINT.test(text)) return upstream();
         return new ProviderError('unknown', detail, opts);
     }
   }

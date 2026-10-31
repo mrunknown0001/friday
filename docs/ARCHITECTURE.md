@@ -41,6 +41,12 @@ Agent code depends only on `LLMProvider`:
 - `complete(request)` is non-streaming. It is used for summaries, probes, and models where streaming is unsupported.
 - `listModels()`
 
+Errors are classified into kinds (`providers/errors.ts`); rate limits, timeouts, network, server and `upstream`
+errors are retried with jittered backoff (`providers/retry.ts`). `upstream` covers NoTokenLimit failing to get an
+answer from the model's own provider: a 502/504, or an error such as "Upstream provider failed" sent inside an
+already-open stream. Such a stream is sent again only while nothing has reached the caller yet, waiting at least 2 s
+between tries, and the final message says the outage is on NoTokenLimit's side and suggests another model.
+
 Switching models changes nothing outside the request's `model` field. Adding another OpenAI-compatible provider means
 implementing this interface. Nothing else should change.
 
