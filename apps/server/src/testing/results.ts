@@ -1,6 +1,6 @@
 /**
- * Parsers for the machine-readable results test runners write: Jest/Vitest JSON, JUnit XML
- * (pytest, node:test) and `go test -json`, plus LCOV and Go cover profiles. Their input comes
+ * Parsers for the machine-readable results test runners write: Jest/Vitest JSON, Playwright JSON,
+ * JUnit XML (pytest, node:test) and `go test -json`, plus LCOV and Go cover profiles. Their input comes
  * from the project's own test run, so it is untrusted data: sizes are capped and nothing in it is
  * executed or followed.
  */
@@ -25,6 +25,16 @@ export interface TestCase {
   nodeId?: string;
   /** go package import path. */
   pkg?: string;
+  /** Playwright: failed, then passed on its own retry. */
+  flaky?: boolean;
+  /** Playwright: files saved for the last failed attempt (absolute paths, as reported). */
+  artifacts?: {
+    screenshot: string | null;
+    trace: string | null;
+    video: string | null;
+    /** error-context.md: the page's accessibility snapshot when the test failed. */
+    context: string | null;
+  };
 }
 
 export interface ParsedResults {
@@ -91,6 +101,117 @@ export function parseJestJson(text: string): ParsedResults {
     if (f.status === 'failed' && !assertions.some((a) => a.status === 'failed') && message)
       out.fileErrors.push({ file, error: message });
   }
+  return out;
+}
+
+interface PwResult {
+  status?: string;
+  duration?: number;
+  retry?: number;
+  error?: { message?: string; stack?: string; location?: { file?: string; line?: number } };
+  errors?: Array<{ message?: string; location?: { file?: string; line?: number } }>;
+  attachments?: Array<{ name?: string; contentType?: string; path?: string }>;
+}
+
+interface PwSpec {
+  title?: string;
+  file?: string;
+  line?: number;
+  tests?: Array<{ projectName?: string; status?: string; results?: PwResult[] }>;
+}
+
+interface PwSuite {
+  title?: string;
+  file?: string;
+  specs?: PwSpec[];
+  suites?: PwSuite[];
+}
+
+/**
+ * Playwright's json reporter. One case per test and project ("[firefox]" is added when there are
+ * several projects); Playwright's own retries decide flaky. File paths in the report are relative
+ * to config.rootDir.
+ */
+export function parsePlaywrightJson(text: string): ParsedResults {
+  const data = JSON.parse(text) as {
+    config?: { rootDir?: string };
+    suites?: PwSuite[];
+    errors?: Array<{ message?: string; location?: { file?: string } }>;
+  };
+  const rootDir = data.config?.rootDir ?? '';
+  const abs = (f: string | undefined) => (f ? (f.startsWith('/') ? f : `${rootDir}/${f}`) : null);
+  const out: ParsedResults = { cases: [], fileErrors: [] };
+  const projects = new Set<string>();
+  const visit = (suite: PwSuite, titles: string[], file: string | null) => {
+    for (const spec of suite.specs ?? [])
+      for (const t of spec.tests ?? []) projects.add(t.projectName ?? '');
+    for (const child of suite.suites ?? []) visit(child, titles, file);
+  };
+  for (const top of data.suites ?? []) visit(top, [], null);
+  const tagProject = projects.size > 1;
+
+  const walkSuite = (suite: PwSuite, titles: string[]) => {
+    for (const spec of suite.specs ?? []) {
+      for (const t of spec.tests ?? []) {
+        if (out.cases.length >= MAX_CASES) return;
+        const results = t.results ?? [];
+        const lastFailed = [...results]
+          .reverse()
+          .find((r) => r.status !== 'passed' && r.status !== 'skipped');
+        const last = results.at(-1);
+        // A flaky test failed first, like a test Friday re-runs itself: "failed", marked flaky.
+        const status: CaseStatus =
+          t.status === 'expected' ? 'passed' : t.status === 'skipped' ? 'skipped' : 'failed';
+        const name =
+          [...titles, spec.title ?? '(unnamed)'].join(SEP) +
+          (tagProject && t.projectName ? ` [${t.projectName}]` : '');
+        const err = lastFailed?.error;
+        const errText = err
+          ? stripAnsi(
+              [
+                err.message ?? '',
+                // Only the stack frames: the stack repeats the message.
+                (err.stack ?? '')
+                  .split('\n')
+                  .filter((l) => /^\s+at /.test(l))
+                  .join('\n'),
+              ]
+                .join('\n')
+                .trim(),
+            )
+          : lastFailed?.status === 'timedOut'
+            ? 'Test timed out.'
+            : null;
+        const pick = (pred: (a: { name?: string; contentType?: string }) => boolean) =>
+          lastFailed?.attachments?.find((a) => a.path && pred(a))?.path ?? null;
+        out.cases.push({
+          file: abs(spec.file),
+          name,
+          filterName: [...titles, spec.title ?? ''].join(' '),
+          status,
+          durationMs: typeof last?.duration === 'number' ? last.duration : null,
+          error: status === 'failed' || t.status === 'flaky' ? errText : null,
+          line: err?.location?.line ?? spec.line ?? null,
+          ...(t.status === 'flaky' ? { flaky: true } : {}),
+          ...(lastFailed
+            ? {
+                artifacts: {
+                  screenshot: pick((a) => a.contentType === 'image/png'),
+                  trace: pick((a) => a.name === 'trace'),
+                  video: pick((a) => (a.contentType ?? '').startsWith('video/')),
+                  context: pick((a) => a.name === 'error-context'),
+                },
+              }
+            : {}),
+        });
+      }
+    }
+    for (const child of suite.suites ?? []) walkSuite(child, [...titles, child.title ?? '']);
+  };
+  // The top-level suites are files; their titles are not part of a test's name.
+  for (const top of data.suites ?? []) walkSuite(top, []);
+  for (const e of data.errors ?? [])
+    out.fileErrors.push({ file: abs(e.location?.file), error: stripAnsi(e.message ?? 'error') });
   return out;
 }
 

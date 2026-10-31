@@ -180,7 +180,7 @@ export function toolLabel(name: string, argsJson: string): string {
               ? (a.files as unknown[]).map(str).join(' ')
               : 'chosen tests'
             : 'tests related to the changes';
-      return `${scope}${a.suite && a.suite !== '.' ? ` in ${str(a.suite)}` : ''}${a.coverage ? ', with coverage' : ''}`;
+      return `${a.framework === 'playwright' ? 'Playwright: ' : ''}${scope}${a.suite && a.suite !== '.' ? ` in ${str(a.suite)}` : ''}${a.coverage ? ', with coverage' : ''}`;
     }
     default:
       return Object.values(a).map(str).join(' ').slice(0, 80);

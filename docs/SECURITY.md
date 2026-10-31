@@ -335,6 +335,14 @@ non-credential files in the project. Re-running failed tests uses the same progr
 approval card says. Error messages are redacted before they are stored or shown. Runners and coverage plugins are
 never installed.
 
+Playwright runs the same way. Friday only reads its config (testDir, webServer) as text, and never runs it to find
+out. The card shows the web server command the config will start, since that is the project's own code. The report
+location is passed in a fixed variable Friday sets (`PLAYWRIGHT_JSON_OUTPUT_FILE`), also into the sandbox, and nothing
+else from the host. Screenshots, traces and page snapshots are read only when the report points at existing files
+in the project. Snapshots are cut to their fenced page snapshot, so the instructions Playwright writes into
+error-context.md for AI assistants never reach the model, and are redacted. Browsers, Playwright and system
+libraries are never installed or pulled.
+
 ## Task worktrees
 
 | Threat                               | Mitigation                                                                                                                                                                                                                                                                                 |

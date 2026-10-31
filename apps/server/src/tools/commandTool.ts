@@ -118,6 +118,7 @@ export async function sandboxRun(
   instance: string,
   ports?: number[],
   outputDir?: string,
+  env?: Record<string, string>,
 ): Promise<SandboxRun> {
   return {
     root,
@@ -133,6 +134,7 @@ export async function sandboxRun(
     gid: process.getgid?.() ?? 1000,
     ...(ports?.length ? { ports } : {}),
     ...(outputDir ? { outputDir } : {}),
+    ...(env && Object.keys(env).length ? { env } : {}),
   };
 }
 
