@@ -12,8 +12,8 @@ export type PolicyDecision =
  *   per-action approval from the user. There is no "always allow" or autonomous mode.
  * - Git mutations, remote (SSH) operations and deployments also need approval; production
  *   deployments additionally need a typed confirmation. Database queries (read-only, on connections
- *   the user added) need approval. The network category is denied until its tools and
- *   safeguards exist. Unknown categories are denied.
+ *   the user added) need approval. Network tools (web search, reading public pages) run directly,
+ *   and are only offered while the user's Settings switch is on. Unknown categories are denied.
  *
  * Nothing here can be changed by a tool call or by model output.
  */
@@ -23,6 +23,7 @@ export function decide(category: PermissionCategory | undefined): PolicyDecision
     case 'agent_state':
     case 'process_control': // stopping a background process it started (the user approved it)
     case 'mcp_trusted': // a connected app's tool the user allowed in Settings
+    case 'network': // web search and public pages, while the user's Settings switch is on
       return { action: 'allow' };
     case 'file_create':
     case 'file_modify':

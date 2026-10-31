@@ -37,6 +37,7 @@ import { screenshot } from './screenshotTool.js';
 import { inspectPage, runBrowserFlow } from './browserTools.js';
 import { databaseSchema, queryDatabase } from './databaseTools.js';
 import { runLoadTest } from './loadTestTools.js';
+import { deepResearch, readWebPage, webSearch } from './webTools.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
 import { listProcesses, readProcessOutput, startProcess, stopProcess } from './processTools.js';
@@ -88,10 +89,18 @@ export class ToolRegistry {
     return this.tools.get(name);
   }
 
-  /** Tools offered to the model: not denied by policy, and project tools only with a project. */
-  definitions(hasProject: boolean): ToolDefinition[] {
+  /**
+   * Tools offered to the model: not denied by policy, project tools only with a project, and none
+   * of `unavailable` (e.g. web tools while the user's switch is off).
+   */
+  definitions(hasProject: boolean, unavailable: ReadonlySet<string> = new Set()): ToolDefinition[] {
     return [...this.tools.values()]
-      .filter((t) => (hasProject || !t.requiresProject) && decide(t.category).action !== 'deny')
+      .filter(
+        (t) =>
+          (hasProject || !t.requiresProject) &&
+          decide(t.category).action !== 'deny' &&
+          !unavailable.has(t.name),
+      )
       .map(toToolDefinition);
   }
 }
@@ -153,6 +162,9 @@ export const DEFAULT_TOOLS = [
   databaseSchema,
   queryDatabase,
   runLoadTest,
+  webSearch,
+  readWebPage,
+  deepResearch,
   dependencyReport,
   dependencyChangelog,
   upgradeDependencies,

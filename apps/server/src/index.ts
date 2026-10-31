@@ -33,6 +33,7 @@ async function main() {
   const services = createServices(config, db, { toolEnv, captureEngine });
 
   const interrupted = services.runs.markInterrupted();
+  services.research.stopUnfinished();
   // Approvals cannot survive a restart: the run that would execute them is gone.
   const orphanedApprovals = services.approvalRepo.cancelOrphans();
   if (orphanedApprovals > 0) {

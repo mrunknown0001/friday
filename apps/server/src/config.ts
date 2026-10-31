@@ -39,6 +39,8 @@ const envSchema = z.object({
     ),
   NTL_TIMEOUT_MS: intFromEnv(120_000, 1_000, 600_000),
   NTL_MAX_RETRIES: intFromEnv(2, 0, 5),
+  /** Web search (Tavily). Read here like NTL_API_KEY; never stored, logged or sent to the UI. */
+  TAVILY_API_KEY: optionalString,
   // 0 = any free port (the desktop app reads the bound port from the server).
   FRIDAY_PORT: intFromEnv(4317, 0, 65_535),
   FRIDAY_DATA_DIR: optionalString,
@@ -85,6 +87,7 @@ export interface AppConfig {
   agent: AgentLimitsDto;
   /** How long a pending approval stays valid. */
   approvalTtlMs: number;
+  web: { tavilyApiKey: string | null };
 }
 
 export class ConfigError extends Error {}
@@ -137,5 +140,6 @@ export function loadConfig(env: NodeJS.ProcessEnv, repoRoot: string): AppConfig 
       maxConsecutiveToolFailures: 4,
     },
     approvalTtlMs: e.FRIDAY_APPROVAL_TTL_MS,
+    web: { tavilyApiKey: e.TAVILY_API_KEY },
   };
 }

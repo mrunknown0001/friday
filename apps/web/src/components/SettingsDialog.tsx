@@ -22,6 +22,7 @@ import { DatabaseSettings } from './DatabaseSettings';
 import { DevopsSettings } from './DevopsSettings';
 import { LoadTargetSettings } from './LoadTargetSettings';
 import { VoiceSettings } from './VoiceSettings';
+import { WebSettings } from './WebSettings';
 import { McpSettings } from './McpSettings';
 import { UsageSettings } from './UsageSettings';
 import { Dialog } from './ui/dialog';
@@ -473,6 +474,7 @@ export function SettingsDialog({
       <DatabaseSettings />
       <LoadTargetSettings />
       <VoiceSettings />
+      <WebSettings />
       <UsageSettings />
       <Section
         title="Recent provider calls"

@@ -4,6 +4,7 @@ import type {
   BrowserFlowDto,
   DeploymentPlanDto,
   LoadTestDto,
+  ResearchDto,
   MemoryRef,
   MessageDto,
   ProjectDto,
@@ -141,6 +142,7 @@ export interface CallCards {
   testRuns: Map<string, TestRunDto>;
   browserFlows: Map<string, BrowserFlowDto>;
   loadTests: Map<string, LoadTestDto>;
+  research: Map<string, ResearchDto>;
 }
 
 const NO_CARDS: CallCards = {
@@ -148,6 +150,7 @@ const NO_CARDS: CallCards = {
   testRuns: new Map(),
   browserFlows: new Map(),
   loadTests: new Map(),
+  research: new Map(),
 };
 
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
@@ -187,6 +190,7 @@ export function toRows(
         testRun: m.toolCallId ? cards.testRuns.get(m.toolCallId) : undefined,
         browserFlow: m.toolCallId ? cards.browserFlows.get(m.toolCallId) : undefined,
         loadTest: m.toolCallId ? cards.loadTests.get(m.toolCallId) : undefined,
+        research: m.toolCallId ? cards.research.get(m.toolCallId) : undefined,
         attachments: m.attachments,
       };
       const last = rows.at(-1);
@@ -346,6 +350,7 @@ function LiveOutput({
         testRun: cards.testRuns.get(b.callId),
         browserFlow: cards.browserFlows.get(b.callId),
         loadTest: cards.loadTests.get(b.callId),
+        research: cards.research.get(b.callId),
       };
       const last = groups.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -510,6 +515,9 @@ export function ChatView(props: Props) {
     ),
     loadTests: new Map(
       [...(detail?.loadTests ?? []), ...(live?.loadTests ?? [])].map((t) => [t.toolCallId, t]),
+    ),
+    research: new Map(
+      [...(detail?.research ?? []), ...(live?.research ?? [])].map((r) => [r.toolCallId, r]),
     ),
     browserFlows: new Map(
       [...(detail?.browserFlows ?? []), ...(live?.browserFlows ?? [])].map((f) => [

@@ -612,6 +612,58 @@ export interface LoadTestTargetInfo {
   environment: HostEnvironment | 'local';
 }
 
+/** Web access: searching (Tavily) and reading public pages, and deep research built on them. */
+export interface WebSettings {
+  /** The user's switch: when off, no web tool is offered to the model. */
+  enabled: boolean;
+  /** Per deep research. */
+  maxSearches: number;
+  maxPages: number;
+  maxMinutes: number;
+}
+
+export interface WebStatusDto {
+  settings: WebSettings;
+  /** TAVILY_API_KEY is set (its value never leaves the server). */
+  searchConfigured: boolean;
+  /** The file to add TAVILY_API_KEY to. */
+  envFile: string;
+  /** The most the limits can be set to. */
+  hardLimits: { maxSearches: number; maxPages: number; maxMinutes: number };
+}
+
+export interface ResearchSource {
+  /** Citation number in the report ([1], [2], …); only sources that were read have one. */
+  n: number | null;
+  url: string;
+  title: string;
+  site: string;
+  publishedAt: string | null;
+  status: 'pending' | 'read' | 'failed';
+  error: string | null;
+}
+
+export interface ResearchDto {
+  id: string;
+  sessionId: string;
+  runId: string;
+  toolCallId: string;
+  projectId: string | null;
+  question: string;
+  status: 'running' | 'completed' | 'stopped' | 'failed';
+  phase: 'planning' | 'searching' | 'reading' | 'writing' | 'done';
+  subQuestions: string[];
+  searches: Array<{ query: string; results: number; error: string | null }>;
+  sources: ResearchSource[];
+  /** Markdown with citations linked to their sources; null until written. */
+  report: string | null;
+  /** Why it stopped early or failed, or which limit cut it short. */
+  note: string | null;
+  limits: { maxSearches: number; maxPages: number; maxMinutes: number };
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 /** Voice: Kokoro speaks replies, Whisper transcribes the microphone, both on this machine. */
 export type VoiceModelId = 'speech' | 'transcription';
 
@@ -1422,6 +1474,7 @@ export interface SessionDetailDto extends SessionSummaryDto {
   testRuns: TestRunDto[];
   browserFlows: BrowserFlowDto[];
   loadTests: LoadTestDto[];
+  research: ResearchDto[];
   /** Memories shown to the model, per run id. */
   memoryUsage: Record<string, MemoryRef[]>;
 }
@@ -1462,6 +1515,7 @@ export type RunEvent =
   | { seq: number; type: 'test_run'; testRun: TestRunDto }
   | { seq: number; type: 'browser_flow'; flow: BrowserFlowDto }
   | { seq: number; type: 'load_test'; loadTest: LoadTestDto }
+  | { seq: number; type: 'research'; research: ResearchDto }
   | { seq: number; type: 'memories_used'; memories: MemoryRef[] }
   | { seq: number; type: 'memory_saved'; memory: MemoryDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }

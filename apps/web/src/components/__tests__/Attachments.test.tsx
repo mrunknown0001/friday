@@ -45,6 +45,7 @@ const detail = (messages: MessageDto[]): SessionDetailDto => ({
   testRuns: [],
   browserFlows: [],
   loadTests: [],
+  research: [],
   memoryUsage: {},
 });
 

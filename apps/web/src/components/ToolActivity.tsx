@@ -4,6 +4,7 @@ import type {
   BrowserFlowDto,
   DeploymentPlanDto,
   LoadTestDto,
+  ResearchDto,
   ReviewDto,
   TestRunDto,
   ToolCallStatus,
@@ -17,6 +18,7 @@ import { DeploymentPlanCard } from './DeploymentPlanCard';
 import { ReviewCard } from './ReviewCard';
 import { BrowserFlowCard } from './BrowserFlowCard';
 import { LoadTestCard } from './LoadTestCard';
+import { ResearchCard } from './ResearchCard';
 import { TestRunCard } from './TestRunCard';
 import { isFailedCommand } from './RunRecord';
 
@@ -41,6 +43,8 @@ export interface ToolItem {
   browserFlow?: BrowserFlowDto | undefined;
   /** Results of a run_load_test call. */
   loadTest?: LoadTestDto | undefined;
+  /** A deep_research call's progress and report. */
+  research?: ResearchDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
   /** Images the tool showed the model (view_image). */
@@ -149,6 +153,12 @@ export function toolLabel(name: string, argsJson: string): string {
     case 'create_spreadsheet':
     case 'create_presentation':
       return str(a.path);
+    case 'web_search':
+      return str(a.query);
+    case 'read_web_page':
+      return str(a.url).replace(/^https?:\/\//, '');
+    case 'deep_research':
+      return str(a.question);
     case 'run_load_test': {
       const load = Array.isArray(a.stages)
         ? `${a.stages.length} stage${a.stages.length === 1 ? '' : 's'}`
@@ -281,6 +291,7 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
   const testRuns = items.flatMap((i) => (i.testRun ? [i.testRun] : []));
   const flows = items.flatMap((i) => (i.browserFlow ? [i.browserFlow] : []));
   const loads = items.flatMap((i) => (i.loadTest ? [i.loadTest] : []));
+  const research = items.flatMap((i) => (i.research ? [i.research] : []));
   return (
     <>
       <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
@@ -304,6 +315,9 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
       ))}
       {loads.map((t) => (
         <LoadTestCard key={t.id} test={t} />
+      ))}
+      {research.map((r) => (
+        <ResearchCard key={r.id} research={r} />
       ))}
     </>
   );

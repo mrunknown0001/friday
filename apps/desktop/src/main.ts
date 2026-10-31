@@ -39,6 +39,8 @@ const ENV_TEMPLATE = `# Friday configuration. Keep this file private: it is crea
 NTL_API_KEY=
 # Optional: default model ID. You can also choose a model in Settings.
 NTL_MODEL=
+# Optional: Tavily API key for web search (https://tavily.com). Reading pages works without it.
+TAVILY_API_KEY=
 `;
 
 interface Paths {

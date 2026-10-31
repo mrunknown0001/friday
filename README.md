@@ -593,6 +593,43 @@ never stored.
 - On Linux, `npm install` skips ONNX Runtime's CUDA download (`.npmrc`); speech runs on the CPU. The models load on
   first use and are unloaded after 5 idle minutes.
 
+### Web search and research
+
+Friday can search the web, read public pages and research a bigger question. Use it for documentation, changelogs,
+release notes and error messages that aren't in the project.
+
+- **Tools:**
+  - `web_search` returns titles, links and snippets from [Tavily](https://tavily.com). It needs `TAVILY_API_KEY` in
+    `.env` (desktop: `friday.env`).
+  - `read_web_page` fetches one page and returns its readable text: the main content as Markdown, with headings, code
+    blocks, lists, links and tables. It works without a key.
+  - `deep_research` does a whole investigation, described below.
+  - All three run without approval and show in the tool activity. **Settings → Web** turns them off.
+- **Deep research** ("which PDF library fits this project", "what breaks if we upgrade to Vite 6"):
+  - Friday plans sub-questions and searches for each one.
+  - It reads the most relevant pages, three at a time, and notes what each sub-question's sources say and where they
+    disagree.
+  - It writes a report: a direct answer, details, disagreements, how the findings apply to this project, and what
+    is still uncertain.
+  - Every claim links to its numbered source. Citations that point at no source are removed and counted, and the
+    sources are listed at the end.
+  - The **Research** card shows progress live (sub-questions, each query sent, each page read or skipped and why).
+    Then it shows the report, which you can save as Markdown, Word or PDF.
+  - Limits per research are set in **Settings → Web**: 12 searches, 15 pages and 5 minutes by default (at most 30,
+    40 and 15). Near a limit, Friday stops searching or reading and still writes the report from what it has, and the
+    card says so. **Stop** in the composer ends a research without a report. The card keeps the searches and pages.
+- **What leaves the machine:** only search queries (to Tavily) and page addresses (to those sites).
+  - Queries must be public terms, such as library names, versions and error text.
+  - Friday refuses queries that contain secrets, code, file paths, private IP addresses, local host names or the
+    names of your SSH and database hosts, and the refusal shows on the card.
+- **What is fetched:**
+  - Only public http(s) pages, by plain GET with no cookies or credentials.
+  - At most 3 MB, 15 seconds and 5 redirects, each redirect checked again.
+  - Addresses on this machine, your local network or a cloud metadata service are refused, including when a public
+    name resolves to one.
+  - HTML, text and JSON pages are read. PDFs and other files are not.
+- Page text is untrusted: Friday treats it as data, never as instructions, and secrets in it are redacted.
+
 ### Databases (read-only)
 
 Add a database in **Settings → Databases** (Postgres, MySQL/MariaDB or SQLite), for any conversation or for one
@@ -817,6 +854,7 @@ Partial, cancelled, and failed responses are kept for display but are never fed 
 | `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1` | Must be HTTPS (plain HTTP is allowed only for localhost)        |
 | `NTL_TIMEOUT_MS`              | `120000`                          | Response-header timeout and stream idle timeout                 |
 | `NTL_MAX_RETRIES`             | `2`                               | Retries for transient errors only (429, 5xx, network, timeout)  |
+| `TAVILY_API_KEY`              | none                              | Web search and deep research; reading pages works without it    |
 | `FRIDAY_PORT`                 | `4317`                            | The server always binds to `127.0.0.1`                          |
 | `FRIDAY_WEB_PORT`             | `5173`                            | Vite dev server port (`npm run dev` only)                       |
 | `FRIDAY_DATA_DIR`             | `./.data`                         | SQLite location (desktop: `~/.config/Friday/data`)              |

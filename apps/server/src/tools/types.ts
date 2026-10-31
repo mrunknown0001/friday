@@ -6,6 +6,7 @@ import type {
   MemoryDto,
   PermissionCategory,
   PlanStep,
+  ResearchDto,
   RiskLevel,
   ReviewDto,
   ReviewFinding,
@@ -29,6 +30,8 @@ import type { ProcessManager } from '../processes/manager.js';
 import type { ProjectRecord } from '../repositories/projects.js';
 import type { SshService } from '../ssh/ssh.js';
 import type { Redactor } from '../security/redact.js';
+import type { ResearchState } from '../web/research.js';
+import type { WebService } from '../web/service.js';
 import type { ToolEnvironment } from '../workspace/environment.js';
 
 export interface ToolContext {
@@ -65,6 +68,8 @@ export interface ToolContext {
   databases?: DatabaseService;
   /** Health monitors the user defined (read-only here). */
   monitors?: Pick<MonitorRepo, 'list' | 'byName' | 'detail'>;
+  /** Web access (search, pages, deep research); absent when the user turned it off. */
+  web?: WebContext;
   /** Hosts the user allows load tests against (Settings). */
   loadTargets?: Pick<LoadTargetRepo, 'byName' | 'byOrigin'>;
   /** Record a load test's result (the Load test card). */
@@ -104,6 +109,17 @@ export interface ToolContext {
     maxActions: number;
     minutes: number;
   }) => { expiresAt: string };
+}
+
+export interface WebContext {
+  service: Pick<WebService, 'search' | 'read' | 'checkQuery' | 'getSettings' | 'available'>;
+  /** One model call without tools, with this run's model (deep research steps). */
+  complete: (system: string, user: string, maxTokens: number) => Promise<string>;
+  /** Record a research and its progress (the Research card). */
+  research: {
+    create(state: ResearchState): ResearchDto;
+    update(id: string, state: ResearchState): void;
+  };
 }
 
 export interface MemoryContext {
@@ -233,6 +249,8 @@ export interface ToolSpec<A = unknown> {
   describeCall: (args: A) => string;
   /** Read-only and agent-state tools run directly. */
   execute?: (args: A, ctx: ToolContext) => Promise<ToolOutput>;
+  /** How long `execute` may take, when longer than the default tool timeout. */
+  timeoutMs?: number;
   /** Protected tools describe their action first; it runs only after approval. */
   prepare?: (args: A, ctx: ToolContext) => Promise<Proposal>;
 }
