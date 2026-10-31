@@ -21,7 +21,9 @@
     "fastify": "^5.12.7",
     "ignore": "7.0.12",
     "image-size": "2.0.4",
+    "mysql2": "3.24.6",
     "openai": "^7.45.1",
+    "pg": "8.23.1",
     "pptxgenjs": "4.0.1",
     "write-excel-file": "4.1.1",
     "yaml": "2.9.1",
@@ -30,6 +32,7 @@
   "devDependencies": {
     "@friday/shared": "0.1.0",
     "@types/node": "^22.20.5",
+    "@types/pg": "8.23.1",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"

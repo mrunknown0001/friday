@@ -356,10 +356,21 @@ approved), credentials never reach the model, and results from other systems are
   The `.env` secret never reached the conversation. Original plan: for the project's compose file only: bring
   services up or down, restart them, tail logs and run health checks, each change with approval. It never
   touches other containers, and never removes volumes unless the user explicitly asks, at high risk.
-- ⬜ **Database, read-only** (M–L). Connections the user adds in Settings (Postgres, MySQL, SQLite), with credentials
-  kept like SSH keys and never shown to the model. Schema browsing, and read-only queries with approval, row and time
-  limits, and a read-only session or transaction. Writes stay disabled; the `database` category is enabled only for
-  these tools.
+- ✅ **Database, read-only** (M–L). Done: connections in **Settings → Databases** (Postgres and MySQL via `pg` 8.23.1
+  and `mysql2` 3.24.6, SQLite built in), per project or for any conversation, with the password or URL read from a
+  named variable (project `.env`, Friday's config file or environment), never stored or shown. **Test** warns when
+  the user could write. `database_schema` (no approval) lists connections, tables and table details.
+  `query_database` (approval every time, the name typed on production) runs one read statement. The safeguards are
+  Friday's statement check, then a read-only transaction and session with row and time limits; columns named like
+  secrets are masked. Verified on 2026-10-31 against Postgres 17 and MySQL 8.4 containers: writes and DDL sent past
+  Friday's check were refused by both databases, also for a user with write privileges. Live with
+  `claude-sonnet-4.6`: the model at first batched guessed queries before seeing the schema, which stopped the run.
+  Friday now refuses a query in the same turn as `database_schema` and counts tool failures once per turn. Then it
+  read the schema, answered top customers and the refund share from Postgres, and cross-checked the production
+  MySQL copy after the name was typed (142 refunded orders on both). Original plan: connections the user adds in
+  Settings (Postgres, MySQL, SQLite), with credentials kept like SSH keys and never shown to the model. Schema
+  browsing, and read-only queries with approval, row and time limits, and a read-only session or transaction.
+  Writes stay disabled; the `database` category is enabled only for these tools.
 - ✅ **Health monitors** (M). Done: the user defines monitors in the **Monitors** panel (URL, SSH host, background
   process, compose service), each checked every 1 to 1440 minutes while Friday runs. After N failed checks in a
   row it is down, and after one passing check up again. Both send a notification, and the sidebar counts the ones

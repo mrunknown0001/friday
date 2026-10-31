@@ -28,6 +28,7 @@ import type { CaptureRepo } from '../repositories/captures.js';
 import type { ReviewRepo } from '../repositories/reviews.js';
 import type { TestRunRepo } from '../repositories/testRuns.js';
 import type { BrowserFlowRepo } from '../repositories/browserFlows.js';
+import type { DatabaseService } from '../databases/service.js';
 import type { SavedActionRepo } from '../repositories/savedActions.js';
 import type { MonitorRepo } from '../repositories/monitors.js';
 import type { CapabilityRepo } from '../repositories/capabilities.js';
@@ -111,6 +112,8 @@ export interface RunManagerDeps {
   savedActions?: SavedActionRepo;
   /** Health monitors (read-only for the model). */
   monitors?: MonitorRepo;
+  /** Database connections the user added (read-only queries). */
+  databases?: DatabaseService;
   devops?: ToolContext['devops'];
   processes?: ToolContext['processes'];
   codeMap?: ToolContext['codeMap'];
@@ -902,6 +905,9 @@ export class RunManager {
 
         let blocked: RunBlocked | null = null;
         let rejected = false;
+        // Failures count once per turn: calls in one turn are written before any result is seen,
+        // so a batch of blind guesses is one mistake to correct, not several.
+        let failedThisTurn = false;
         // Calls made earlier in this same model turn: their results were not visible to the model
         // when it wrote the later calls (used to stop "confirmed" memories based on unseen results).
         const earlierThisTurn: string[] = [];
@@ -972,14 +978,15 @@ export class RunManager {
           }
 
           // A rejection is a user decision, not a tool failure.
-          consecutiveFailures =
-            exec.status === 'completed' || result.outcome === 'rejected'
-              ? 0
-              : consecutiveFailures + 1;
+          if (exec.status === 'completed' || result.outcome === 'rejected') consecutiveFailures = 0;
+          else if (!failedThisTurn) {
+            failedThisTurn = true;
+            consecutiveFailures++;
+          }
           if (consecutiveFailures >= limits.maxConsecutiveToolFailures) {
             blocked = new RunBlocked(
               'repeated_failures',
-              `Stopped after ${consecutiveFailures} consecutive failed tool calls. Check the tool errors above, then send guidance or Retry.`,
+              `Stopped after failed tool calls in ${consecutiveFailures} turns in a row. Check the tool errors above, then send guidance or Retry.`,
             );
           }
         }
@@ -1118,6 +1125,7 @@ export class RunManager {
         : {}),
       ...(this.deps.savedActions ? { savedActions: this.savedActionContext() } : {}),
       ...(this.deps.monitors ? { monitors: this.deps.monitors } : {}),
+      ...(this.deps.databases ? { databases: this.deps.databases } : {}),
       project,
       sessionId: run.sessionId,
       runId: run.id,

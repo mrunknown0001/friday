@@ -30,7 +30,7 @@ as a privileged local service from day one, even though Phase 1 has no tools.
 | Cross-project leakage                    | A session's project is fixed at creation. Tools receive only that project's root, and context comes only from that session.                                                                                          |
 | Model invoking mutating or unknown tools | `policy.decide` runs on the server for every call. Phase 2 allows only `read_only` and `agent_state`; everything else returns `denied` and is never advertised.                                                      |
 | Malformed or hostile tool arguments      | JSON parse plus zod validation before execution; ripgrep runs with an argv array (no shell), `-e` for the query and `--` before paths; the built-in fallback has no regex mode (ReDoS).                              |
-| Runaway agent                            | Iteration, tool-call, duplicate-call, consecutive-failure, output-size, and per-tool timeout limits; cancellation between and during tools.                                                                          |
+| Runaway agent                            | Iteration, tool-call, duplicate-call, failing-turns-in-a-row, output-size, and per-tool timeout limits; cancellation between and during tools.                                                                       |
 | Prompt injection via file contents       | The system prompt labels file contents, search results, and file names as data. Tools are read-only, so injected instructions cannot cause changes.                                                                  |
 
 ## Threats addressed in Phase 3 (approvals and execution)
@@ -283,6 +283,35 @@ server's timer without approval because the user configured exactly what runs:
 
 Check messages are redacted and capped at 500 characters before they are stored or sent. The model sees a URL
 without its query string, which can hold tokens.
+
+## Databases
+
+Connections are created and changed only in Settings (`routes/databases.ts`, strict schemas: a `password` field is
+rejected). They hold the name of a variable, never a secret. Friday's own settings (`NTL_*`, `FRIDAY_*`) can't be
+used as one. The value is read from the project's `.env`, Friday's config file or Friday's environment at connect
+time, passed to the driver, and scrubbed from driver errors. It is never stored, logged, audited or returned to the
+model. Friday's own database can't be added as a SQLite connection.
+
+`database_schema` runs fixed catalog queries. `query_database` needs approval every time, in the `database` category
+(no task permission or "allow similar" covers it), and production connections need the name typed with a 5-minute
+approval. Layers that keep it read-only:
+
+1. **Friday's check** (`databases/sql.ts`): one statement; it starts with a read keyword; no write keyword, `INTO`,
+   locking clause or side-effect function (`pg_terminate_backend`, `dblink`, `set_config`, `lo_*`, `nextval`,
+   `load_file`, `get_lock`, …) outside strings, comments and quoted names. MySQL `/*! */` comments are refused.
+2. **The database session.** Postgres: `default_transaction_read_only=on`, `BEGIN TRANSACTION READ ONLY`, statement
+   and lock timeouts, and the extended protocol, so a second statement is refused. MySQL: `SET SESSION TRANSACTION
+READ ONLY`, `START TRANSACTION READ ONLY`, `max_execution_time`, no multiple statements, `LOCAL INFILE` off.
+   SQLite: opened read-only with `query_only`, in a worker that is terminated at the time limit. Each query has its
+   own connection, rolled back and closed afterwards. Tested against Postgres 17 and MySQL 8.4 with writes sent
+   past Friday's check: both refused them, also for a user with write privileges.
+3. **A read-only database user**, which **Test** recommends when the user can write. Some side effects are beyond
+   what a read-only transaction stops (for example functions an extension adds), so this is the real guarantee for
+   production.
+
+The approval is bound to the connection (id and last change), the statement and the limits. Rows go to the model;
+columns named like secrets are masked and the redactor runs over the result. The `EXPLAIN` before the card reads no
+rows.
 
 ## Rename and move
 

@@ -55,7 +55,7 @@ describe('tool executor', () => {
     const deployer = defineTool({
       name: 'deploy',
       description: 'd',
-      category: 'database',
+      category: 'network',
       risk: 'critical',
       requiresProject: true,
       schema: z.object({}),
@@ -254,6 +254,8 @@ describe('tool executor', () => {
         'screenshot',
         'inspect_page',
         'run_browser_flow',
+        'database_schema',
+        'query_database',
         'create_document',
         'create_spreadsheet',
         'create_presentation',
@@ -285,6 +287,8 @@ describe('tool executor', () => {
         'screenshot',
         'inspect_page',
         'run_browser_flow',
+        'database_schema',
+        'query_database',
         'search_logs',
         'search_memory',
         'suggest_next_steps',
@@ -408,19 +412,49 @@ describe('agent loop', () => {
     expect(tools.map((t) => t.tool?.status)).toEqual(['completed', 'completed', 'skipped']);
   });
 
-  it('skips repeated identical calls and blocks after consecutive failures', async () => {
+  it('skips repeated identical calls and blocks after failing turns in a row', async () => {
     const same = () => call('read_file', { path: 'missing.ts' });
     const provider = new ScriptedProvider([
+      // One turn of blind calls counts as one failure...
       { toolCalls: [same(), same(), same()] },
+      { toolCalls: [call('read_file', { path: 'gone.ts' })] },
+      // ...and so does each later turn whose calls all fail.
+      { toolCalls: [call('read_file', { path: 'nope.ts' })] },
       { chunks: ['unused'] },
     ]);
     const { s, session } = setup(provider, undefined, { maxConsecutiveToolFailures: 3 });
     const { run } = s.runManager.startMessage(session.id, 'read it');
     await s.runManager.waitFor(run.id);
     const tools = s.messages.listBySession(session.id).filter((m) => m.role === 'tool');
-    expect(tools.map((t) => t.tool?.status)).toEqual(['error', 'error', 'skipped']);
+    expect(tools.map((t) => t.tool?.status)).toEqual([
+      'error',
+      'error',
+      'skipped',
+      'error',
+      'error',
+    ]);
     expect(tools[2]!.content).toMatch(/identical read_file call already made 2 times/);
     expect(s.runs.get(run.id)).toMatchObject({ status: 'blocked', errorKind: 'repeated_failures' });
+    expect(s.runs.get(run.id)?.errorMessage).toMatch(/failed tool calls in 3 turns in a row/);
+  });
+
+  it('lets a model correct a turn of blind guesses', async () => {
+    const provider = new ScriptedProvider([
+      {
+        toolCalls: [
+          call('read_file', { path: 'a.ts' }, 'g1'),
+          call('read_file', { path: 'b.ts' }, 'g2'),
+          call('read_file', { path: 'c.ts' }, 'g3'),
+          call('read_file', { path: 'd.ts' }, 'g4'),
+        ],
+      },
+      { toolCalls: [call('read_file', { path: 'src/app.ts' }, 'ok')] },
+      { chunks: ['Found it.'] },
+    ]);
+    const { s, session } = setup(provider, undefined, { maxConsecutiveToolFailures: 3 });
+    const { run } = s.runManager.startMessage(session.id, 'read it');
+    await s.runManager.waitFor(run.id);
+    expect(s.runs.get(run.id)?.status).toBe('completed');
   });
 
   it('cancels between tool calls and records remaining calls as skipped', async () => {

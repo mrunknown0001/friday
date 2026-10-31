@@ -18,6 +18,7 @@ import {
 } from '../lib/notifications';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
+import { DatabaseSettings } from './DatabaseSettings';
 import { DevopsSettings } from './DevopsSettings';
 import { McpSettings } from './McpSettings';
 import { UsageSettings } from './UsageSettings';
@@ -467,6 +468,7 @@ export function SettingsDialog({
       <NotificationSettings />
       <McpSettings />
       <DevopsSettings />
+      <DatabaseSettings />
       <UsageSettings />
       <Section
         title="Recent provider calls"
