@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
+import { useConfirm } from './ui/confirm';
 
 const ENV_TONE: Record<HostEnvironment, Tone> = {
   development: 'neutral',
@@ -16,6 +17,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Settings → Load-test targets: the hosts besides this machine that load tests may hit. */
 export function LoadTargetSettings() {
+  const [confirm, confirmDialog] = useConfirm();
   const [targets, setTargets] = useState<LoadTargetDto[] | null>(null);
   const [form, setForm] = useState({
     name: '',
@@ -98,8 +100,14 @@ export function LoadTargetSettings() {
                 variant="ghost"
                 className="ml-auto h-6 w-6"
                 aria-label={`Remove load-test target ${t.name}`}
-                onClick={() => {
-                  if (window.confirm(`Remove the load-test target "${t.name}"?`))
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: `Remove the load-test target “${t.name}”?`,
+                    message: 'Friday can no longer run load tests against it.',
+                    confirmLabel: 'Remove',
+                    danger: true,
+                  });
+                  if (ok)
                     void api
                       .removeLoadTarget(t.id)
                       .then(load, (e: unknown) => setError(message(e)));
@@ -185,6 +193,7 @@ export function LoadTargetSettings() {
           {error}
         </p>
       )}
+      {confirmDialog}
     </section>
   );
 }

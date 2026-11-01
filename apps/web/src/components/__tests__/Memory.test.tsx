@@ -106,7 +106,6 @@ describe('MemoryDialog', () => {
     apiMock.updateMemory.mockResolvedValue(mem({}));
     apiMock.deleteMemory.mockResolvedValue(undefined);
     apiMock.setMemorySettings.mockImplementation(async (s: unknown) => s);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   it('lets the user approve proposed preferences, delete memories, and disable memory per project', async () => {
@@ -118,6 +117,8 @@ describe('MemoryDialog', () => {
     const saved = screen.getByRole('region', { name: 'Saved memories' });
     await waitFor(() => expect(within(saved).getByText('Tests run with pnpm test.')).toBeTruthy());
     await userEvent.click(within(saved).getByRole('button', { name: 'Delete memory' }));
+    const ask = screen.getByRole('alertdialog', { name: 'Delete this memory?' });
+    await userEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
     expect(apiMock.deleteMemory).toHaveBeenCalledWith('m1');
 
     await userEvent.click(screen.getByLabelText('Use memory in shop'));

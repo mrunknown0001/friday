@@ -120,7 +120,6 @@ describe('saved actions in Project settings', () => {
     vi.spyOn(api, 'savedActions').mockResolvedValue({ projectId: 'p1', actions: [deploy] });
     const update = vi.spyOn(api, 'updateSavedAction').mockResolvedValue(deploy);
     const del = vi.spyOn(api, 'deleteSavedAction').mockResolvedValue(undefined);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<SavedActionsSection projectId="p1" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit deploy staging' }));
     expect((screen.getByLabelText('Step 2 runs on') as HTMLSelectElement).value).toBe('h1');
@@ -132,6 +131,10 @@ describe('saved actions in Project settings', () => {
     expect(update.mock.calls[0]![0]).toBe('a1');
     expect(update.mock.calls[0]![1].steps[0]!.command).toBe('npm ci && npm run build');
     fireEvent.click(screen.getByRole('button', { name: 'Delete deploy staging' }));
+    const ask = await screen.findByRole('alertdialog', {
+      name: 'Delete the saved action “deploy staging”?',
+    });
+    fireEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('a1'));
   });
 });

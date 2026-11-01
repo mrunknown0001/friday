@@ -20,6 +20,7 @@ import { ChatView } from './components/ChatView';
 import { MemoryDialog } from './components/MemoryDialog';
 import { investigatePrompt, monitorNotification, MonitorsDialog } from './components/Monitors';
 import { SettingsDialog } from './components/SettingsDialog';
+import { useConfirm } from './components/ui/confirm';
 import { SidePanel } from './components/SidePanel';
 import { Sidebar } from './components/Sidebar';
 import { api } from './lib/api';
@@ -51,6 +52,7 @@ function writeStored(key: string, value: string | null) {
 
 export function App() {
   const [settings, setSettings] = useState<SettingsDto | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
   const [sessions, setSessions] = useState<SessionSummaryDto[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() => readStored(ACTIVE_KEY));
   const [projects, setProjects] = useState<ProjectDto[]>([]);
@@ -312,12 +314,14 @@ export function App() {
   };
 
   const rollback = async (runId: string) => {
-    if (
-      !window.confirm(
-        "Roll back all of this run's file changes? Files edited since then will block the rollback.",
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: 'Roll back this run?',
+      message:
+        "All of this run's file changes are undone. Files edited since then will block the rollback.",
+      confirmLabel: 'Roll back',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.rollbackRun(runId);
     } catch (e) {
@@ -331,7 +335,13 @@ export function App() {
       c.change === 'create'
         ? `delete ${c.path} (it was created by Friday)`
         : `restore ${c.fromPath ?? c.path} to its previous state`;
-    if (!window.confirm(`Undo this change? This will ${what}.`)) return;
+    const ok = await confirm({
+      title: 'Undo this change?',
+      message: `This will ${what}.`,
+      confirmLabel: 'Undo change',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.revertChange(c.id);
     } catch (e) {
@@ -596,6 +606,7 @@ export function App() {
           onSettingsChanged={() => void loadSettings()}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

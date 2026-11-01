@@ -15,6 +15,7 @@ import { api } from '../lib/api';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
+import { useConfirm } from './ui/confirm';
 
 const input =
   'w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm outline-none focus:border-sky-500';
@@ -308,6 +309,7 @@ function useActions(projectId: string) {
 
 /** Project settings: define, change and delete the project's saved actions. */
 export function SavedActionsSection({ projectId }: { projectId: string }) {
+  const [confirm, confirmDialog] = useConfirm();
   const { actions, error, setError, reload } = useActions(projectId);
   const [hosts, setHosts] = useState<SshHostDto[]>([]);
   const [editing, setEditing] = useState<{ id: string | null; value: SavedActionInput } | null>(
@@ -338,7 +340,13 @@ export function SavedActionsSection({ projectId }: { projectId: string }) {
   };
 
   const remove = async (a: SavedActionDto) => {
-    if (!window.confirm(`Delete the saved action "${a.name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete the saved action “${a.name}”?`,
+      message: 'Its steps are deleted. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await api.deleteSavedAction(a.id);
@@ -442,6 +450,7 @@ export function SavedActionsSection({ projectId }: { projectId: string }) {
           {error}
         </p>
       )}
+      {confirmDialog}
     </section>
   );
 }

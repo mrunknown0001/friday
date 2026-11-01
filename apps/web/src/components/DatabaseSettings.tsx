@@ -19,6 +19,7 @@ import {
 import { api } from '../lib/api';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
+import { useConfirm } from './ui/confirm';
 
 const ENV_TONE: Record<HostEnvironment, Tone> = {
   development: 'neutral',
@@ -294,6 +295,7 @@ function ConnectionRow({
   onEdit: () => void;
   onChanged: () => void;
 }) {
+  const [confirm, confirmDialog] = useConfirm();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DbConnectionTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -338,8 +340,14 @@ function ConnectionRow({
             variant="ghost"
             aria-label={`Remove connection ${c.name}`}
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(`Remove the database connection "${c.name}"?`))
+            onClick={async () => {
+              const ok = await confirm({
+                title: `Remove “${c.name}”?`,
+                message: 'Friday forgets this database connection. The database is not touched.',
+                confirmLabel: 'Remove',
+                danger: true,
+              });
+              if (ok)
                 void act(async () => {
                   await api.removeDatabase(c.id);
                   onChanged();
@@ -375,6 +383,7 @@ function ConnectionRow({
           {error}
         </p>
       )}
+      {confirmDialog}
     </li>
   );
 }

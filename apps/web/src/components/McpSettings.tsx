@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
+import { useConfirm } from './ui/confirm';
 
 /** Fired by App when the server reports a change (e.g. a browser sign-in finished). */
 export const MCP_UPDATED_EVENT = 'friday:mcp-updated';
@@ -32,6 +33,7 @@ function openSignIn(url: string) {
 }
 
 function ServerRow({ server, onChanged }: { server: McpServerDto; onChanged: () => void }) {
+  const [confirm, confirmDialog] = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -97,9 +99,14 @@ function ServerRow({ server, onChanged }: { server: McpServerDto; onChanged: () 
           size="sm"
           variant="ghost"
           className="ml-auto"
-          onClick={() => {
-            if (window.confirm(`Remove “${server.name}”? Friday forgets its sign-in and settings.`))
-              void act('remove', () => api.removeMcpServer(server.id));
+          onClick={async () => {
+            const ok = await confirm({
+              title: `Remove “${server.name}”?`,
+              message: 'Friday forgets its sign-in and settings.',
+              confirmLabel: 'Remove',
+              danger: true,
+            });
+            if (ok) void act('remove', () => api.removeMcpServer(server.id));
           }}
           disabled={busy !== null}
           aria-label={`Remove ${server.name}`}
@@ -175,6 +182,7 @@ function ServerRow({ server, onChanged }: { server: McpServerDto; onChanged: () 
           )}
         </div>
       )}
+      {confirmDialog}
     </li>
   );
 }

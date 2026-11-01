@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { api } from '../lib/api';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
+import { useConfirm } from './ui/confirm';
 
 const ENV_TONE: Record<HostEnvironment, Tone> = {
   development: 'neutral',
@@ -24,6 +25,7 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function HostRow({ host, onChanged }: { host: SshHostDto; onChanged: () => void }) {
+  const [confirm, confirmDialog] = useConfirm();
   const [scanned, setScanned] = useState<string[] | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,8 +85,14 @@ function HostRow({ host, onChanged }: { host: SshHostDto; onChanged: () => void 
             variant="ghost"
             aria-label={`Remove host ${host.name}`}
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(`Remove SSH host "${host.name}"?`))
+            onClick={async () => {
+              const ok = await confirm({
+                title: `Remove SSH host “${host.name}”?`,
+                message: 'Friday forgets this host. The server itself is not touched.',
+                confirmLabel: 'Remove',
+                danger: true,
+              });
+              if (ok)
                 void act(async () => {
                   await api.removeSshHost(host.id);
                   onChanged();
@@ -133,6 +141,7 @@ function HostRow({ host, onChanged }: { host: SshHostDto; onChanged: () => void 
           {status}
         </p>
       )}
+      {confirmDialog}
     </li>
   );
 }
