@@ -25,6 +25,7 @@ import { cn } from '../lib/cn';
 import { Badge, type Tone } from './ui/badge';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
+import { useConfirm } from './ui/confirm';
 
 const input =
   'w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm outline-none focus:border-sky-500';
@@ -175,6 +176,7 @@ function MonitorRow({
   onError: (e: string) => void;
   onInvestigate: (m: MonitorDto) => void;
 }) {
+  const [confirm, confirmDialog] = useConfirm();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const run = (p: Promise<unknown>) => {
@@ -243,9 +245,14 @@ function MonitorRow({
             aria-label="Delete"
             title="Delete"
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(`Delete the monitor “${m.name}” and its history?`))
-                run(api.deleteMonitor(m.id));
+            onClick={async () => {
+              const ok = await confirm({
+                title: `Delete the monitor “${m.name}”?`,
+                message: 'Its check history is deleted too.',
+                confirmLabel: 'Delete',
+                danger: true,
+              });
+              if (ok) run(api.deleteMonitor(m.id));
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -278,6 +285,7 @@ function MonitorRow({
           <Events id={m.id} />
         </div>
       )}
+      {confirmDialog}
     </li>
   );
 }

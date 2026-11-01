@@ -17,6 +17,7 @@ import { cn } from '../lib/cn';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { RUN_STATUS_TONE } from './status';
+import { useConfirm } from './ui/confirm';
 
 interface Props {
   projects: ProjectDto[];
@@ -61,6 +62,7 @@ export function Sidebar({
   monitorsDown,
   settingsWarning,
 }: Props) {
+  const [confirm, confirmDialog] = useConfirm();
   const [editing, setEditing] = useState<string | null>(null);
   const current = projects.find((p) => p.id === projectId) ?? null;
   const [draft, setDraft] = useState('');
@@ -144,14 +146,15 @@ export function Sidebar({
                 className="h-6 w-6"
                 aria-label={`Remove project ${current.name}`}
                 title="Remove project (files are not touched)"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Remove "${current.name}" from Friday? Files on disk are not touched; its conversations are kept without project access.`,
-                    )
-                  ) {
-                    onRemoveProject(current.id);
-                  }
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: `Remove “${current.name}” from Friday?`,
+                    message:
+                      'Files on disk are not touched. Its conversations are kept without project access.',
+                    confirmLabel: 'Remove project',
+                    danger: true,
+                  });
+                  if (ok) onRemoveProject(current.id);
                 }}
               >
                 <FolderX className="h-3.5 w-3.5" />
@@ -248,13 +251,14 @@ export function Sidebar({
                   <button
                     type="button"
                     aria-label={`Delete ${s.title}`}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Delete "${s.title}"? This permanently removes its messages.`,
-                        )
-                      )
-                        onDelete(s.id);
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Delete “${s.title}”?`,
+                        message: 'This permanently removes its messages.',
+                        confirmLabel: 'Delete',
+                        danger: true,
+                      });
+                      if (ok) onDelete(s.id);
                     }}
                     className="rounded p-1 text-zinc-500 opacity-0 hover:text-red-400 focus:opacity-100 group-hover:opacity-100"
                   >
@@ -291,6 +295,7 @@ export function Sidebar({
           )}
         </Button>
       </div>
+      {confirmDialog}
     </aside>
   );
 }

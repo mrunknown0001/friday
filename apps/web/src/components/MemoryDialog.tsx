@@ -12,6 +12,7 @@ import { cn } from '../lib/cn';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
+import { useConfirm } from './ui/confirm';
 
 const CATEGORIES: MemoryCategory[] = [
   'preference',
@@ -45,6 +46,7 @@ function MemoryRow({
   onChanged: () => void;
   onError: (e: string) => void;
 }) {
+  const [confirm, confirmDialog] = useConfirm();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.content);
   const run = (p: Promise<unknown>) => p.then(onChanged, (e: unknown) => onError(message(e)));
@@ -111,9 +113,14 @@ function MemoryRow({
             variant="ghost"
             className="h-6 w-6"
             aria-label="Delete memory"
-            onClick={() => {
-              if (window.confirm('Delete this memory permanently?'))
-                void run(api.deleteMemory(m.id));
+            onClick={async () => {
+              const ok = await confirm({
+                title: 'Delete this memory?',
+                message: 'Friday forgets it permanently.',
+                confirmLabel: 'Delete',
+                danger: true,
+              });
+              if (ok) void run(api.deleteMemory(m.id));
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -145,6 +152,7 @@ function MemoryRow({
           {m.content}
         </p>
       )}
+      {confirmDialog}
     </li>
   );
 }
