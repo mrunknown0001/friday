@@ -529,6 +529,11 @@ approved), credentials never reach the model, and results from other systems are
   - NoTokenLimit chat and the connection test still worked through the router.
   - Streaming from Anthropic with a valid key is covered only by tests with hand-written event streams.
 
+- ✅ **Gemini as a provider** (requested 2026-11-03). Done: `GEMINI_API_KEY` (and `GEMINI_BASE_URL`), through
+  Google's OpenAI-compatible API, with models listed as `gemini:…` (chat models only). Checked live with an invalid
+  key: Google's chat endpoint answers errors with a list, which is now read, and its "Please pass a valid API key" is
+  reported as a key problem. Not yet tried with a valid key.
+
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,
 test insights, safe rename, then saved actions, Docker Compose, health monitors, dependency upgrades, browser flows

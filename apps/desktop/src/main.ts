@@ -44,6 +44,8 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 # OpenRouter (https://openrouter.ai)
 OPENROUTER_API_KEY=
+# Google Gemini (https://aistudio.google.com/apikey)
+GEMINI_API_KEY=
 # Optional: default model ID. You can also choose a model in Settings.
 NTL_MODEL=
 # Optional: Tavily API key for web search (https://tavily.com). Reading pages works without it.

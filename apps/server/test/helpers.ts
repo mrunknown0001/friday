@@ -31,6 +31,7 @@ export function testConfig(overrides: Partial<AppConfig['provider']> = {}): AppC
       anthropic: { apiKey: null, baseUrl: 'https://api.anthropic.com' },
       openai: { apiKey: null, baseUrl: 'https://api.openai.com/v1' },
       openrouter: { apiKey: null, baseUrl: 'https://openrouter.ai/api/v1' },
+      gemini: { apiKey: null, baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
     },
     server: {
       host: '127.0.0.1',

@@ -41,15 +41,16 @@ Agent code depends only on `LLMProvider`:
 - `complete(request)` is non-streaming. It is used for summaries, probes, and models where streaming is unsupported.
 - `listModels()`
 
-The server's provider is a `ProviderRouter` (`providers/router.ts`) over four providers. The model id picks one:
-`anthropic:`, `openai:` and `openrouter:` prefixes, and no prefix for NoTokenLimit (so existing settings, capabilities
+The server's provider is a `ProviderRouter` (`providers/router.ts`) over five providers. The model id picks one:
+`anthropic:`, `openai:`, `openrouter:` and `gemini:` prefixes, and no prefix for NoTokenLimit (so existing settings, capabilities
 and usage records keep their ids). Each provider strips its prefix before calling its API, and records calls under the
 full id. A provider is used only when its key is set; `listAll()` lists the configured ones in parallel and reports the
 ones that fail next to the models of the others (`ModelListDto`).
 
 - `OpenAICompatibleProvider` (`providers/openaiCompatible.ts`, the OpenAI SDK) serves NoTokenLimit
   (`NoTokenLimitProvider`, which adds its ~1,500-token hidden-prompt overhead), OpenAI (`max_completion_tokens`,
-  chat models only) and OpenRouter.
+  chat models only), OpenRouter and Gemini. Google's OpenAI-compatible API lists models as `models/…` (Friday drops
+  that part) and answers chat errors with a list, which `unwrapListErrors` turns into the object the SDK reads.
 - `AnthropicProvider` (`providers/anthropic.ts`) calls the Messages API with `fetch` and parses its server-sent
   events itself; no SDK. It moves system messages to `system`, sends tool results as `tool_result` blocks in user
   turns, merges consecutive turns of one role, and sets `max_tokens`, which the API requires. It marks the system

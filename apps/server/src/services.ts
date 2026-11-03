@@ -195,6 +195,7 @@ export function createServices(
     config.providers.anthropic.apiKey,
     config.providers.openai.apiKey,
     config.providers.openrouter.apiKey,
+    config.providers.gemini.apiKey,
     config.web.tavilyApiKey,
   ]);
   const providerCalls = new ProviderCallRepo(db);

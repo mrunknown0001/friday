@@ -28,7 +28,7 @@ export interface ApiErrorBody {
 }
 
 /** Model providers Friday can use; each needs its own API key in the server's .env. */
-export type ProviderId = 'notokenlimit' | 'anthropic' | 'openai' | 'openrouter';
+export type ProviderId = 'notokenlimit' | 'anthropic' | 'openai' | 'openrouter' | 'gemini';
 
 export interface ModelInfo {
   /** NoTokenLimit models keep their plain id; other providers' are prefixed ("anthropic:…"). */

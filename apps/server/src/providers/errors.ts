@@ -27,7 +27,7 @@ export const NOTOKENLIMIT: ProviderSource = {
 /** No provider has a key at all. */
 export const NO_PROVIDER: ProviderSource = {
   label: 'No model provider',
-  envVar: 'NTL_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY',
+  envVar: 'NTL_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY or GEMINI_API_KEY',
   gateway: false,
 };
 
@@ -116,7 +116,9 @@ function extractProviderDetail(err: InstanceType<typeof OpenAI.APIError>): {
   message: string;
 } {
   const body = (err.error ?? {}) as Record<string, unknown>;
-  const code = [body['code'], body['type']].filter((v) => typeof v === 'string').join(' ');
+  const code = [body['code'], body['type'], body['status']]
+    .filter((v) => typeof v === 'string')
+    .join(' ');
   const message = typeof body['message'] === 'string' ? body['message'] : '';
   return { code, message };
 }
@@ -191,6 +193,9 @@ export function classifyError(
       case status === 429:
         return E(QUOTA_HINT.test(text) ? 'quota' : 'rate_limit', detail, opts);
       case status === 400 || status === 422:
+        // Gemini reports a wrong key as a 400.
+        if (/api[ _]key not valid|API_KEY_INVALID|invalid api key|pass a valid api key/i.test(text))
+          return E('auth', detail, opts);
         if (
           MODEL_HINT.test(text) &&
           /not (found|exist|available|allowed)|invalid model|unknown model/i.test(text)
