@@ -14,6 +14,7 @@ import { registerPreviewRoutes } from './http/routes/preview.js';
 import { registerProcessRoutes } from './http/routes/processes.js';
 import { registerProjectRoutes } from './http/routes/projects.js';
 import { registerProviderRoutes } from './http/routes/provider.js';
+import { registerQuestionRoutes } from './http/routes/questions.js';
 import { registerReviewRoutes } from './http/routes/reviews.js';
 import { registerSavedActionRoutes } from './http/routes/savedActions.js';
 import { registerMonitorRoutes } from './http/routes/monitors.js';
@@ -113,6 +114,7 @@ export async function buildApp(
   registerProcessRoutes(app, services);
   registerPreviewRoutes(app, services);
   registerApprovalRoutes(app, services);
+  registerQuestionRoutes(app, services);
   registerAttachmentRoutes(app, services);
   registerDevopsRoutes(app, services);
   registerMemoryRoutes(app, services);

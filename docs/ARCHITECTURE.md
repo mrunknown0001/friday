@@ -351,6 +351,22 @@ synthetic user message right after the tool results, since chat APIs only accept
 The probe sends a 16×16 red PNG. The web app downsizes images (`lib/images.ts`) and uploads them as soon as they are
 pasted, dropped or picked.
 
+### Questions and prompt enhancement (`questions/`, `tools/askUserTool.ts`, `chat/enhance.ts`, `routes/questions.ts`)
+
+`ask_user` (category `agent_state`) calls `ToolContext.askUser`. `RunManager.askUser` records the question in the
+`questions` table (migration 27) through `QuestionService.ask`, emits a `question` run event and a `question_asked`
+notice, and sets the phase to `awaiting_answer`. It then waits like an approval does, until `QuestionService.answer`
+settles it (from `POST /api/questions/:id/answer`), the TTL (`approvalTtlMs`) runs out, or the run is aborted. The run
+status stays `running`. The tool result tells the model what was answered, that it may decide, or that nobody
+answered. Pending questions are cancelled at startup. `SessionDetailDto.questions` carries them for the
+`QuestionCard`, which shows at the end of the conversation while it waits and under its tool call afterwards.
+
+`POST /api/enhance` runs `enhancePrompt`: one `complete` call (`operation: 'enhance'`) with the selected model. It
+sends a system prompt and a redacted user message holding the project summary (from `detectProject`), recent
+messages and the draft. The reply is parsed as JSON: `{"questions": …}` or `{"prompt": …}`. With answers or
+`noQuestions` it must be a prompt. In the web app, `usePromptEnhancer` keeps the state (questions, Undo) next to the
+composer; `QuestionForm` is shared by both kinds of question.
+
 ## Coding agent (Phase 4)
 
 | Module                      | Responsibility                                                                                                                                                                                                                                                                |

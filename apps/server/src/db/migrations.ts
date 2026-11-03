@@ -688,6 +688,27 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX research_session ON research (session_id, created_at);
     `,
   },
+  {
+    version: 27,
+    name: 'questions',
+    up: `
+      -- Clarifying questions the agent asked during a run (ask_user) and the user's answers.
+      CREATE TABLE questions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        status TEXT NOT NULL
+          CHECK (status IN ('pending', 'answered', 'skipped', 'expired', 'cancelled')),
+        questions TEXT NOT NULL,
+        answers TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        answered_at TEXT
+      );
+      CREATE INDEX questions_session ON questions (session_id, created_at);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

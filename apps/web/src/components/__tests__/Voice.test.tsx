@@ -151,6 +151,7 @@ const detail = (messages: MessageDto[]): SessionDetailDto => ({
   browserFlows: [],
   loadTests: [],
   research: [],
+  questions: [],
   memoryUsage: {},
 });
 
@@ -181,6 +182,7 @@ describe('spoken replies in the conversation', () => {
         onRollback={async () => {}}
         onOpenMemory={() => {}}
         onRevokeTaskPermission={async () => {}}
+        onAnswerQuestion={async () => {}}
       />,
     );
     const buttons = screen.getAllByRole('button', { name: 'Play reply aloud' });
@@ -248,6 +250,7 @@ describe('spoken replies in the conversation', () => {
         onRollback={async () => {}}
         onOpenMemory={() => {}}
         onRevokeTaskPermission={async () => {}}
+        onAnswerQuestion={async () => {}}
       />
     );
     const old = approval('a0', 'git');

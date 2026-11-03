@@ -39,6 +39,7 @@ import { databaseSchema, queryDatabase } from './databaseTools.js';
 import { runLoadTest } from './loadTestTools.js';
 import { deepResearch, readWebPage, webSearch } from './webTools.js';
 import { remember, searchMemory } from './memoryTools.js';
+import { askUser } from './askUserTool.js';
 import { suggestNextSteps, updatePlan } from './planTool.js';
 import { listProcesses, readProcessOutput, startProcess, stopProcess } from './processTools.js';
 import { requestTaskPermissions } from './taskPermissionTool.js';
@@ -119,6 +120,7 @@ export const DEFAULT_TOOLS = [
   inspectPage,
   runBrowserFlow,
   updatePlan,
+  askUser,
   requestTaskPermissions,
   writeFile,
   editFile,
