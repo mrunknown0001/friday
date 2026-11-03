@@ -23,6 +23,7 @@ import { cn } from '../lib/cn';
 import { formatBytes } from '../lib/format';
 import { DocumentActions } from './DocumentActions';
 import { ProcessList } from './Processes';
+import { ProjectSearch } from './ProjectSearch';
 import { Dialog } from './ui/dialog';
 
 const PLAN_ICON = {
@@ -390,7 +391,8 @@ export function SidePanel({
 }) {
   const [root, setRoot] = useState<TreeEntryDto[] | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ path: string; line: number | null } | null>(null);
+  const open = (path: string, line: number | null = null) => setViewing({ path, line });
   const projectId = project?.id ?? null;
 
   useEffect(() => {
@@ -456,17 +458,19 @@ export function SidePanel({
         ) : treeError ? (
           <p className="px-3 text-xs text-red-400">{treeError}</p>
         ) : (
-          <ul key={project.id} className="min-h-0 flex-1 overflow-y-auto px-1">
-            {(root ?? []).map((e) => (
-              <TreeNode
-                key={e.path}
-                entry={e}
-                projectId={project.id}
-                depth={0}
-                onOpen={setViewing}
-              />
-            ))}
-          </ul>
+          <ProjectSearch key={project.id} projectId={project.id} onOpen={open}>
+            <ul className="min-h-0 flex-1 overflow-y-auto px-1">
+              {(root ?? []).map((e) => (
+                <TreeNode
+                  key={e.path}
+                  entry={e}
+                  projectId={project.id}
+                  depth={0}
+                  onOpen={(path) => open(path)}
+                />
+              ))}
+            </ul>
+          </ProjectSearch>
         )}
         <p className="mt-2 px-3 text-[11px] text-zinc-500">
           Respects .gitignore; dependency and build folders are hidden.
@@ -474,16 +478,25 @@ export function SidePanel({
       </section>
       {viewing &&
         project &&
-        (DOCUMENT_FILE.test(viewing) ? (
+        (DOCUMENT_FILE.test(viewing.path) ? (
           <DocumentFileViewer
             projectId={project.id}
-            path={viewing}
+            path={viewing.path}
             onClose={() => setViewing(null)}
           />
-        ) : IMAGE_FILE.test(viewing) ? (
-          <ImageFileViewer projectId={project.id} path={viewing} onClose={() => setViewing(null)} />
+        ) : IMAGE_FILE.test(viewing.path) ? (
+          <ImageFileViewer
+            projectId={project.id}
+            path={viewing.path}
+            onClose={() => setViewing(null)}
+          />
         ) : (
-          <FileViewer projectId={project.id} path={viewing} onClose={() => setViewing(null)} />
+          <FileViewer
+            projectId={project.id}
+            path={viewing.path}
+            line={viewing.line}
+            onClose={() => setViewing(null)}
+          />
         ))}
     </aside>
   );

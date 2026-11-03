@@ -257,6 +257,18 @@ database. They are never shown in the UI, the audit log or to the model, and tok
 Tool descriptions and results are treated as data from that app, not instructions. Friday connects only to remote
 (HTTP) servers; it does not start local MCP programs.
 
+### Search in files
+
+The **Files** panel has a search box: plain text, or a regular expression with the `.*` button, with **Match case**
+and an optional file filter such as `*.ts` or `src/**/*.php`. Results are grouped by file; click one to open the file
+at that line. Friday's `search_code` tool uses the same search. Both respect `.gitignore` and never look inside
+credential files (`.env`, keys, …).
+
+With [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) installed, searches use it (faster, ripgrep's regex
+syntax). Without it, Friday searches on its own with JavaScript regex syntax. A pattern that backtracks
+catastrophically, such as `(a+)+$`, is stopped after 2 seconds on one file and reported, instead of hanging the
+server.
+
 ### Code map
 
 To find its way around large projects without reading files blindly, Friday keeps an index of the definitions in

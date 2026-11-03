@@ -11,7 +11,7 @@ import {
   resolveProjectRoot,
   WorkspaceError,
 } from '../src/workspace/paths.js';
-import { globToRegExp, search } from '../src/workspace/search.js';
+import { globToRegExp, REGEX_LIMITS, search } from '../src/workspace/search.js';
 import { walk } from '../src/workspace/walk.js';
 import { cleanupProjects, makeProject } from './helpers.js';
 
@@ -351,17 +351,44 @@ describe('search', async () => {
     });
   });
 
-  it('refuses regex mode without ripgrep (no ReDoS-prone fallback)', async () => {
-    const root = makeProject({ 'a.txt': 'aaaa' });
-    await expect(
-      search(root, null, {
-        query: '(a+)+$',
-        regex: true,
-        caseSensitive: false,
-        targetAbs: root,
-        maxResults: 5,
-      }),
-    ).rejects.toMatchObject({ code: 'unsupported' });
+  it('searches by regex without ripgrep, and stops a pattern that runs away', async () => {
+    const root = makeProject({
+      'src/a.ts':
+        'export function getUser() {}\nconst x = getUserName();\nexport const fetchUser = 1;\n',
+      'src/b.js': 'function GETUSER() {}\n',
+      '.env': 'export function getSecret() {}\n',
+      'slow.txt': `${'a'.repeat(40)}!\n`,
+    });
+    const opts = { regex: true, caseSensitive: true, targetAbs: root, maxResults: 50 };
+    const found = await search(root, null, { ...opts, query: '^export (function|const) \\w+' });
+    expect(found.engine).toBe('builtin');
+    expect(found.matches.map((m) => `${m.path}:${m.line}`)).toEqual(['src/a.ts:1', 'src/a.ts:3']);
+    // Case-insensitive, and limited by glob.
+    const ci = await search(root, null, {
+      ...opts,
+      caseSensitive: false,
+      query: 'getuser\\(',
+      glob: '*.js',
+    });
+    expect(ci.matches.map((m) => m.path)).toEqual(['src/b.js']);
+    // Credential files are never searched, regex or not.
+    expect((await search(root, null, { ...opts, query: 'getSecret' })).matches).toEqual([]);
+    await expect(search(root, null, { ...opts, query: '(unclosed' })).rejects.toThrow(
+      /^Invalid regex: /,
+    );
+
+    // A catastrophic pattern is stopped instead of hanging the server.
+    const before = REGEX_LIMITS.fileMs;
+    REGEX_LIMITS.fileMs = 300;
+    try {
+      const started = Date.now();
+      await expect(
+        search(root, null, { ...opts, query: '(a+)+$', glob: 'slow.txt' }),
+      ).rejects.toThrow(/took over 0\.3 s on slow\.txt.*backtracks catastrophically/);
+      expect(Date.now() - started).toBeLessThan(3_000);
+    } finally {
+      REGEX_LIMITS.fileMs = before;
+    }
   });
 
   it('converts globs to anchored patterns', () => {

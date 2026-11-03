@@ -39,6 +39,7 @@ import type {
   RunDto,
   SandboxSettings,
   SandboxStatusDto,
+  SearchResultDto,
   SavedActionDto,
   SavedActionInput,
   SessionDetailDto,
@@ -122,6 +123,7 @@ async function request<T>(
   url: string,
   body?: unknown,
   extraHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = { ...extraHeaders };
   // Required by the server's CSRF guard on mutating requests.
@@ -135,8 +137,11 @@ async function request<T>(
       method,
       headers,
       body: body === undefined ? null : raw ? body : JSON.stringify(body),
+      ...(signal ? { signal } : {}),
     });
-  } catch {
+  } catch (e) {
+    // A request the caller dropped is not a connection problem.
+    if (signal?.aborted) throw e;
     throw new ApiError(
       0,
       'server_unreachable',
@@ -277,6 +282,24 @@ export const api = {
     ),
   projectFile: (id: string, path: string) =>
     request<FileViewDto>('GET', `/api/projects/${id}/file?path=${encodeURIComponent(path)}`),
+  /** Text or regex search across the project (the side panel). */
+  searchProject: (
+    id: string,
+    q: { query: string; regex: boolean; caseSensitive: boolean; glob?: string },
+    signal?: AbortSignal,
+  ) =>
+    request<SearchResultDto>(
+      'GET',
+      `/api/projects/${id}/search?${new URLSearchParams({
+        q: q.query,
+        regex: q.regex ? '1' : '0',
+        case: q.caseSensitive ? '1' : '0',
+        ...(q.glob ? { glob: q.glob } : {}),
+      }).toString()}`,
+      undefined,
+      {},
+      signal,
+    ),
 
   /** projectId null lists conversations that have no project. */
   sessions: (projectId: string | null) =>

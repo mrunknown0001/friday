@@ -6,6 +6,7 @@ import type {
   ProjectDto,
   ProjectOverviewDto,
   SandboxStatusDto,
+  SearchResultDto,
   SystemInfoDto,
   TreeEntryDto,
 } from '@friday/shared';
@@ -30,6 +31,7 @@ import {
   resolveProjectRoot,
   WorkspaceError,
 } from '../../workspace/paths.js';
+import { search } from '../../workspace/search.js';
 import { walk } from '../../workspace/walk.js';
 import { HttpError } from '../errors.js';
 import { parseInput } from '../validation.js';
@@ -273,6 +275,42 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
         content: file.text,
         language: languageFor(target.rel),
       };
+    });
+  });
+
+  /** The search panel: the same search as search_code (credential files are never searched). */
+  app.get('/api/projects/:id/search', async (req, reply): Promise<SearchResultDto> => {
+    const { id } = parseInput(idParams, req.params);
+    const q = parseInput(
+      z.object({
+        q: z.string().min(1).max(500),
+        regex: z.enum(['0', '1']).default('0'),
+        case: z.enum(['0', '1']).default('0'),
+        glob: z
+          .string()
+          .max(200)
+          .regex(/^[^!\0]/, 'glob must not start with "!"')
+          .optional(),
+      }),
+      req.query,
+    );
+    const project = requireProject(id);
+    // A new search (the user kept typing) ends this one.
+    const gone = new AbortController();
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableFinished) gone.abort();
+    });
+    return guarded(async () => {
+      await assertRootAvailable(project.rootPath);
+      return search(project.rootPath, s.toolEnv.ripgrep, {
+        query: q.q,
+        regex: q.regex === '1',
+        caseSensitive: q.case === '1',
+        targetAbs: project.rootPath,
+        ...(q.glob ? { glob: q.glob } : {}),
+        maxResults: 200,
+        signal: gone.signal,
+      });
     });
   });
 

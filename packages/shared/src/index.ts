@@ -218,6 +218,15 @@ export interface ProjectOverviewDto {
   isGitRepo: boolean;
 }
 
+/** GET /api/projects/:id/search: matching lines, grouped by the caller. */
+export interface SearchResultDto {
+  matches: Array<{ path: string; line: number; text: string }>;
+  /** More matched than shown (or the search stopped at its time limit). */
+  truncated: boolean;
+  /** ripgrep when installed, otherwise Friday's own search. */
+  engine: 'ripgrep' | 'builtin';
+}
+
 export interface TreeEntryDto {
   name: string;
   path: string;
