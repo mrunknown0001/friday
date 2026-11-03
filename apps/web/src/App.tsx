@@ -230,7 +230,11 @@ export function App() {
     }
     if (n.type === 'run_finished') void loadSessions();
     // A run started elsewhere (another window, the API) in the conversation on screen: attach to it.
-    if (n.type === 'approval_requested' && n.sessionId === activeId && runId !== n.runId)
+    if (
+      (n.type === 'approval_requested' || n.type === 'question_asked') &&
+      n.sessionId === activeId &&
+      runId !== n.runId
+    )
       void loadDetail(n.sessionId);
     const elsewhere = document.hidden || !document.hasFocus() || n.sessionId !== activeId;
     if (!elsewhere) return;
@@ -242,6 +246,13 @@ export function App() {
         title: 'Friday needs your approval',
         body: `${n.title}${risk}${where ? `\nIn “${where}”` : ''}`,
         tag: n.approvalId,
+        onClick: open,
+      });
+    } else if (n.type === 'question_asked') {
+      notify({
+        title: 'Friday has a question',
+        body: `${n.title}${where ? `\nIn “${where}”` : ''}`,
+        tag: n.questionId,
         onClick: open,
       });
     } else if (
@@ -522,6 +533,15 @@ export function App() {
           onRevokeTaskPermission={(id) =>
             api.revokeTaskPermission(id).then(() => undefined, report)
           }
+          onAnswerQuestion={async (q, reply) => {
+            try {
+              await api.answerQuestion(q.id, { ...reply, sessionId: q.sessionId });
+            } catch (e) {
+              // The run may have stopped waiting; show the question's current state.
+              void loadDetail(q.sessionId);
+              throw e;
+            }
+          }}
         />
         {error && (
           <div

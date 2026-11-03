@@ -33,6 +33,7 @@ const detail = (messages: MessageDto[]): SessionDetailDto => ({
   browserFlows: [],
   loadTests: [],
   research: [],
+  questions: [],
   memoryUsage: {},
 });
 
@@ -58,6 +59,7 @@ const props = (d: SessionDetailDto) => ({
   onRollback: async () => {},
   onOpenMemory: () => {},
   onRevokeTaskPermission: async () => {},
+  onAnswerQuestion: async () => {},
 });
 
 // jsdom has no layout: give the conversation a fixed viewport and a tall content height.

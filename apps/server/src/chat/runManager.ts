@@ -6,6 +6,7 @@ import type {
   MessageDto,
   ModelCapabilities,
   PlanStep,
+  QuestionItem,
   RunDto,
   RunErrorKind,
   RunEvent,
@@ -30,6 +31,7 @@ import type { TestRunRepo } from '../repositories/testRuns.js';
 import type { BrowserFlowRepo } from '../repositories/browserFlows.js';
 import type { LoadTargetRepo, LoadTestRepo } from '../repositories/loadTests.js';
 import type { ResearchRepo } from '../repositories/research.js';
+import type { QuestionService } from '../questions/service.js';
 import { ResearchError } from '../web/research.js';
 import type { WebService } from '../web/service.js';
 import type { DatabaseService } from '../databases/service.js';
@@ -118,6 +120,8 @@ export interface RunManagerDeps {
   /** Web search and pages, and the deep research records (the Research card). */
   web?: WebService;
   research?: ResearchRepo;
+  /** Clarifying questions to the user (ask_user). */
+  questions?: QuestionService;
   /** Saved actions (runbooks) per project. */
   savedActions?: SavedActionRepo;
   /** Health monitors (read-only for the model). */
@@ -1173,6 +1177,28 @@ export class RunManager {
     };
   }
 
+  /** ask_user: show the questions, and wait for the user like an approval does. */
+  private async askUser(run: ActiveRun, callId: string, items: QuestionItem[]) {
+    const service = this.deps.questions!;
+    const question = service.ask(
+      { sessionId: run.sessionId, runId: run.id, toolCallId: callId },
+      items,
+    );
+    this.emit(run, { type: 'question', question });
+    this.notice({
+      type: 'question_asked',
+      sessionId: run.sessionId,
+      runId: run.id,
+      questionId: question.id,
+      title: items[0]!.question,
+    });
+    this.phase(run, 'awaiting_answer', items[0]!.question);
+    const result = await service.wait(question, run.controller.signal);
+    if (result.question) this.emit(run, { type: 'question', question: result.question });
+    this.phase(run, 'running_tool', 'ask_user');
+    return result;
+  }
+
   private toolContext(run: ActiveRun, project: ProjectRecord | null, callId: string): ToolContext {
     let streamed = 0;
     const web = this.webContext(run, project, callId);
@@ -1226,6 +1252,9 @@ export class RunManager {
           }
         : {}),
       ...(this.deps.savedActions ? { savedActions: this.savedActionContext() } : {}),
+      ...(this.deps.questions
+        ? { askUser: (items: QuestionItem[]) => this.askUser(run, callId, items) }
+        : {}),
       ...(this.deps.monitors ? { monitors: this.deps.monitors } : {}),
       ...(this.deps.databases ? { databases: this.deps.databases } : {}),
       project,

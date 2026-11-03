@@ -121,6 +121,16 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Losing review or undo                        | Covered actions are still re-checked before running (stale if changed), recorded as approvals with `granted_by`, shown with their diff, undoable, in the report, and audited (`approval_approved_by_task_permission`).             |
 | Notifications leaking content                | Notices carry ids, status and the approval title only; no diffs, command output or model text. The `/api/events` stream is behind the same local-only guards and, in the desktop app, the launch token.                            |
 
+## Prompt enhancement and questions
+
+| Threat                                     | Mitigation                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Project data leaving through the rewrite   | The enhancer gets the draft, the last six messages (each cut to 1,500 characters) and the project's name, detected stack and top-level names. It gets no file contents and no root path, and credential files are left out of the names. All of it is redacted before the call, which goes to the same provider as chat. |
+| A draft or message steering the enhancer   | The prompt tells the model that the draft, conversation and project summary are data to rewrite, not instructions. Its reply must be JSON (a prompt or questions) and is validated; anything else is refused. The result only replaces the draft: nothing is sent or run until the user presses Send.                    |
+| Questions used to get around approvals     | `ask_user` is category `agent_state`: it can only show questions and return the user's answers. Protected actions still need their own approval, and the tool description tells the model not to use questions for permission.                                                                                           |
+| Answers forged by the model or another tab | Answers arrive only through `POST /api/questions/:id/answer`, behind the local-only guards, for the conversation the question belongs to. They must name offered options (one unless multi-select) or be the user's own words, at most 2,000 characters.                                                                 |
+| A run waiting forever                      | Questions expire after the approval TTL, are cancelled with their run, and are cancelled at startup. On expiry the model is told not to guess, and to end its turn by restating the question.                                                                                                                            |
+
 ## Model providers
 
 Anthropic, OpenAI and OpenRouter can be used next to NoTokenLimit. The same rules apply to each provider's key.

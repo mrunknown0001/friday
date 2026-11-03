@@ -1073,6 +1073,14 @@ export type AppNotice =
       risk: RiskLevel;
     }
   | {
+      type: 'question_asked';
+      sessionId: string;
+      runId: string;
+      questionId: string;
+      /** The first question's text. */
+      title: string;
+    }
+  | {
       type: 'run_finished';
       sessionId: string;
       runId: string;
@@ -1498,6 +1506,8 @@ export interface SessionDetailDto extends SessionSummaryDto {
   browserFlows: BrowserFlowDto[];
   loadTests: LoadTestDto[];
   research: ResearchDto[];
+  /** Questions the agent asked (ask_user), answered or still waiting. */
+  questions: QuestionDto[];
   /** Memories shown to the model, per run id. */
   memoryUsage: Record<string, MemoryRef[]>;
 }
@@ -1509,7 +1519,68 @@ export type RunPhase =
   | 'streaming'
   | 'running_tool'
   | 'reading_results'
-  | 'awaiting_approval';
+  | 'awaiting_approval'
+  | 'awaiting_answer';
+
+// ------------------------------------------------------------------ questions and prompt enhancement
+
+/** One choice offered for a question. */
+export interface QuestionOption {
+  label: string;
+  description: string | null;
+}
+
+/** A clarifying question with choices; the user can always answer in their own words too. */
+export interface QuestionItem {
+  question: string;
+  /** A short tag shown above the question ("Scope", "Database"). */
+  header: string | null;
+  options: QuestionOption[];
+  multiSelect: boolean;
+}
+
+/** The user's answer to one question: chosen option labels and/or their own words. */
+export interface QuestionAnswer {
+  selected: string[];
+  text: string | null;
+}
+
+export type QuestionStatus = 'pending' | 'answered' | 'skipped' | 'expired' | 'cancelled';
+
+/** Questions the agent asked during a run (ask_user); the run waits for the answer. */
+export interface QuestionDto {
+  id: string;
+  sessionId: string;
+  runId: string;
+  toolCallId: string;
+  questions: QuestionItem[];
+  /** One per question when answered; null otherwise. */
+  answers: QuestionAnswer[] | null;
+  status: QuestionStatus;
+  createdAt: string;
+  expiresAt: string;
+  answeredAt: string | null;
+}
+
+/** The user's reply to a question card. `skip` lets Friday decide (it states its assumptions). */
+export type QuestionReply = { answers: QuestionAnswer[] } | { skip: true };
+
+/** POST /api/questions/:id/answer. */
+export type AnswerQuestionRequest = QuestionReply & { sessionId: string };
+
+/** POST /api/enhance: improve a draft before it is sent. */
+export interface EnhancePromptRequest {
+  draft: string;
+  projectId: string | null;
+  sessionId: string | null;
+  /** Answers to the questions of the previous step; when present Friday writes the prompt. */
+  answers?: Array<{ question: string; answer: string }>;
+  /** Write the prompt without asking (the user skipped the questions). */
+  noQuestions?: boolean;
+}
+
+export type EnhancePromptResult =
+  { kind: 'questions'; questions: QuestionItem[] } | { kind: 'prompt'; prompt: string };
 
 /** Server-Sent Event payloads for a run. `seq` is also sent as the SSE `id`. */
 export type RunEvent =
@@ -1539,6 +1610,7 @@ export type RunEvent =
   | { seq: number; type: 'browser_flow'; flow: BrowserFlowDto }
   | { seq: number; type: 'load_test'; loadTest: LoadTestDto }
   | { seq: number; type: 'research'; research: ResearchDto }
+  | { seq: number; type: 'question'; question: QuestionDto }
   | { seq: number; type: 'memories_used'; memories: MemoryRef[] }
   | { seq: number; type: 'memory_saved'; memory: MemoryDto }
   | { seq: number; type: 'message_saved'; message: MessageDto }

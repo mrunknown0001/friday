@@ -333,6 +333,26 @@ finishes, while you are in another window, another app, or another conversation.
 It is on by default in the desktop app; in a browser, turn it on in **Settings › Notifications** (the browser asks
 for permission). Notifications contain the action's title only (e.g. "Run: npm test").
 
+### Improve prompt and clarifying questions
+
+The wand button in the message box (or **Ctrl+E**, **⌘E** on a Mac) rewrites your draft into a clear, specific
+request before you send it. It keeps every detail you wrote and doesn't invent new ones. When the answer to something
+would change the request (which page, which environment, which approach), Friday first asks up to three questions.
+Pick an option, type your own answer, or **Skip questions**. The improved prompt then replaces your draft so you can
+edit or send it. **Undo** (or Ctrl+Z right after) brings your original back. Nothing is sent to the conversation
+until you press Send.
+
+The rewrite sees your draft, the last six messages of the conversation, and the project's name, detected stack and
+top-level file list. It doesn't see file contents. Secrets in all of these are redacted before the model call. The
+call uses the selected model, counts toward usage like chat, and is listed as `enhance` under Settings › Recent
+provider calls.
+
+During a task, Friday can also stop and ask you (`ask_user`). It does this when a request is ambiguous in a way that
+changes the result and the project can't answer it. A question card with options appears at the end of the
+conversation, and the task waits there, like an approval, with a notification if you are elsewhere. Answer it, or
+choose **Let Friday decide**, and Friday continues, stating the assumptions it made. Unanswered questions expire
+after the approval time (15 minutes by default), and Friday then ends its turn by asking again in plain text.
+
 ## Verification reports and resuming
 
 - After a task that proposed actions, Friday adds a **verification report** generated from its records, not from the

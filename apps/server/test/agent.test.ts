@@ -199,6 +199,7 @@ describe('tool executor', () => {
     const withProject = registry.definitions(true);
     expect(withProject.map((d) => d.name).sort()).toEqual(
       [
+        'ask_user',
         'delete_file',
         'edit_file',
         'edit_files',
@@ -301,6 +302,7 @@ describe('tool executor', () => {
         'search_memory',
         'suggest_next_steps',
         'update_plan',
+        'ask_user',
       ].sort(),
     );
     // While the user's switch is off (or without a search key), web tools are not offered.

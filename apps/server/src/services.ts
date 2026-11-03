@@ -39,6 +39,8 @@ import { SettingsRepo } from './repositories/settings.js';
 import { LoadTargetRepo, LoadTestRepo } from './repositories/loadTests.js';
 import { SpokenReplyRepo } from './repositories/spokenReplies.js';
 import { ResearchRepo } from './repositories/research.js';
+import { QuestionRepo } from './repositories/questions.js';
+import { QuestionService } from './questions/service.js';
 import { AuditRepo, ProviderCallRepo, UsageRepo } from './repositories/telemetry.js';
 import { ToolCallRepo } from './repositories/toolCalls.js';
 import { Redactor } from './security/redact.js';
@@ -152,6 +154,8 @@ export interface Services {
   voice: VoiceService;
   web: WebService;
   research: ResearchRepo;
+  questionRepo: QuestionRepo;
+  questions: QuestionService;
 }
 
 export interface ServiceOverrides {
@@ -312,6 +316,9 @@ export function createServices(
     ...(overrides.webPageFetch ? { pageFetch: overrides.webPageFetch } : {}),
   });
   const research = new ResearchRepo(db);
+  const questionRepo = new QuestionRepo(db);
+  // Questions wait for the user as long as approvals do.
+  const questions = new QuestionService(questionRepo, audit, config.approvalTtlMs);
 
   const runManager = new RunManager({
     provider,
@@ -332,6 +339,7 @@ export function createServices(
     browserFlows,
     web,
     research,
+    questions,
     savedActions,
     monitors,
     databases,
@@ -406,5 +414,7 @@ export function createServices(
     voice,
     web,
     research,
+    questionRepo,
+    questions,
   };
 }
