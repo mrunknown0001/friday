@@ -748,6 +748,17 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE projects ADD COLUMN external_folders TEXT NOT NULL DEFAULT '[]';
     `,
   },
+  {
+    version: 31,
+    name: 'listed_model_details',
+    up: `
+      -- What a provider's model list says about a model (7API reports both): its context window,
+      -- and whether it accepts images ('supported' / 'unsupported'). Used when the user has not
+      -- configured a window and no request or probe has shown otherwise.
+      ALTER TABLE model_capabilities ADD COLUMN listed_context_window INTEGER;
+      ALTER TABLE model_capabilities ADD COLUMN listed_image_input TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

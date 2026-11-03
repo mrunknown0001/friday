@@ -32,6 +32,7 @@ export function testConfig(overrides: Partial<AppConfig['provider']> = {}): AppC
       openai: { apiKey: null, baseUrl: 'https://api.openai.com/v1' },
       openrouter: { apiKey: null, baseUrl: 'https://openrouter.ai/api/v1' },
       gemini: { apiKey: null, baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+      sevenapi: { apiKey: null, baseUrl: 'https://7api.st/v1' },
     },
     server: {
       host: '127.0.0.1',

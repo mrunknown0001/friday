@@ -48,6 +48,8 @@ export interface OpenAICompatibleOptions {
   modelFilter?: (id: string) => boolean;
   /** The id to use for a listed model, when the list names them differently ("models/x"). */
   modelId?: (listed: string) => string;
+  /** The list reports each model's context window and image support (7API): pass them on. */
+  listedDetails?: boolean;
 }
 
 const modelListSchema = z.object({
@@ -60,6 +62,30 @@ const modelListSchema = z.object({
     }),
   ),
 });
+
+/**
+ * A list entry's context window and image support, when it reports them (7API's entries carry
+ * `context_window` / `context_length` and `input_modalities` / `supports_vision`). Implausible
+ * values are ignored, so a bad list can't set a window Friday would never accept from the user.
+ */
+export function listedDetails(
+  m: Record<string, unknown>,
+): Pick<ModelInfo, 'contextWindow' | 'imageInput'> {
+  const window = [m['context_window'], m['context_length']].find(
+    (v): v is number =>
+      typeof v === 'number' && Number.isInteger(v) && v >= 2_000 && v <= 10_000_000,
+  );
+  const modalities = m['input_modalities'];
+  const vision = Array.isArray(modalities)
+    ? modalities.includes('image')
+    : typeof m['supports_vision'] === 'boolean'
+      ? m['supports_vision']
+      : undefined;
+  return {
+    ...(window !== undefined ? { contextWindow: window } : {}),
+    ...(vision !== undefined ? { imageInput: vision } : {}),
+  };
+}
 
 const completionSchema = z.object({
   choices: z
@@ -92,7 +118,7 @@ const completionSchema = z.object({
 /** Marker used as the abort reason when our own idle timer fires. */
 class IdleTimeout extends Error {}
 
-/** A provider with an OpenAI-style chat completions API (NoTokenLimit, OpenAI, OpenRouter). */
+/** A provider with an OpenAI-style chat completions API (NoTokenLimit, OpenAI, OpenRouter, 7API). */
 export class OpenAICompatibleProvider implements LLMProvider {
   readonly id: ProviderId;
   private readonly client: OpenAI | null;
@@ -218,6 +244,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           ...(m.name ? { name: m.name } : {}),
           ...(m.description ? { description: m.description } : {}),
           ...(m.tier ? { tier: m.tier } : {}),
+          ...(this.opts.listedDetails ? listedDetails(m) : {}),
         }));
     } catch (raw) {
       const err = this.classify(raw);

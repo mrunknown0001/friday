@@ -60,6 +60,12 @@ export const OPENROUTER: ProviderSource = {
   gateway: true,
 };
 
+export const SEVENAPI: ProviderSource = {
+  label: '7API',
+  envVar: 'SEVENAPI_API_KEY',
+  gateway: true,
+};
+
 /** OpenAI's list also has embedding, speech, image and moderation models; Friday needs chat. */
 export function isOpenAIChatModel(id: string): boolean {
   return (
@@ -253,6 +259,23 @@ export function createProviders(config: AppConfig, d: ProviderDeps): ProviderRou
         ...(p.gemini.baseUrl === 'https://generativelanguage.googleapis.com/v1beta/openai'
           ? { modelFilter: isGeminiChatModel }
           : {}),
+      }),
+    },
+    {
+      id: '7api',
+      prefix: '7api:',
+      source: SEVENAPI,
+      baseUrl: p.sevenapi.baseUrl,
+      // OpenAI-compatible for every model (Claude included); its list reports each model's
+      // context window and image support.
+      provider: new OpenAICompatibleProvider({
+        ...common,
+        id: '7api',
+        source: SEVENAPI,
+        prefix: '7api:',
+        apiKey: p.sevenapi.apiKey,
+        baseUrl: p.sevenapi.baseUrl,
+        listedDetails: true,
       }),
     },
   ]);

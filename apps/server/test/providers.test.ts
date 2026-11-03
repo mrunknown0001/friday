@@ -606,6 +606,7 @@ describe('provider router', () => {
       ['openai', true, 'OPENAI_API_KEY'],
       ['openrouter', true, 'OPENROUTER_API_KEY'],
       ['gemini', false, 'GEMINI_API_KEY'],
+      ['7api', false, 'SEVENAPI_API_KEY'],
     ]);
     // A model whose provider has no key says which key is missing.
     await expect(

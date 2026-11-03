@@ -77,13 +77,17 @@ export class ModelSettings {
   }
 }
 
-/** Caches the model lists briefly so model validation doesn't hit the APIs every time. */
+/**
+ * Caches the model lists briefly so model validation doesn't hit the APIs every time. What a list
+ * says about each model (context window, images) goes to `onListed`.
+ */
 export class ModelCatalog {
   private cache: { at: number; list: ModelListDto } | null = null;
 
   constructor(
     private readonly provider: LLMProvider,
     private readonly ttlMs = 5 * 60_000,
+    private readonly onListed: (models: ModelInfo[]) => void = () => undefined,
   ) {}
 
   /** Every configured provider's models, and the providers whose list failed. */
@@ -94,6 +98,7 @@ export class ModelCatalog {
         ? await this.provider.listAll()
         : { models: await this.provider.listModels(), errors: [] };
     this.cache = { at: Date.now(), list };
+    this.onListed(list.models);
     return list;
   }
 
@@ -197,6 +202,7 @@ export function createServices(
     config.providers.openai.apiKey,
     config.providers.openrouter.apiKey,
     config.providers.gemini.apiKey,
+    config.providers.sevenapi.apiKey,
     config.web.tavilyApiKey,
   ]);
   const providerCalls = new ProviderCallRepo(db);
@@ -412,7 +418,7 @@ export function createServices(
     usage: new UsageRepo(db),
     audit,
     modelSettings,
-    catalog: new ModelCatalog(provider),
+    catalog: new ModelCatalog(provider, undefined, (models) => capabilities.saveListed(models)),
     runManager,
     voice,
     web,
