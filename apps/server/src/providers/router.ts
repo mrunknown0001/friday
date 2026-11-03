@@ -155,37 +155,44 @@ export function createProviders(config: AppConfig, d: ProviderDeps): ProviderRou
       id: 'anthropic',
       prefix: ANTHROPIC_PREFIX,
       source: ANTHROPIC,
-      baseUrl: 'https://api.anthropic.com',
-      provider: new AnthropicProvider({ ...common, apiKey: p.anthropic.apiKey }),
+      baseUrl: p.anthropic.baseUrl,
+      provider: new AnthropicProvider({
+        ...common,
+        apiKey: p.anthropic.apiKey,
+        baseUrl: p.anthropic.baseUrl,
+      }),
     },
     {
       id: 'openai',
       prefix: 'openai:',
       source: OPENAI,
-      baseUrl: 'https://api.openai.com/v1',
+      baseUrl: p.openai.baseUrl,
       provider: new OpenAICompatibleProvider({
         ...common,
         id: 'openai',
         source: OPENAI,
         prefix: 'openai:',
         apiKey: p.openai.apiKey,
-        baseUrl: 'https://api.openai.com/v1',
+        baseUrl: p.openai.baseUrl,
         maxTokensField: 'max_completion_tokens',
-        modelFilter: isOpenAIChatModel,
+        // Another server at OPENAI_BASE_URL names its models its own way: list them all.
+        ...(p.openai.baseUrl === 'https://api.openai.com/v1'
+          ? { modelFilter: isOpenAIChatModel }
+          : {}),
       }),
     },
     {
       id: 'openrouter',
       prefix: 'openrouter:',
       source: OPENROUTER,
-      baseUrl: 'https://openrouter.ai/api/v1',
+      baseUrl: p.openrouter.baseUrl,
       provider: new OpenAICompatibleProvider({
         ...common,
         id: 'openrouter',
         source: OPENROUTER,
         prefix: 'openrouter:',
         apiKey: p.openrouter.apiKey,
-        baseUrl: 'https://openrouter.ai/api/v1',
+        baseUrl: p.openrouter.baseUrl,
       }),
     },
   ]);

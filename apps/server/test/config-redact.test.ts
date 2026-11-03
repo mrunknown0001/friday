@@ -68,6 +68,29 @@ describe('loadConfig', () => {
       'http://localhost:8080/v1',
     );
   });
+
+  it('gives every provider an address: official by default, https or localhost when set', () => {
+    expect(loadConfig({}, '/r').providers).toEqual({
+      anthropic: { apiKey: null, baseUrl: 'https://api.anthropic.com' },
+      openai: { apiKey: null, baseUrl: 'https://api.openai.com/v1' },
+      openrouter: { apiKey: null, baseUrl: 'https://openrouter.ai/api/v1' },
+    });
+    const c = loadConfig(
+      {
+        ANTHROPIC_BASE_URL: 'https://llm-proxy.example.com/anthropic/',
+        OPENAI_BASE_URL: 'http://127.0.0.1:11434/v1',
+        OPENROUTER_BASE_URL: ' ',
+      },
+      '/r',
+    );
+    expect(c.providers.anthropic.baseUrl).toBe('https://llm-proxy.example.com/anthropic');
+    expect(c.providers.openai.baseUrl).toBe('http://127.0.0.1:11434/v1');
+    expect(c.providers.openrouter.baseUrl).toBe('https://openrouter.ai/api/v1');
+    for (const name of ['ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL', 'OPENROUTER_BASE_URL'])
+      expect(() => loadConfig({ [name]: 'http://proxy.example.com/v1' }, '/r')).toThrow(
+        new RegExp(name),
+      );
+  });
 });
 
 describe('Redactor', () => {

@@ -18,31 +18,39 @@ const optionalString = z
   .optional()
   .transform((v) => (v ? v : null));
 
-const envSchema = z.object({
-  NTL_API_KEY: optionalString,
-  NTL_MODEL: optionalString,
-  NTL_BASE_URL: z
+/** A provider's API address: https, or http only for a provider running on this machine. */
+const baseUrl = (name: string, def: string) =>
+  z
     .string()
     .trim()
     .optional()
-    .transform((v) => (v ? v : DEFAULT_BASE_URL))
+    .transform((v) => (v ? v : def))
     .pipe(
       z.url().refine((u) => {
         const parsed = new URL(u);
-        // Plain HTTP is only acceptable for a provider running on this machine.
         return (
           parsed.protocol === 'https:' ||
           (parsed.protocol === 'http:' &&
             ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname))
         );
-      }, 'NTL_BASE_URL must use https (http is allowed only for localhost)'),
-    ),
+      }, `${name} must use https (http is allowed only for localhost)`),
+    )
+    .transform((u) => u.replace(/\/+$/, ''));
+
+const envSchema = z.object({
+  NTL_API_KEY: optionalString,
+  NTL_MODEL: optionalString,
+  NTL_BASE_URL: baseUrl('NTL_BASE_URL', DEFAULT_BASE_URL),
   NTL_TIMEOUT_MS: intFromEnv(120_000, 1_000, 600_000),
   NTL_MAX_RETRIES: intFromEnv(2, 0, 5),
   /** Other model providers, used next to NoTokenLimit. Same rules as NTL_API_KEY. */
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
   OPENROUTER_API_KEY: optionalString,
+  /** Their API addresses: the official ones unless set (e.g. a proxy or a compatible gateway). */
+  ANTHROPIC_BASE_URL: baseUrl('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
+  OPENAI_BASE_URL: baseUrl('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+  OPENROUTER_BASE_URL: baseUrl('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
   /** Web search (Tavily). Read here like NTL_API_KEY; never stored, logged or sent to the UI. */
   TAVILY_API_KEY: optionalString,
   // 0 = any free port (the desktop app reads the bound port from the server).
@@ -76,11 +84,11 @@ export interface AppConfig {
     timeoutMs: number;
     maxRetries: number;
   };
-  /** Keys of the other providers (timeout and retries are shared with NoTokenLimit's). */
+  /** The other providers (timeout and retries are shared with NoTokenLimit's). */
   providers: {
-    anthropic: { apiKey: string | null };
-    openai: { apiKey: string | null };
-    openrouter: { apiKey: string | null };
+    anthropic: { apiKey: string | null; baseUrl: string };
+    openai: { apiKey: string | null; baseUrl: string };
+    openrouter: { apiKey: string | null; baseUrl: string };
   };
   server: {
     host: '127.0.0.1';
@@ -129,14 +137,14 @@ export function loadConfig(env: NodeJS.ProcessEnv, repoRoot: string): AppConfig 
     provider: {
       apiKey: e.NTL_API_KEY,
       envModel: e.NTL_MODEL,
-      baseUrl: e.NTL_BASE_URL.replace(/\/+$/, ''),
+      baseUrl: e.NTL_BASE_URL,
       timeoutMs: e.NTL_TIMEOUT_MS,
       maxRetries: e.NTL_MAX_RETRIES,
     },
     providers: {
-      anthropic: { apiKey: e.ANTHROPIC_API_KEY },
-      openai: { apiKey: e.OPENAI_API_KEY },
-      openrouter: { apiKey: e.OPENROUTER_API_KEY },
+      anthropic: { apiKey: e.ANTHROPIC_API_KEY, baseUrl: e.ANTHROPIC_BASE_URL },
+      openai: { apiKey: e.OPENAI_API_KEY, baseUrl: e.OPENAI_BASE_URL },
+      openrouter: { apiKey: e.OPENROUTER_API_KEY, baseUrl: e.OPENROUTER_BASE_URL },
     },
     server: {
       host: '127.0.0.1',
