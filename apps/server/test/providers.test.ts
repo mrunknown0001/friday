@@ -326,11 +326,9 @@ describe('Anthropic provider', () => {
 describe('provider router', () => {
   function router(handlers: Record<string, MockHandler>, keys: Partial<Record<string, string>>) {
     const config = testConfig({ apiKey: keys['notokenlimit'] ?? null });
-    config.providers = {
-      anthropic: { apiKey: keys['anthropic'] ?? null },
-      openai: { apiKey: keys['openai'] ?? null },
-      openrouter: { apiKey: keys['openrouter'] ?? null },
-    };
+    config.providers.anthropic.apiKey = keys['anthropic'] ?? null;
+    config.providers.openai.apiKey = keys['openai'] ?? null;
+    config.providers.openrouter.apiKey = keys['openrouter'] ?? null;
     const mock = mockFetch([
       (call, signal) => {
         const host = new URL(call.url).host;
@@ -400,6 +398,38 @@ describe('provider router', () => {
     // NoTokenLimit's hidden prompt is budgeted for its models only.
     expect(r.overheadTokens('claude-opus-5.5')).toBe(1_500);
     expect(r.overheadTokens('anthropic:claude-opus-5-5')).toBe(0);
+  });
+
+  it('calls a provider at the address set in .env', async () => {
+    const config = testConfig({ apiKey: null });
+    config.providers.anthropic = { apiKey: ANTHROPIC_KEY, baseUrl: 'https://proxy.test/anthropic' };
+    config.providers.openai = { apiKey: OPENAI_KEY, baseUrl: 'http://127.0.0.1:11434/v1' };
+    const mock = mockFetch([
+      (call, signal) =>
+        call.url.startsWith('https://proxy.test/')
+          ? anthropicStream(TOOL_TURN)
+          : call.url.endsWith('/models')
+            ? jsonResponse(200, { data: [{ id: 'llama3', object: 'model' }] })
+            : sseResponse(textChunks(['ok']), {}, signal),
+    ]);
+    const r = createProviders(config, {
+      redactor: new Redactor([ANTHROPIC_KEY, OPENAI_KEY]),
+      recorder: () => {},
+      fetch: mock.fetch,
+    });
+    const msg = [{ role: 'user' as const, content: 'hi' }];
+    await collect(r.streamChat({ model: 'anthropic:claude-sonnet-4-6', messages: msg }));
+    await collect(r.streamChat({ model: 'openai:llama3', messages: msg }));
+    expect(mock.calls.map((c) => c.url)).toEqual([
+      'https://proxy.test/anthropic/v1/messages',
+      'http://127.0.0.1:11434/v1/chat/completions',
+    ]);
+    expect(r.statuses().find((x) => x.id === 'anthropic')!.baseUrl).toBe(
+      'https://proxy.test/anthropic',
+    );
+    // Only OpenAI's own list is narrowed to its chat models.
+    const openai = (await r.listAll()).models.filter((m) => m.provider === 'openai');
+    expect(openai).toEqual([{ id: 'openai:llama3', provider: 'openai' }]);
   });
 
   it('lists every configured provider, reports one that fails, and skips the others', async () => {

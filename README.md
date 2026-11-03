@@ -807,10 +807,11 @@ models, grouped by provider:
 | ------------ | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | NoTokenLimit | `NTL_API_KEY`        | as NoTokenLimit lists them (`claude-sonnet-4.6`)                           | OpenAI-compatible API at `NTL_BASE_URL`                                        |
 | Anthropic    | `ANTHROPIC_API_KEY`  | `anthropic:` + Anthropic's id (`anthropic:claude-sonnet-4-6`)              | Messages API, with prompt caching of the system prompt, tools and conversation |
-| OpenAI       | `OPENAI_API_KEY`     | `openai:` + OpenAI's id (`openai:gpt-5`)                                   | Chat Completions; only chat models are listed                                  |
+| OpenAI       | `OPENAI_API_KEY`     | `openai:` + OpenAI's id (`openai:gpt-5`)                                   | Chat Completions; only chat models are listed (at the official address)        |
 | OpenRouter   | `OPENROUTER_API_KEY` | `openrouter:` + OpenRouter's id (`openrouter:anthropic/claude-sonnet-4.6`) | OpenAI-compatible API                                                          |
 
-Switching provider is just choosing another model; `NTL_MODEL` can name any of these ids as the default. Timeout and
+Switching provider is just choosing another model; `NTL_MODEL` can name any of these ids as the default. Each
+provider's address can be changed with its `*_BASE_URL` variable (for a proxy or a compatible gateway). Timeout and
 retries (`NTL_TIMEOUT_MS`, `NTL_MAX_RETRIES`) apply to all providers. When one provider's list can't be loaded (a
 wrong key, an outage), Settings says so under the list and still shows the others. Model capabilities, the context
 window and the prices in Usage are kept per model id, so the same model through two providers is configured
@@ -895,6 +896,9 @@ Partial, cancelled, and failed responses are kept for display but are never fed 
 | `ANTHROPIC_API_KEY`           | none                              | Anthropic's API (`anthropic:` models)                                   |
 | `OPENAI_API_KEY`              | none                              | OpenAI's API (`openai:` models)                                         |
 | `OPENROUTER_API_KEY`          | none                              | OpenRouter (`openrouter:` models)                                       |
+| `ANTHROPIC_BASE_URL`          | `https://api.anthropic.com`       | Change only for a proxy or compatible gateway; https (http: localhost)  |
+| `OPENAI_BASE_URL`             | `https://api.openai.com/v1`       | Same rules; a server other than OpenAI's lists all its models           |
+| `OPENROUTER_BASE_URL`         | `https://openrouter.ai/api/v1`    | Same rules                                                              |
 | `NTL_MODEL`                   | none                              | Default model; a model chosen in Settings takes precedence              |
 | `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1` | Must be HTTPS (plain HTTP is allowed only for localhost)                |
 | `NTL_TIMEOUT_MS`              | `120000`                          | Response-header and stream idle timeout, for every provider             |
