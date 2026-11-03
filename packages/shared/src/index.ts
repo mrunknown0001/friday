@@ -28,7 +28,7 @@ export interface ApiErrorBody {
 }
 
 /** Model providers Friday can use; each needs its own API key in the server's .env. */
-export type ProviderId = 'notokenlimit' | 'anthropic' | 'openai' | 'openrouter' | 'gemini';
+export type ProviderId = 'notokenlimit' | 'anthropic' | 'openai' | 'openrouter' | 'gemini' | '7api';
 
 export interface ModelInfo {
   /** NoTokenLimit models keep their plain id; other providers' are prefixed ("anthropic:…"). */
@@ -37,6 +37,10 @@ export interface ModelInfo {
   description?: string;
   tier?: string;
   provider?: ProviderId;
+  /** What the provider's own list says (7API reports these): context window in tokens. */
+  contextWindow?: number;
+  /** ...and whether the model accepts images. */
+  imageInput?: boolean;
 }
 
 /** A provider in Settings: whether its key is set (never the key itself). */
@@ -65,7 +69,7 @@ export interface ModelCapabilities {
   imageInput: CapabilityState;
   /** Context window in tokens. `contextWindowSource` says whether it was assumed or configured. */
   contextWindow: number;
-  contextWindowSource: 'assumed' | 'configured';
+  contextWindowSource: 'assumed' | 'listed' | 'configured';
   probedAt: string | null;
   notes: string | null;
 }

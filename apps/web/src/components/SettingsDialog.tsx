@@ -472,7 +472,13 @@ export function SettingsDialog({
               <Badge tone={CAP_TONE[caps.imageInput]}>{caps.imageInput}</Badge>
               <span className="ml-3 text-zinc-400">Context</span>
               <span className="font-mono text-zinc-200">{caps.contextWindow.toLocaleString()}</span>
-              <span className="text-xs text-zinc-500">({caps.contextWindowSource})</span>
+              <span className="text-xs text-zinc-500">
+                (
+                {caps.contextWindowSource === 'listed'
+                  ? 'from the model list'
+                  : caps.contextWindowSource}
+                )
+              </span>
             </div>
             <p className="mt-1 text-xs text-zinc-500">
               {caps.probedAt

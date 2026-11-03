@@ -1,7 +1,7 @@
 # Friday
 
 A local-first AI coding and DevOps assistant. Its models come from [NoTokenLimit](https://notokenlimit.com),
-[Anthropic](https://www.anthropic.com/api), [OpenAI](https://platform.openai.com), [OpenRouter](https://openrouter.ai) or
+[Anthropic](https://www.anthropic.com/api), [OpenAI](https://platform.openai.com), [OpenRouter](https://openrouter.ai), [7API](https://7api.st) or
 [Google Gemini](https://ai.google.dev), whichever you have a key for.
 
 **Current status: Phase 7 (desktop app and hardening).** Friday runs as a Linux desktop app or as a local web app. It works on authorized projects (read, edit, test, commit; each change
@@ -15,7 +15,7 @@ task ends with a verification report built from Friday's own records. See [docs/
 - **Desktop app:** 64-bit Linux, or WSL2 with WSLg. Nothing else; Node.js is built in.
 - **From source / web app:** Node.js ≥ 22.13 (tested on 22.23) and npm, on Linux, macOS or WSL2. Friday uses Node's
   built-in SQLite, so there are no native modules to compile.
-- An API key for at least one model provider: NoTokenLimit, Anthropic, OpenAI, OpenRouter or Gemini
+- An API key for at least one model provider: NoTokenLimit, Anthropic, OpenAI, OpenRouter, Gemini or 7API
 
 ## Desktop app
 
@@ -45,7 +45,7 @@ To try the desktop shell from a source checkout without packaging, run `npm run 
 
 On first launch Friday creates `~/.config/Friday/friday.env`, readable by you only. Use **Friday › Show Config File**
 (or **Settings › Show config file**), set the key of at least one provider (`NTL_API_KEY`, `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, `OPENROUTER_API_KEY` or `GEMINI_API_KEY`), save, then click **Restart server** in Settings
+`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY` or `SEVENAPI_API_KEY`), save, then click **Restart server** in Settings
 (or **Friday › Restart Server**). Pick a model and test the connection as described in [First run](#first-run).
 Never paste a key into the chat.
 
@@ -861,13 +861,14 @@ is absent. Everything Friday does read is sent to the provider of the model you 
 Friday uses every provider whose key is set in the config file, and the model list in Settings shows all of their
 models, grouped by provider:
 
-| Provider     | Key                  | Model ids in Friday                                                        | How Friday calls it                                                                   |
-| ------------ | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| NoTokenLimit | `NTL_API_KEY`        | as NoTokenLimit lists them (`claude-sonnet-4.6`)                           | OpenAI-compatible API at `NTL_BASE_URL`                                               |
-| Anthropic    | `ANTHROPIC_API_KEY`  | `anthropic:` + Anthropic's id (`anthropic:claude-sonnet-4-6`)              | Messages API, with prompt caching of the system prompt, tools and conversation        |
-| OpenAI       | `OPENAI_API_KEY`     | `openai:` + OpenAI's id (`openai:gpt-5`)                                   | Chat Completions; only chat models are listed (at the official address)               |
-| OpenRouter   | `OPENROUTER_API_KEY` | `openrouter:` + OpenRouter's id (`openrouter:anthropic/claude-sonnet-4.6`) | OpenAI-compatible API                                                                 |
-| Gemini       | `GEMINI_API_KEY`     | `gemini:` + Google's id (`gemini:gemini-2.5-pro`)                          | Google's OpenAI-compatible API; only chat models are listed (at the official address) |
+| Provider     | Key                  | Model ids in Friday                                                        | How Friday calls it                                                                          |
+| ------------ | -------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| NoTokenLimit | `NTL_API_KEY`        | as NoTokenLimit lists them (`claude-sonnet-4.6`)                           | OpenAI-compatible API at `NTL_BASE_URL`                                                      |
+| Anthropic    | `ANTHROPIC_API_KEY`  | `anthropic:` + Anthropic's id (`anthropic:claude-sonnet-4-6`)              | Messages API, with prompt caching of the system prompt, tools and conversation               |
+| OpenAI       | `OPENAI_API_KEY`     | `openai:` + OpenAI's id (`openai:gpt-5`)                                   | Chat Completions; only chat models are listed (at the official address)                      |
+| OpenRouter   | `OPENROUTER_API_KEY` | `openrouter:` + OpenRouter's id (`openrouter:anthropic/claude-sonnet-4.6`) | OpenAI-compatible API                                                                        |
+| Gemini       | `GEMINI_API_KEY`     | `gemini:` + Google's id (`gemini:gemini-2.5-pro`)                          | Google's OpenAI-compatible API; only chat models are listed (at the official address)        |
+| 7API         | `SEVENAPI_API_KEY`   | `7api:` + 7API's id (`7api:claude-sonnet-5-5`, `7api:glm-5.3`)             | OpenAI-compatible API for every model; its list's context windows and image support are used |
 
 Switching provider is just choosing another model; `NTL_MODEL` can name any of these ids as the default. Each
 provider's address can be changed with its `*_BASE_URL` variable (for a proxy or a compatible gateway). Timeout and
@@ -959,10 +960,12 @@ Partial, cancelled, and failed responses are kept for display but are never fed 
 | `OPENAI_API_KEY`              | none                                                      | OpenAI's API (`openai:` models)                                         |
 | `OPENROUTER_API_KEY`          | none                                                      | OpenRouter (`openrouter:` models)                                       |
 | `GEMINI_API_KEY`              | none                                                      | Google Gemini (`gemini:` models)                                        |
+| `SEVENAPI_API_KEY`            | none                                                      | 7API (`7api:` models)                                                   |
 | `ANTHROPIC_BASE_URL`          | `https://api.anthropic.com`                               | Change only for a proxy or compatible gateway; https (http: localhost)  |
 | `OPENAI_BASE_URL`             | `https://api.openai.com/v1`                               | Same rules; a server other than OpenAI's lists all its models           |
 | `OPENROUTER_BASE_URL`         | `https://openrouter.ai/api/v1`                            | Same rules                                                              |
 | `GEMINI_BASE_URL`             | `https://generativelanguage.googleapis.com/v1beta/openai` | Same rules                                                              |
+| `SEVENAPI_BASE_URL`           | `https://7api.st/v1`                                      | Same rules                                                              |
 | `NTL_MODEL`                   | none                                                      | Default model; a model chosen in Settings takes precedence              |
 | `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1`                         | Must be HTTPS (plain HTTP is allowed only for localhost)                |
 | `NTL_TIMEOUT_MS`              | `120000`                                                  | Response-header and stream idle timeout, for every provider             |

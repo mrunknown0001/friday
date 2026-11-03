@@ -14,7 +14,7 @@ const RETRYABLE: ReadonlySet<ProviderErrorKind> = new Set([
 export interface ProviderSource {
   label: string;
   envVar: string;
-  /** Passes requests on to other companies' models (NoTokenLimit, OpenRouter). */
+  /** Passes requests on to other companies' models (NoTokenLimit, OpenRouter, 7API). */
   gateway: boolean;
 }
 
@@ -27,7 +27,8 @@ export const NOTOKENLIMIT: ProviderSource = {
 /** No provider has a key at all. */
 export const NO_PROVIDER: ProviderSource = {
   label: 'No model provider',
-  envVar: 'NTL_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY or GEMINI_API_KEY',
+  envVar:
+    'NTL_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY or SEVENAPI_API_KEY',
   gateway: false,
 };
 

@@ -19,7 +19,7 @@ const DEFAULT_WINDOW = 32_000;
 export function assumedContextWindow(model: string): number {
   // "anthropic:claude-…" and "openrouter:anthropic/claude-…" are judged by the model's own name.
   const name = model
-    .replace(/^(anthropic|openai|openrouter|gemini):/, '')
+    .replace(/^(anthropic|openai|openrouter|gemini|7api):/, '')
     .replace(/^[\w.-]+\//, '');
   return ASSUMED_WINDOWS.find(([re]) => re.test(name))?.[1] ?? DEFAULT_WINDOW;
 }
