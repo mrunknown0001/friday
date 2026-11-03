@@ -133,7 +133,7 @@ export function Sidebar({
                 size="icon"
                 className="h-6 w-6"
                 aria-label={`Project settings for ${current.name}`}
-                title="Project settings: sandbox, code map, saved actions"
+                title="Project settings: sandbox, external folders, code map, saved actions"
                 onClick={onProjectSettings}
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />

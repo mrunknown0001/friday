@@ -739,6 +739,15 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX provider_calls_run ON provider_calls(run_id);
     `,
   },
+  {
+    version: 30,
+    name: 'external_folders',
+    up: `
+      -- Folders outside the project the user authorized for this project, a JSON array of
+      -- canonical absolute paths: readable by the agent, writes only through approvals.
+      ALTER TABLE projects ADD COLUMN external_folders TEXT NOT NULL DEFAULT '[]';
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

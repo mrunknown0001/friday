@@ -27,9 +27,13 @@ import { detectProject } from '../../workspace/detect.js';
 import { languageFor, loadFile } from '../../workspace/files.js';
 import {
   assertRootAvailable,
-  resolveInside,
+  MAX_EXTERNAL_FOLDERS,
+  resolveExternalFolder,
   resolveProjectRoot,
+  resolveRead,
+  shownPath,
   WorkspaceError,
+  workspaceOf,
 } from '../../workspace/paths.js';
 import { search } from '../../workspace/search.js';
 import { walk } from '../../workspace/walk.js';
@@ -234,24 +238,58 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     };
   });
 
-  // File explorer for the UI. Uses the same confinement rules as the agent's tools.
+  // ---- external folders (per project) ----
+
+  /**
+   * Replace the project's external folders. Adding one is the user's authorization for the agent
+   * to read it; writes there still go through an approval each.
+   */
+  app.put('/api/projects/:id/external-folders', async (req) => {
+    const { id } = parseInput(idParams, req.params);
+    const body = parseInput(
+      z.object({
+        folders: z.array(z.string().trim().min(1).max(4096)).max(MAX_EXTERNAL_FOLDERS),
+      }),
+      req.body,
+    );
+    const project = requireProject(id);
+    const folders: string[] = [];
+    for (const f of body.folders) {
+      const real = await guarded(() => resolveExternalFolder(f, project.rootPath, folders));
+      folders.push(real);
+    }
+    const before = project.externalFolders;
+    s.projects.setExternalFolders(id, folders);
+    const added = folders.filter((f) => !before.includes(f));
+    const removed = before.filter((f) => !folders.includes(f));
+    if (added.length || removed.length)
+      s.audit.record({
+        actor: 'user',
+        action: 'project_external_folders_changed',
+        details: { projectId: id, added, removed },
+      });
+    return toDto(s.projects.get(id)!);
+  });
+
+  // File explorer for the UI. Uses the same confinement rules as the agent's tools (external
+  // folders by absolute path).
   app.get('/api/projects/:id/tree', async (req) => {
     const { id } = parseInput(idParams, req.params);
     const q = parseInput(z.object({ path: z.string().max(4096).default('.') }), req.query);
     const project = requireProject(id);
     return guarded(async () => {
       await assertRootAvailable(project.rootPath);
-      const target = await resolveInside(project.rootPath, q.path);
+      const target = await resolveRead(workspaceOf(project), q.path);
       if (!(await fs.stat(target.abs)).isDirectory()) {
         throw new WorkspaceError('not_a_directory', 'Not a directory.');
       }
-      const { entries, truncated } = await walk(project.rootPath, target.abs, {
+      const { entries, truncated } = await walk(target.root, target.abs, {
         maxDepth: 1,
         maxEntries: 500,
       });
       const out: TreeEntryDto[] = entries.map((e) => ({
         name: e.name,
-        path: e.rel,
+        path: shownPath(target, e.rel),
         type: e.type,
         size: e.size,
       }));
@@ -265,7 +303,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     const project = requireProject(id);
     return guarded(async () => {
       await assertRootAvailable(project.rootPath);
-      const target = await resolveInside(project.rootPath, q.path);
+      const target = await resolveRead(workspaceOf(project), q.path);
       const file = await loadFile(target.abs, VIEWER_MAX_BYTES);
       return {
         path: target.rel,
@@ -321,7 +359,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     const project = requireProject(id);
     const { data, name } = await guarded(async () => {
       await assertRootAvailable(project.rootPath);
-      const target = await resolveInside(project.rootPath, q.path);
+      const target = await resolveRead(workspaceOf(project), q.path);
       if (!OPENABLE.test(target.rel))
         throw new WorkspaceError('unsupported', 'Only documents and images can be downloaded.');
       const stat = await fs.stat(target.abs);
@@ -353,7 +391,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
       );
     const abs = await guarded(async () => {
       await assertRootAvailable(project.rootPath);
-      const target = await resolveInside(project.rootPath, body.path);
+      const target = await resolveRead(workspaceOf(project), body.path);
       if (!DOCUMENTS.test(target.rel))
         throw new WorkspaceError(
           'unsupported',
@@ -383,7 +421,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     const project = requireProject(id);
     const { data, mime } = await guarded(async () => {
       await assertRootAvailable(project.rootPath);
-      const target = await resolveInside(project.rootPath, q.path);
+      const target = await resolveRead(workspaceOf(project), q.path);
       const stat = await fs.stat(target.abs);
       if (!stat.isFile()) throw new WorkspaceError('not_a_file', 'Not a file.');
       if (stat.size > RAW_IMAGE_MAX_BYTES)

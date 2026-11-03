@@ -5,6 +5,7 @@ import { buildRunReport, taskRunIds } from '../../reports/runReport.js';
 import { toRunDto } from '../../repositories/runs.js';
 import { toFileChangeDto } from '../../repositories/fileChanges.js';
 import type { Services } from '../../services.js';
+import { workspaceOf } from '../../workspace/paths.js';
 import { HttpError } from '../errors.js';
 import { parseInput } from '../validation.js';
 
@@ -52,7 +53,7 @@ export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
     const project = s.projects.get(change.projectId);
     if (!project)
       throw new HttpError(409, 'project_removed', 'The project for this change was removed.');
-    await revertFileChange(change, project.rootPath);
+    await revertFileChange(change, workspaceOf(project));
     s.codeMap.invalidate(project.id);
     s.fileChanges.markReverted(id);
     const runId = change.approvalId ? s.approvalRepo.get(change.approvalId)?.runId : null;
@@ -104,7 +105,7 @@ export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
     if (!project)
       throw new HttpError(409, 'project_removed', 'The project for this change was removed.');
     const reverted: string[] = [];
-    await revertChanges(pending, project.rootPath, (c) => {
+    await revertChanges(pending, workspaceOf(project), (c) => {
       s.fileChanges.markReverted(c.id);
       reverted.push(c.path);
     });

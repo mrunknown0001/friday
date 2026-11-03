@@ -117,6 +117,12 @@ npm start
    "No project (chat only)" conversations have no file access.
 3. The side panel shows the agent's plan, the files changed in this conversation (each with **Undo**), and a
    read-only file explorer.
+4. To let Friday read a folder outside the project (a shared library, another repository, docs), add it under
+   **Project settings → External folders**. Friday reads it by absolute path with the same rules as the project
+   (no credential files, no `.git`), it shows under the project's files in the side panel, and every change Friday
+   proposes there needs its own approval: task permissions never cover it. Commands, git, tests, the code map and
+   project search stay in the project. Up to 10 folders; the same broad locations are refused, and a folder may not
+   overlap the project. Task worktrees get their parent's folders.
 
 ## Approvals
 
@@ -335,7 +341,7 @@ conversation, the change list with **Undo**, the verification report, and the au
 box shows how much of it is used and has **Revoke**.
 
 Limits: the current task only (it ends when the run ends), at most 40 actions and 60 minutes (20 and 30 by default).
-Never covered: deleting or moving files, credential files, git commits and branches, remote/SSH commands,
+Never covered: deleting or moving files, files in external folders, credential files, git commits and branches, remote/SSH commands,
 production confirmations, shell scripts, commands Friday rates high-risk or network-using, and anything not listed.
 
 ### Notifications

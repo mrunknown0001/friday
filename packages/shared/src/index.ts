@@ -191,6 +191,11 @@ export interface ProjectDto {
   sandbox: SandboxSettings | null;
   /** Set when this project is a git worktree Friday made for one task. */
   worktree: WorktreeInfo | null;
+  /**
+   * Folders outside the project the user authorized: the agent reads them by absolute path, and
+   * every write there needs its own approval.
+   */
+  externalFolders: string[];
 }
 
 /** A git worktree for one task: its own folder and branch, made from the parent project's HEAD. */

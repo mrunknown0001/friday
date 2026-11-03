@@ -133,7 +133,13 @@ export class WorktreeManager {
       outcome: null,
       createdAt: new Date().toISOString(),
     };
-    return this.projects.createWorktree(`${parent.name} · ${branch}`, root, info, parent.sandbox);
+    return this.projects.createWorktree(
+      `${parent.name} · ${branch}`,
+      root,
+      info,
+      parent.sandbox,
+      parent.externalFolders,
+    );
   }
 
   private active(project: ProjectRecord): { info: WorktreeInfo; parent: ProjectRecord } {

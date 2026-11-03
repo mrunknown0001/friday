@@ -132,7 +132,9 @@ describe('live preview', () => {
     const file = vi.spyOn(api, 'projectFile');
     render(
       <SidePanel
-        project={{ id: 'p1', name: 'shop', rootPath: '/x', available: true } as never}
+        project={
+          { id: 'p1', name: 'shop', rootPath: '/x', available: true, externalFolders: [] } as never
+        }
         plan={null}
         changes={[]}
         onRevert={vi.fn()}

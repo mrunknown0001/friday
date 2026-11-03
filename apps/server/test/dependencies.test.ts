@@ -417,6 +417,7 @@ function ctx(root: string, changes: AppliedFileChange[] = []): ToolContext {
       lastOpenedAt: null,
       sandbox: null,
       worktree: null,
+      externalFolders: [],
     },
     sessionId: 's',
     runId: 'r',

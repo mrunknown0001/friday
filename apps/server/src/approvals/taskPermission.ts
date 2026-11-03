@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { TaskPermissionDto } from '@friday/shared';
 import type { Proposal } from '../tools/types.js';
 
@@ -53,8 +54,12 @@ export function toDto(p: TaskPermission, now = Date.now()): TaskPermissionDto {
   };
 }
 
-/** A file entry covers the path itself, or everything below it when it ends in "/". */
+/**
+ * A file entry covers the path itself, or everything below it when it ends in "/". Paths in an
+ * external folder (absolute) are never covered: every write outside the project is asked.
+ */
 export function fileCovered(files: string[], rel: string): boolean {
+  if (path.isAbsolute(rel)) return false;
   return files.some((f) => (f.endsWith('/') ? rel.startsWith(f) : rel === f));
 }
 
@@ -77,7 +82,12 @@ export function similarScope(
   if (proposal.risk === 'high' || proposal.risk === 'critical') return null;
   const d = proposal.details;
   if (FILE_TOOLS.has(toolName) && d.kind === 'file_change') {
-    if (!d.changes.length || d.changes.some((c) => c.change !== 'create' && c.change !== 'modify'))
+    if (
+      !d.changes.length ||
+      d.changes.some(
+        (c) => (c.change !== 'create' && c.change !== 'modify') || path.isAbsolute(c.path),
+      )
+    )
       return null;
     return { files: d.changes.map((c) => c.path), commands: [], sites: [] };
   }

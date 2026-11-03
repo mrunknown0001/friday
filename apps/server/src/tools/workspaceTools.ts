@@ -2,22 +2,32 @@ import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { detectProject } from '../workspace/detect.js';
 import { languageFor, loadFile, sliceLines, splitLines } from '../workspace/files.js';
-import { assertRootAvailable, resolveInside, WorkspaceError } from '../workspace/paths.js';
+import {
+  assertRootAvailable,
+  resolveRead,
+  shownPath,
+  WorkspaceError,
+  workspaceOf,
+  type Workspace,
+} from '../workspace/paths.js';
 import { formatMatches, globToRegExp, search } from '../workspace/search.js';
 import { formatSize, walk } from '../workspace/walk.js';
 import { defineTool, type ToolContext } from './types.js';
 
-async function projectRoot(ctx: ToolContext): Promise<string> {
+/** The project and its external folders (paths in those are given absolute). */
+async function workspace(ctx: ToolContext): Promise<Workspace> {
   if (!ctx.project)
     throw new WorkspaceError('unsupported', 'This conversation is not attached to a project.');
   await assertRootAvailable(ctx.project.rootPath);
-  return ctx.project.rootPath;
+  return workspaceOf(ctx.project);
 }
 
 const relPath = z
   .string()
   .max(1024)
-  .describe('Path relative to the project root (forward slashes). Use "." for the root.');
+  .describe(
+    'Path relative to the project root (forward slashes); "." for the root. For a file in one of the project\'s external folders, its absolute path.',
+  );
 
 export const inspectProject = defineTool({
   name: 'inspect_project',
@@ -29,7 +39,7 @@ export const inspectProject = defineTool({
   schema: z.object({}),
   describeCall: () => 'project overview',
   async execute(_args, ctx) {
-    const root = await projectRoot(ctx);
+    const { root } = await workspace(ctx);
     const d = await detectProject(root);
     const lines = [
       `Project: ${ctx.project!.name}`,
@@ -65,12 +75,11 @@ export const listDirectory = defineTool({
   }),
   describeCall: (a) => `${a.path ?? '.'} (depth ${a.depth ?? 2})`,
   async execute(args, ctx) {
-    const root = await projectRoot(ctx);
-    const target = await resolveInside(root, args.path);
+    const target = await resolveRead(await workspace(ctx), args.path);
     const stat = await fs.stat(target.abs);
     if (!stat.isDirectory())
       throw new WorkspaceError('not_a_directory', `"${target.rel}" is a file; use read_file.`);
-    const { entries, truncated } = await walk(root, target.abs, {
+    const { entries, truncated } = await walk(target.root, target.abs, {
       maxDepth: args.depth,
       maxEntries: args.max_entries,
       signal: ctx.signal,
@@ -113,8 +122,7 @@ export const readFile = defineTool({
   describeCall: (a) =>
     a.start_line || a.end_line ? `${a.path}:${a.start_line ?? 1}-${a.end_line ?? ''}` : a.path,
   async execute(args, ctx) {
-    const root = await projectRoot(ctx);
-    const target = await resolveInside(root, args.path);
+    const target = await resolveRead(await workspace(ctx), args.path);
     const file = await loadFile(target.abs);
     if (file.tooLarge) {
       throw new WorkspaceError(
@@ -159,8 +167,7 @@ export const fileInfo = defineTool({
   schema: z.object({ path: relPath }),
   describeCall: (a) => a.path,
   async execute(args, ctx) {
-    const root = await projectRoot(ctx);
-    const target = await resolveInside(root, args.path);
+    const target = await resolveRead(await workspace(ctx), args.path);
     const stat = await fs.stat(target.abs);
     if (stat.isDirectory()) {
       return {
@@ -208,9 +215,8 @@ export const searchCode = defineTool({
   describeCall: (a) =>
     `"${a.query}"${a.path && a.path !== '.' ? ` in ${a.path}` : ''}${a.glob ? ` (${a.glob})` : ''}`,
   async execute(args, ctx) {
-    const root = await projectRoot(ctx);
-    const target = await resolveInside(root, args.path);
-    const result = await search(root, ctx.env.ripgrep, {
+    const target = await resolveRead(await workspace(ctx), args.path);
+    const found = await search(target.root, ctx.env.ripgrep, {
       query: args.query,
       regex: args.regex,
       caseSensitive: args.case_sensitive,
@@ -219,6 +225,10 @@ export const searchCode = defineTool({
       maxResults: args.max_results,
       signal: ctx.signal,
     });
+    const result = {
+      ...found,
+      matches: found.matches.map((m) => ({ ...m, path: shownPath(target, m.path) })),
+    };
     const files = new Set(result.matches.map((m) => m.path)).size;
     if (result.matches.length === 0) {
       return { content: `No matches for "${args.query}" in ${target.rel}.`, summary: 'no matches' };
@@ -248,9 +258,8 @@ export const findFiles = defineTool({
   }),
   describeCall: (a) => a.pattern,
   async execute(args, ctx) {
-    const root = await projectRoot(ctx);
-    const target = await resolveInside(root, args.path);
-    const { entries, truncated: walkTruncated } = await walk(root, target.abs, {
+    const target = await resolveRead(await workspace(ctx), args.path);
+    const { entries, truncated: walkTruncated } = await walk(target.root, target.abs, {
       maxDepth: 64,
       maxEntries: 20_000,
       includeDirs: false,
@@ -269,7 +278,7 @@ export const findFiles = defineTool({
     if (shown.length === 0)
       return { content: `No files matching "${args.pattern}".`, summary: 'no files' };
     return {
-      content: `${shown.map((e) => `${e.rel} (${formatSize(e.size)})`).join('\n')}${truncated ? `\n[truncated: ${hits.length} matches shown ${shown.length}]` : ''}`,
+      content: `${shown.map((e) => `${shownPath(target, e.rel)} (${formatSize(e.size)})`).join('\n')}${truncated ? `\n[truncated: ${hits.length} matches shown ${shown.length}]` : ''}`,
       summary: `${hits.length} files${truncated ? ' (truncated)' : ''}`,
       truncated,
     };
