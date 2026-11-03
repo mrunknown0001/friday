@@ -1,8 +1,8 @@
 # Friday
 
 A local-first AI coding and DevOps assistant. Its models come from [NoTokenLimit](https://notokenlimit.com),
-[Anthropic](https://www.anthropic.com/api), [OpenAI](https://platform.openai.com) or [OpenRouter](https://openrouter.ai),
-whichever you have a key for.
+[Anthropic](https://www.anthropic.com/api), [OpenAI](https://platform.openai.com), [OpenRouter](https://openrouter.ai) or
+[Google Gemini](https://ai.google.dev), whichever you have a key for.
 
 **Current status: Phase 7 (desktop app and hardening).** Friday runs as a Linux desktop app or as a local web app. It works on authorized projects (read, edit, test, commit; each change
 approved by you) and on servers (diagnostics, logs, Docker, deployment plans, approved SSH commands with production
@@ -15,7 +15,7 @@ task ends with a verification report built from Friday's own records. See [docs/
 - **Desktop app:** 64-bit Linux, or WSL2 with WSLg. Nothing else; Node.js is built in.
 - **From source / web app:** Node.js ≥ 22.13 (tested on 22.23) and npm, on Linux, macOS or WSL2. Friday uses Node's
   built-in SQLite, so there are no native modules to compile.
-- An API key for at least one model provider: NoTokenLimit, Anthropic, OpenAI or OpenRouter
+- An API key for at least one model provider: NoTokenLimit, Anthropic, OpenAI, OpenRouter or Gemini
 
 ## Desktop app
 
@@ -45,7 +45,7 @@ To try the desktop shell from a source checkout without packaging, run `npm run 
 
 On first launch Friday creates `~/.config/Friday/friday.env`, readable by you only. Use **Friday › Show Config File**
 (or **Settings › Show config file**), set the key of at least one provider (`NTL_API_KEY`, `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY` or `OPENROUTER_API_KEY`), save, then click **Restart server** in Settings
+`OPENAI_API_KEY`, `OPENROUTER_API_KEY` or `GEMINI_API_KEY`), save, then click **Restart server** in Settings
 (or **Friday › Restart Server**). Pick a model and test the connection as described in [First run](#first-run).
 Never paste a key into the chat.
 
@@ -803,12 +803,13 @@ is absent. Everything Friday does read is sent to the provider of the model you 
 Friday uses every provider whose key is set in the config file, and the model list in Settings shows all of their
 models, grouped by provider:
 
-| Provider     | Key                  | Model ids in Friday                                                        | How Friday calls it                                                            |
-| ------------ | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| NoTokenLimit | `NTL_API_KEY`        | as NoTokenLimit lists them (`claude-sonnet-4.6`)                           | OpenAI-compatible API at `NTL_BASE_URL`                                        |
-| Anthropic    | `ANTHROPIC_API_KEY`  | `anthropic:` + Anthropic's id (`anthropic:claude-sonnet-4-6`)              | Messages API, with prompt caching of the system prompt, tools and conversation |
-| OpenAI       | `OPENAI_API_KEY`     | `openai:` + OpenAI's id (`openai:gpt-5`)                                   | Chat Completions; only chat models are listed (at the official address)        |
-| OpenRouter   | `OPENROUTER_API_KEY` | `openrouter:` + OpenRouter's id (`openrouter:anthropic/claude-sonnet-4.6`) | OpenAI-compatible API                                                          |
+| Provider     | Key                  | Model ids in Friday                                                        | How Friday calls it                                                                   |
+| ------------ | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| NoTokenLimit | `NTL_API_KEY`        | as NoTokenLimit lists them (`claude-sonnet-4.6`)                           | OpenAI-compatible API at `NTL_BASE_URL`                                               |
+| Anthropic    | `ANTHROPIC_API_KEY`  | `anthropic:` + Anthropic's id (`anthropic:claude-sonnet-4-6`)              | Messages API, with prompt caching of the system prompt, tools and conversation        |
+| OpenAI       | `OPENAI_API_KEY`     | `openai:` + OpenAI's id (`openai:gpt-5`)                                   | Chat Completions; only chat models are listed (at the official address)               |
+| OpenRouter   | `OPENROUTER_API_KEY` | `openrouter:` + OpenRouter's id (`openrouter:anthropic/claude-sonnet-4.6`) | OpenAI-compatible API                                                                 |
+| Gemini       | `GEMINI_API_KEY`     | `gemini:` + Google's id (`gemini:gemini-2.5-pro`)                          | Google's OpenAI-compatible API; only chat models are listed (at the official address) |
 
 Switching provider is just choosing another model; `NTL_MODEL` can name any of these ids as the default. Each
 provider's address can be changed with its `*_BASE_URL` variable (for a proxy or a compatible gateway). Timeout and
@@ -890,32 +891,34 @@ Partial, cancelled, and failed responses are kept for display but are never fed 
 
 ## Configuration
 
-| Variable                      | Default                           | Notes                                                                   |
-| ----------------------------- | --------------------------------- | ----------------------------------------------------------------------- |
-| `NTL_API_KEY`                 | none                              | NoTokenLimit; at least one provider key is needed                       |
-| `ANTHROPIC_API_KEY`           | none                              | Anthropic's API (`anthropic:` models)                                   |
-| `OPENAI_API_KEY`              | none                              | OpenAI's API (`openai:` models)                                         |
-| `OPENROUTER_API_KEY`          | none                              | OpenRouter (`openrouter:` models)                                       |
-| `ANTHROPIC_BASE_URL`          | `https://api.anthropic.com`       | Change only for a proxy or compatible gateway; https (http: localhost)  |
-| `OPENAI_BASE_URL`             | `https://api.openai.com/v1`       | Same rules; a server other than OpenAI's lists all its models           |
-| `OPENROUTER_BASE_URL`         | `https://openrouter.ai/api/v1`    | Same rules                                                              |
-| `NTL_MODEL`                   | none                              | Default model; a model chosen in Settings takes precedence              |
-| `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1` | Must be HTTPS (plain HTTP is allowed only for localhost)                |
-| `NTL_TIMEOUT_MS`              | `120000`                          | Response-header and stream idle timeout, for every provider             |
-| `NTL_MAX_RETRIES`             | `2`                               | Retries of transient errors (429, 5xx, network, timeout), all providers |
-| `TAVILY_API_KEY`              | none                              | Web search and deep research; reading pages works without it            |
-| `FRIDAY_PORT`                 | `4317`                            | The server always binds to `127.0.0.1`                                  |
-| `FRIDAY_WEB_PORT`             | `5173`                            | Vite dev server port (`npm run dev` only)                               |
-| `FRIDAY_DATA_DIR`             | `./.data`                         | SQLite location (desktop: `~/.config/Friday/data`)                      |
-| `FRIDAY_ENV_FILE`             | `./.env`                          | File the keys and settings are read from (desktop: `friday.env`)        |
-| `FRIDAY_WEB_DIST`             | `apps/web/dist`                   | Built UI the server serves                                              |
-| `FRIDAY_AGENT_MAX_ITERATIONS` | `20`                              | Model turns per request before the run pauses as `blocked`              |
-| `FRIDAY_AGENT_MAX_TOOL_CALLS` | `40`                              | Tool calls per request before the run pauses as `blocked`               |
-| `FRIDAY_TOOL_TIMEOUT_MS`      | `30000`                           | Per-tool-call timeout                                                   |
-| `FRIDAY_TOOL_OUTPUT_CHARS`    | `20000`                           | Maximum characters of one tool result sent to the model                 |
-| SSH known hosts               | `<data dir>/ssh/`                 | Per-host files built from the keys you trusted                          |
-| `FRIDAY_APPROVAL_TTL_MS`      | `900000`                          | How long an approval request stays valid (15 minutes)                   |
-| `FRIDAY_GH`                   | `gh` on `PATH`                    | GitHub CLI used to open pull requests                                   |
+| Variable                      | Default                                                   | Notes                                                                   |
+| ----------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `NTL_API_KEY`                 | none                                                      | NoTokenLimit; at least one provider key is needed                       |
+| `ANTHROPIC_API_KEY`           | none                                                      | Anthropic's API (`anthropic:` models)                                   |
+| `OPENAI_API_KEY`              | none                                                      | OpenAI's API (`openai:` models)                                         |
+| `OPENROUTER_API_KEY`          | none                                                      | OpenRouter (`openrouter:` models)                                       |
+| `GEMINI_API_KEY`              | none                                                      | Google Gemini (`gemini:` models)                                        |
+| `ANTHROPIC_BASE_URL`          | `https://api.anthropic.com`                               | Change only for a proxy or compatible gateway; https (http: localhost)  |
+| `OPENAI_BASE_URL`             | `https://api.openai.com/v1`                               | Same rules; a server other than OpenAI's lists all its models           |
+| `OPENROUTER_BASE_URL`         | `https://openrouter.ai/api/v1`                            | Same rules                                                              |
+| `GEMINI_BASE_URL`             | `https://generativelanguage.googleapis.com/v1beta/openai` | Same rules                                                              |
+| `NTL_MODEL`                   | none                                                      | Default model; a model chosen in Settings takes precedence              |
+| `NTL_BASE_URL`                | `https://notokenlimit.com/api/v1`                         | Must be HTTPS (plain HTTP is allowed only for localhost)                |
+| `NTL_TIMEOUT_MS`              | `120000`                                                  | Response-header and stream idle timeout, for every provider             |
+| `NTL_MAX_RETRIES`             | `2`                                                       | Retries of transient errors (429, 5xx, network, timeout), all providers |
+| `TAVILY_API_KEY`              | none                                                      | Web search and deep research; reading pages works without it            |
+| `FRIDAY_PORT`                 | `4317`                                                    | The server always binds to `127.0.0.1`                                  |
+| `FRIDAY_WEB_PORT`             | `5173`                                                    | Vite dev server port (`npm run dev` only)                               |
+| `FRIDAY_DATA_DIR`             | `./.data`                                                 | SQLite location (desktop: `~/.config/Friday/data`)                      |
+| `FRIDAY_ENV_FILE`             | `./.env`                                                  | File the keys and settings are read from (desktop: `friday.env`)        |
+| `FRIDAY_WEB_DIST`             | `apps/web/dist`                                           | Built UI the server serves                                              |
+| `FRIDAY_AGENT_MAX_ITERATIONS` | `20`                                                      | Model turns per request before the run pauses as `blocked`              |
+| `FRIDAY_AGENT_MAX_TOOL_CALLS` | `40`                                                      | Tool calls per request before the run pauses as `blocked`               |
+| `FRIDAY_TOOL_TIMEOUT_MS`      | `30000`                                                   | Per-tool-call timeout                                                   |
+| `FRIDAY_TOOL_OUTPUT_CHARS`    | `20000`                                                   | Maximum characters of one tool result sent to the model                 |
+| SSH known hosts               | `<data dir>/ssh/`                                         | Per-host files built from the keys you trusted                          |
+| `FRIDAY_APPROVAL_TTL_MS`      | `900000`                                                  | How long an approval request stays valid (15 minutes)                   |
+| `FRIDAY_GH`                   | `gh` on `PATH`                                            | GitHub CLI used to open pull requests                                   |
 
 ## Layout
 

@@ -4,7 +4,12 @@ import { buildApp } from '../src/app.js';
 import { AnthropicProvider } from '../src/providers/anthropic.js';
 import { assumedContextWindow } from '../src/providers/capabilities.js';
 import { ProviderError } from '../src/providers/errors.js';
-import { createProviders, isOpenAIChatModel, ProviderRouter } from '../src/providers/router.js';
+import {
+  createProviders,
+  isGeminiChatModel,
+  isOpenAIChatModel,
+  ProviderRouter,
+} from '../src/providers/router.js';
 import type { ProviderCallRecord, StreamEvent } from '../src/providers/types.js';
 import { Redactor } from '../src/security/redact.js';
 import {
@@ -400,6 +405,82 @@ describe('provider router', () => {
     expect(r.overheadTokens('anthropic:claude-opus-5-5')).toBe(0);
   });
 
+  it('serves Gemini through its OpenAI-compatible API', async () => {
+    const GEMINI_KEY = 'AIzaSyFridayTest0123456789abcdefghijklm';
+    const config = testConfig({ apiKey: null });
+    config.providers.gemini.apiKey = GEMINI_KEY;
+    const mock = mockFetch([
+      () =>
+        jsonResponse(200, {
+          object: 'list',
+          data: [
+            { id: 'models/gemini-2.5-pro', object: 'model', owned_by: 'google' },
+            { id: 'models/text-embedding-004', object: 'model' },
+            { id: 'models/imagen-4.0-generate-001', object: 'model' },
+            { id: 'models/gemini-2.5-flash-preview-tts', object: 'model' },
+            { id: 'models/gemma-3-27b-it', object: 'model' },
+          ],
+        }),
+      (_c, signal) => sseResponse(textChunks(['hi']), {}, signal),
+      // The chat endpoint answers errors with a list, as Google's API really does.
+      () =>
+        new Response(
+          JSON.stringify([
+            {
+              error: {
+                code: 400,
+                message: 'Please pass a valid API key',
+                status: 'INVALID_ARGUMENT',
+              },
+            },
+          ]),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
+    ]);
+    const r = createProviders(config, {
+      redactor: new Redactor([GEMINI_KEY]),
+      recorder: () => {},
+      fetch: mock.fetch,
+      retryBaseDelayMs: 1,
+      retryMaxDelayMs: 5,
+    });
+    expect((await r.listAll()).models).toEqual([
+      { id: 'gemini:gemini-2.5-pro', provider: 'gemini' },
+      { id: 'gemini:gemma-3-27b-it', provider: 'gemini' },
+    ]);
+    const events = await collect(
+      r.streamChat({
+        model: 'gemini:gemini-2.5-pro',
+        messages: [{ role: 'user', content: 'hi' }],
+        maxOutputTokens: 64,
+      }),
+    );
+    expect(events[0]).toEqual({ type: 'text', delta: 'hi' });
+    const chat = mock.calls[1]!;
+    expect(chat.url).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    );
+    expect(chat.body).toMatchObject({ model: 'gemini-2.5-pro', max_tokens: 64 });
+    expect(chat.headers.get('authorization')).toBe(`Bearer ${GEMINI_KEY}`);
+
+    const err = (await r
+      .complete({ model: 'gemini:gemini-2.5-pro', messages: [{ role: 'user', content: 'hi' }] })
+      .catch((e: unknown) => e)) as ProviderError;
+    expect(err.kind).toBe('auth');
+    expect(err.message).toBe(
+      'Gemini rejected the API key. Check GEMINI_API_KEY. (Please pass a valid API key)',
+    );
+    expect(r.statuses().find((x) => x.id === 'gemini')).toEqual({
+      id: 'gemini',
+      label: 'Gemini',
+      configured: true,
+      envVar: 'GEMINI_API_KEY',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    });
+    expect(isGeminiChatModel('gemini-2.5-flash-image')).toBe(false);
+    expect(assumedContextWindow('gemini:gemini-2.5-pro')).toBe(900_000);
+  });
+
   it('calls a provider at the address set in .env', async () => {
     const config = testConfig({ apiKey: null });
     config.providers.anthropic = { apiKey: ANTHROPIC_KEY, baseUrl: 'https://proxy.test/anthropic' };
@@ -477,6 +558,7 @@ describe('provider router', () => {
       ['anthropic', false, 'ANTHROPIC_API_KEY'],
       ['openai', true, 'OPENAI_API_KEY'],
       ['openrouter', true, 'OPENROUTER_API_KEY'],
+      ['gemini', false, 'GEMINI_API_KEY'],
     ]);
     // A model whose provider has no key says which key is missing.
     await expect(

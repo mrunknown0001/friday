@@ -15,6 +15,45 @@ import type {
 } from './types.js';
 
 export const OPENAI: ProviderSource = { label: 'OpenAI', envVar: 'OPENAI_API_KEY', gateway: false };
+export const GEMINI: ProviderSource = {
+  label: 'Gemini',
+  envVar: 'GEMINI_API_KEY',
+  gateway: false,
+};
+
+/** Gemini's list also has embedding, image, video and audio models; Friday needs chat. */
+export function isGeminiChatModel(id: string): boolean {
+  return (
+    /^(gemini|gemma)/.test(id) &&
+    !/(embedding|imagen|veo|aqa|tts|image|audio|live|robotics|computer-use)/.test(id)
+  );
+}
+
+/**
+ * Gemini's chat endpoint answers errors with a list (`[{"error": {...}}]`), which the OpenAI SDK
+ * can't read; pass on the first entry so the error says what went wrong.
+ */
+export function unwrapListErrors(f: typeof fetch): typeof fetch {
+  return async (input, init) => {
+    const res = await f(input, init);
+    if (res.ok) return res;
+    const text = await res.text();
+    let body = text;
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === 'object')
+        body = JSON.stringify(parsed[0]);
+    } catch {
+      // Not JSON: passed on as it is.
+    }
+    // The body is rewritten and already decoded: its old length and encoding no longer apply.
+    const headers = new Headers(res.headers);
+    headers.delete('content-length');
+    headers.delete('content-encoding');
+    return new Response(body, { status: res.status, statusText: res.statusText, headers });
+  };
+}
+
 export const OPENROUTER: ProviderSource = {
   label: 'OpenRouter',
   envVar: 'OPENROUTER_API_KEY',
@@ -193,6 +232,27 @@ export function createProviders(config: AppConfig, d: ProviderDeps): ProviderRou
         prefix: 'openrouter:',
         apiKey: p.openrouter.apiKey,
         baseUrl: p.openrouter.baseUrl,
+      }),
+    },
+    {
+      id: 'gemini',
+      prefix: 'gemini:',
+      source: GEMINI,
+      baseUrl: p.gemini.baseUrl,
+      // Google's OpenAI-compatible API: chat completions, tools, images and streaming.
+      provider: new OpenAICompatibleProvider({
+        ...common,
+        id: 'gemini',
+        source: GEMINI,
+        prefix: 'gemini:',
+        apiKey: p.gemini.apiKey,
+        baseUrl: p.gemini.baseUrl,
+        fetch: unwrapListErrors(d.fetch ?? fetch),
+        // It lists models as "models/gemini-2.5-pro" and is called with "gemini-2.5-pro".
+        modelId: (listed) => listed.replace(/^models\//, ''),
+        ...(p.gemini.baseUrl === 'https://generativelanguage.googleapis.com/v1beta/openai'
+          ? { modelFilter: isGeminiChatModel }
+          : {}),
       }),
     },
   ]);

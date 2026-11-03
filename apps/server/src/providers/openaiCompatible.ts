@@ -46,6 +46,8 @@ export interface OpenAICompatibleOptions {
   maxTokensField?: 'max_tokens' | 'max_completion_tokens';
   /** Keep only chat models when the list also has embedding, audio or image models. */
   modelFilter?: (id: string) => boolean;
+  /** The id to use for a listed model, when the list names them differently ("models/x"). */
+  modelId?: (listed: string) => string;
 }
 
 const modelListSchema = z.object({
@@ -201,10 +203,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
       if (!parsed.success) throw new ProviderError('malformed', 'unexpected model list format');
       this.record({ model: '-', operation: 'list_models' }, started, { attempts, usage: null });
       const keep = this.opts.modelFilter ?? (() => true);
+      const idOf = this.opts.modelId ?? ((id: string) => id);
       return parsed.data.data
-        .filter((m) => keep(m.id))
+        .filter((m) => keep(idOf(m.id)))
         .map((m) => ({
-          id: `${this.opts.prefix}${m.id}`,
+          id: `${this.opts.prefix}${idOf(m.id)}`,
           provider: this.opts.id,
           ...(m.name ? { name: m.name } : {}),
           ...(m.description ? { description: m.description } : {}),

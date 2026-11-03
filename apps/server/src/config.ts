@@ -47,10 +47,15 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
   OPENROUTER_API_KEY: optionalString,
+  GEMINI_API_KEY: optionalString,
   /** Their API addresses: the official ones unless set (e.g. a proxy or a compatible gateway). */
   ANTHROPIC_BASE_URL: baseUrl('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
   OPENAI_BASE_URL: baseUrl('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
   OPENROUTER_BASE_URL: baseUrl('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
+  GEMINI_BASE_URL: baseUrl(
+    'GEMINI_BASE_URL',
+    'https://generativelanguage.googleapis.com/v1beta/openai',
+  ),
   /** Web search (Tavily). Read here like NTL_API_KEY; never stored, logged or sent to the UI. */
   TAVILY_API_KEY: optionalString,
   // 0 = any free port (the desktop app reads the bound port from the server).
@@ -89,6 +94,7 @@ export interface AppConfig {
     anthropic: { apiKey: string | null; baseUrl: string };
     openai: { apiKey: string | null; baseUrl: string };
     openrouter: { apiKey: string | null; baseUrl: string };
+    gemini: { apiKey: string | null; baseUrl: string };
   };
   server: {
     host: '127.0.0.1';
@@ -145,6 +151,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, repoRoot: string): AppConfig 
       anthropic: { apiKey: e.ANTHROPIC_API_KEY, baseUrl: e.ANTHROPIC_BASE_URL },
       openai: { apiKey: e.OPENAI_API_KEY, baseUrl: e.OPENAI_BASE_URL },
       openrouter: { apiKey: e.OPENROUTER_API_KEY, baseUrl: e.OPENROUTER_BASE_URL },
+      gemini: { apiKey: e.GEMINI_API_KEY, baseUrl: e.GEMINI_BASE_URL },
     },
     server: {
       host: '127.0.0.1',
