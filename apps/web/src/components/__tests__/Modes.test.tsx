@@ -91,23 +91,39 @@ describe('modes', () => {
     const { rerender } = render(
       <ChatView {...props(null)} mode="auto" onModeChange={onModeChange} />,
     );
-    const picker = screen.getByRole('combobox', { name: 'Mode' }) as HTMLSelectElement;
-    expect(picker.value).toBe('auto');
-    expect([...picker.options].map((o) => o.textContent)).toEqual([
-      'Auto',
-      'Code',
-      'Plan',
-      'Debug',
-      'Ask',
+    const picker = screen.getByRole('button', { name: 'Mode: Auto' });
+    expect(picker.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(picker);
+    const list = screen.getByRole('listbox', { name: 'Mode' });
+    const options = within(list).getAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual([
+      'AutoFriday chooses how to work (it may suggest another mode)',
+      'CodeImplement changes and verify them',
+      'PlanInvestigate and write a plan; changes nothing until you accept it',
+      'DebugReproduce the problem, find the cause, fix it and prove it',
+      'AskAnswers and explanations only; reads, never changes anything',
     ]);
-    fireEvent.change(picker, { target: { value: 'debug' } });
+    expect(options[0]!.getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(options[3]!);
     expect(onModeChange).toHaveBeenCalledWith('debug');
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    // Keyboard: open with an arrow, move, choose with Enter; Escape closes without a change.
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    const keys = screen.getByRole('listbox', { name: 'Mode' });
+    fireEvent.keyDown(keys, { key: 'ArrowDown' });
+    fireEvent.keyDown(keys, { key: 'Enter' });
+    expect(onModeChange).toHaveBeenLastCalledWith('code');
+    fireEvent.click(picker);
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onModeChange).toHaveBeenCalledTimes(2);
 
     rerender(<ChatView {...props(null)} mode="ask" onModeChange={onModeChange} />);
     expect(screen.getByLabelText('Message').getAttribute('placeholder')).toBe(
       'Ask a question; Friday only reads in this mode…',
     );
-    expect(picker.closest('label')!.getAttribute('title')).toBe(
+    expect(screen.getByRole('button', { name: 'Mode: Ask' }).getAttribute('title')).toBe(
       'Ask mode: Answers and explanations only; reads, never changes anything',
     );
   });
