@@ -201,6 +201,7 @@ describe('tool executor', () => {
       [
         'ask_user',
         'suggest_mode',
+        'load_tools',
         'delete_file',
         'edit_file',
         'edit_files',
@@ -305,6 +306,7 @@ describe('tool executor', () => {
         'suggest_mode',
         'update_plan',
         'ask_user',
+        'load_tools',
       ].sort(),
     );
     // While the user's switch is off (or without a search key), web tools are not offered.

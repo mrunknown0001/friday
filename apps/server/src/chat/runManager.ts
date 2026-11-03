@@ -12,6 +12,7 @@ import type {
   RunErrorKind,
   RunEvent,
   RunPhase,
+  TokenOptimization,
 } from '@friday/shared';
 import { HttpError } from '../http/errors.js';
 import { NO_PROVIDER, ProviderError } from '../providers/errors.js';
@@ -19,6 +20,7 @@ import { modeAllows, modeOffers, readsOnly } from './modes.js';
 import type {
   ChatMessage,
   ChatRequest,
+  ContextBreakdown,
   FinishReason,
   ImageInput,
   LLMProvider,
@@ -43,7 +45,11 @@ import type { CapabilityRepo } from '../repositories/capabilities.js';
 import { toMessageDto, type MessageRepo, type StoredMessage } from '../repositories/messages.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
 import { toRunDto, type RunRepo } from '../repositories/runs.js';
-import { DEFAULT_SESSION_TITLE, type SessionRepo } from '../repositories/sessions.js';
+import {
+  DEFAULT_SESSION_TITLE,
+  type SessionRecord,
+  type SessionRepo,
+} from '../repositories/sessions.js';
 import type { AuditRepo } from '../repositories/telemetry.js';
 import type { ToolCallRepo } from '../repositories/toolCalls.js';
 import type { ApprovalOutcome, ApprovalService } from '../approvals/service.js';
@@ -81,9 +87,11 @@ import {
   estimateTokens,
   fitHistory,
   repairToolPairs,
+  STANDARD_OPTIMIZATION,
   summarizeHistory,
   type HistoryItem,
 } from './context.js';
+import { groupOf, hintedGroups } from '../tools/groups.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { buildSuggestions } from '../reports/suggestions.js';
 import { assertRepoRoot, repoStatus } from '../git/git.js';
@@ -148,6 +156,8 @@ export interface RunManagerDeps {
   maxOutputTokens?: number;
   /** How often partial assistant output is checkpointed to the database. */
   checkpointIntervalMs?: number;
+  /** Token optimization (Settings → Usage); off when not given. */
+  tokenOptimization?: () => TokenOptimization;
   /** How long finished runs stay in memory for late SSE subscribers. */
   retainFinishedMs?: number;
 }
@@ -184,6 +194,11 @@ interface ActiveRun {
   permission: TaskPermission | null;
   /** Built-in tools plus the connected apps' tools as they were when the run started. */
   registry: ToolRegistry;
+  /**
+   * Token optimization: the tool groups this run may offer (group → its tools here) and those
+   * loaded so far. Null while every tool is offered (optimization off, or no tool calling).
+   */
+  toolGroups: { available: Map<string, string[]>; loaded: Set<string> } | null;
 }
 
 /** Tools that only annotate the final answer: a turn of just these ends the run, no extra model call. */
@@ -456,6 +471,7 @@ export class RunManager {
       mode,
       modeSuggestion: null,
       blockedByMode: false,
+      toolGroups: null,
       permission: null,
       registry: this.deps.mcp
         ? this.deps.registry.withExtra(this.deps.mcp.toolSpecs())
@@ -585,44 +601,56 @@ export class RunManager {
     model: string,
     systemPrompt: string,
     tools: ToolDefinition[] = [],
-  ): Promise<ChatMessage[]> {
+    /** With token optimization: the prompt and tools the request would have without it. */
+    baseline: { prompt: string; tools: ToolDefinition[] } | null = null,
+  ): Promise<{ messages: ChatMessage[]; breakdown: ContextBreakdown; stablePrefix: number }> {
     const { sessions, messages, capabilities } = this.deps;
     const maxOut = this.deps.maxOutputTokens ?? 8_192;
+    const window =
+      capabilities.get(model).contextWindow - (this.deps.provider.overheadTokens?.(model) ?? 0);
     // Tool schemas are sent with every request and count against the window too.
     const toolTokens = tools.length ? estimateTokens(JSON.stringify(tools)) : 0;
-    const contextWindow =
-      capabilities.get(model).contextWindow -
-      (this.deps.provider.overheadTokens?.(model) ?? 0) -
-      toolTokens;
+    const contextWindow = window - toolTokens;
 
+    const historyOf = (session: SessionRecord) => {
+      const stored = messages.contextHistory(run.sessionId, session.summaryThroughMessageId ?? 0);
+      return this.withImages(
+        stored,
+        repairToolPairs(
+          stored.map((m) => ({
+            id: m.id,
+            message: this.toChatMessage(m),
+            ...(m.tool ? { ok: m.tool.status === 'completed' } : {}),
+          })),
+        ),
+      );
+    };
     const plan = () => {
       const session = sessions.get(run.sessionId)!;
-      const stored = messages.contextHistory(run.sessionId, session.summaryThroughMessageId ?? 0);
-      const history = this.withImages(
-        stored,
-        repairToolPairs(stored.map((m) => ({ id: m.id, message: this.toChatMessage(m) }))),
-      );
+      const history = historyOf(session);
       return {
         session,
+        history,
         fit: fitHistory({
           systemPrompt,
           summary: session.summary,
           history,
           contextWindow,
           reserveOutputTokens: Math.min(maxOut, Math.floor(contextWindow / 4)),
+          toolTokens,
+          optimization: baseline ? STANDARD_OPTIMIZATION : null,
         }),
       };
     };
 
-    const initial = plan();
-    let fit = initial.fit;
+    let { fit, session, history } = plan();
     if (fit.dropped.length > 0) {
       this.phase(run, 'compacting', `Summarizing ${fit.dropped.length} older messages`);
       try {
         const summary = await summarizeHistory(
           this.deps.provider,
           model,
-          initial.session.summary,
+          session.summary,
           fit.dropped,
           run.controller.signal,
           run.sessionId,
@@ -632,7 +660,7 @@ export class RunManager {
           this.deps.redactor.redact(summary),
           fit.dropped.at(-1)!.id,
         );
-        fit = plan().fit;
+        ({ fit, session, history } = plan());
       } catch {
         this.aborted(run);
         // Fall back to plain trimming: the oldest messages are omitted from this request only.
@@ -643,7 +671,68 @@ export class RunManager {
         );
       }
     }
-    return fit.messages;
+    return {
+      messages: fit.messages,
+      breakdown: {
+        ...fit.breakdown,
+        baseline: this.baselineTokens(fit, baseline, session, history, window, maxOut),
+      },
+      stablePrefix: fit.stablePrefix,
+    };
+  }
+
+  /**
+   * Estimated input of the same request without token optimization: every tool, the full prompt,
+   * and the history as it was trimmed before (to the model's window only). Its summary is the
+   * one this request uses; without optimization it might have been needed later or not at all.
+   */
+  private baselineTokens(
+    fit: ReturnType<typeof fitHistory>,
+    baseline: { prompt: string; tools: ToolDefinition[] } | null,
+    session: SessionRecord,
+    history: HistoryItem[],
+    window: number,
+    maxOut: number,
+  ): number {
+    const actual = fit.estimatedTokens + fit.breakdown.tools;
+    if (!baseline) return actual;
+    const toolTokens = estimateTokens(JSON.stringify(baseline.tools));
+    const contextWindow = window - toolTokens;
+    try {
+      const full = fitHistory({
+        systemPrompt: baseline.prompt,
+        summary: session.summary,
+        history,
+        contextWindow,
+        reserveOutputTokens: Math.min(maxOut, Math.floor(contextWindow / 4)),
+        toolTokens,
+      });
+      return Math.max(actual, full.estimatedTokens + toolTokens);
+    } catch {
+      return actual;
+    }
+  }
+
+  /** Offer more tool groups from the next model turn on; they stay loaded for the conversation. */
+  private loadToolGroups(run: ActiveRun, ids: string[]) {
+    const groups = run.toolGroups!;
+    const loaded: Array<{ id: string; tools: string[] }> = [];
+    const already: string[] = [];
+    const unknown: string[] = [];
+    for (const id of new Set(ids)) {
+      const tools = groups.available.get(id);
+      if (!tools) unknown.push(id);
+      else if (groups.loaded.has(id)) already.push(id);
+      else loaded.push({ id, tools });
+    }
+    if (loaded.length) {
+      for (const g of this.deps.sessions.addToolGroups(
+        run.sessionId,
+        loaded.map((g) => g.id),
+      ))
+        if (groups.available.has(g)) groups.loaded.add(g);
+    }
+    return { loaded, already, unknown, available: [...groups.available.keys()] };
   }
 
   // ---------------------------------------------------------------- one model turn
@@ -847,7 +936,7 @@ export class RunManager {
       const session = this.deps.sessions.get(run.sessionId)!;
       const project = session.projectId ? this.deps.projects.get(session.projectId) : null;
       const caps = this.deps.capabilities.get(model);
-      const tools: ToolDefinition[] =
+      const allTools: ToolDefinition[] =
         caps.toolCalling === 'unsupported'
           ? []
           : registry
@@ -886,25 +975,77 @@ export class RunManager {
         this.deps.memoryRepo?.recordUsage(run.id, memoryRefs);
         this.emit(run, { type: 'memories_used', memories: memoryRefs });
       }
-      const systemPrompt = buildSystemPrompt({
-        mode: run.mode,
-        project,
-        detection: project ? await this.detect(project) : null,
-        toolsEnabled: tools.length > 0,
-        resume: this.resumeFor(run, session.plan),
-        memory: memoryPromptSection(memoryRefs),
-        guidance: project ? await readGuidance(project.rootPath).catch(() => null) : null,
-        processes: project ? (this.deps.processes?.list(project.id) ?? []) : [],
-        connectedApps: [
-          ...new Set(
-            tools.filter((t) => t.name.startsWith('mcp__')).map((t) => t.name.split('__')[1]!),
-          ),
-        ],
-        web: {
-          read: tools.some((t) => t.name === 'read_web_page'),
-          search: tools.some((t) => t.name === 'web_search'),
-        },
-      });
+      const processes = project ? (this.deps.processes?.list(project.id) ?? []) : [];
+      if (allTools.length && this.deps.tokenOptimization?.() === 'standard') {
+        // Core tools plus the groups this conversation loaded, and those this request hints at.
+        const available = new Map<string, string[]>();
+        for (const t of allTools) {
+          const group = groupOf(t.name);
+          if (group) available.set(group, [...(available.get(group) ?? []), t.name]);
+        }
+        const wanted = [
+          ...session.toolGroups,
+          // Without a project, Friday is a machine and server assistant.
+          ...(project ? [] : ['devops', 'docker']),
+          ...(processes.length ? ['processes'] : []),
+          ...hintedGroups(this.deps.messages.lastUserMessage(run.sessionId)?.content ?? '', [
+            ...available.keys(),
+          ]),
+        ].filter((g) => available.has(g));
+        run.toolGroups = {
+          available,
+          loaded: new Set(this.deps.sessions.addToolGroups(run.sessionId, wanted)),
+        };
+      }
+      const offeredTools = (): ToolDefinition[] => {
+        const groups = run.toolGroups;
+        if (!groups) return allTools.filter((t) => t.name !== 'load_tools');
+        return allTools.filter((t) => {
+          const group = groupOf(t.name);
+          return !group || groups.loaded.has(group);
+        });
+      };
+      const promptFor = (tools: ToolDefinition[], everything = false) =>
+        buildSystemPrompt({
+          mode: run.mode,
+          project,
+          detection,
+          toolsEnabled: tools.length > 0,
+          resume,
+          memory: memoryPromptSection(memoryRefs),
+          guidance,
+          processes,
+          connectedApps: [
+            ...new Set(
+              tools.filter((t) => t.name.startsWith('mcp__')).map((t) => t.name.split('__')[1]!),
+            ),
+          ],
+          web: {
+            read: tools.some((t) => t.name === 'read_web_page'),
+            search: tools.some((t) => t.name === 'web_search'),
+          },
+          ...(run.toolGroups && !everything
+            ? {
+                toolGroups: {
+                  loaded: [...run.toolGroups.loaded],
+                  more: [...run.toolGroups.available.keys()]
+                    .filter((g) => !run.toolGroups!.loaded.has(g))
+                    .map((id) => ({ id, tools: run.toolGroups!.available.get(id)! })),
+                },
+              }
+            : {}),
+        });
+      const detection = project ? await this.detect(project) : null;
+      const resume = this.resumeFor(run, session.plan);
+      const guidance = project ? await readGuidance(project.rootPath).catch(() => null) : null;
+      let tools = offeredTools();
+      let systemPrompt = promptFor(tools);
+      // What the requests would be without optimization, for the usage view.
+      let everything: { prompt: string; tools: ToolDefinition[] } | null = null;
+      const baseline = () =>
+        run.toolGroups
+          ? (everything ??= { prompt: promptFor(allTools, true), tools: allTools })
+          : null;
 
       for (;;) {
         this.aborted(run);
@@ -916,7 +1057,12 @@ export class RunManager {
         }
         iterations++;
         run.iteration = iterations;
-        const context = await this.buildContext(run, model, systemPrompt, tools);
+        // Groups loaded during the last turn (load_tools, or a call to one of their tools).
+        if (run.toolGroups && offeredTools().length !== tools.length) {
+          tools = offeredTools();
+          systemPrompt = promptFor(tools);
+        }
+        const context = await this.buildContext(run, model, systemPrompt, tools, baseline());
         this.aborted(run);
         this.phase(run, iterations === 1 ? 'waiting_for_model' : 'reading_results');
 
@@ -925,11 +1071,14 @@ export class RunManager {
           model,
           {
             model,
-            messages: context,
+            messages: context.messages,
             maxOutputTokens: this.deps.maxOutputTokens ?? 8_192,
             signal: run.controller.signal,
             operation: 'chat',
             sessionId: run.sessionId,
+            runId: run.id,
+            breakdown: context.breakdown,
+            stablePrefix: context.stablePrefix,
             ...(tools.length ? { tools, toolChoice: 'auto' as const } : {}),
           },
           caps,
@@ -1300,6 +1449,9 @@ export class RunManager {
       setModeSuggestion: (suggestion) => {
         run.modeSuggestion = suggestion;
       },
+      ...(run.toolGroups
+        ? { loadToolGroups: (ids: string[]) => this.loadToolGroups(run, ids) }
+        : {}),
       sessionReports: () =>
         this.deps.runs
           .listBySession(run.sessionId)
@@ -1338,6 +1490,10 @@ export class RunManager {
       ...this.toolContext(run, project, call.id),
       earlierCallsThisTurn: earlierThisTurn,
     };
+    // A tool from a group that is not loaded yet (the model knew its name): load the group.
+    const group = groupOf(call.name);
+    if (group && run.toolGroups?.available.get(group)?.includes(call.name))
+      this.loadToolGroups(run, [group]);
     // The mode's limits hold even for a tool the model was not offered.
     const offered = registry.get(call.name);
     if (offered && (!modeAllows(run.mode, offered.category) || !modeOffers(run.mode, call.name))) {

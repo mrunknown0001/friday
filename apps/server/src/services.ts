@@ -42,6 +42,7 @@ import { ResearchRepo } from './repositories/research.js';
 import { QuestionRepo } from './repositories/questions.js';
 import { QuestionService } from './questions/service.js';
 import { AuditRepo, ProviderCallRepo, UsageRepo } from './repositories/telemetry.js';
+import { tokenOptimization } from './chat/optimization.js';
 import { ToolCallRepo } from './repositories/toolCalls.js';
 import { Redactor } from './security/redact.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -358,6 +359,7 @@ export function createServices(
     toolEnv,
     limits: config.agent,
     resolveModel: () => modelSettings.resolve().model,
+    tokenOptimization: () => tokenOptimization(settings),
     ...overrides.runManager,
   });
 

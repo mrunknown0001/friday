@@ -70,3 +70,32 @@ export const suggestMode = defineTool({
     return { content: 'Suggestion recorded.', summary: `${args.mode}: ${args.reason}` };
   },
 });
+
+export const loadTools = defineTool({
+  name: 'load_tools',
+  description:
+    'Load one or more of the tool groups listed in the system prompt (e.g. ["git"], ["docker", "devops"]) when the task needs their tools. Their tools are offered from your next step and stay loaded for the rest of the conversation. Load only what the task needs.',
+  category: 'agent_state',
+  risk: 'none',
+  requiresProject: false,
+  schema: z.object({ groups: z.array(z.string().min(1).max(80)).min(1).max(8) }),
+  describeCall: (a) => (a.groups ?? []).join(', '),
+  async execute(args, ctx) {
+    const r = ctx.loadToolGroups?.(args.groups);
+    if (!r) return { content: 'All tools are already offered.', summary: 'nothing to load' };
+    const lines = [
+      ...r.loaded.map((g) => `Loaded ${g.id}: ${g.tools.join(', ') || '(none available here)'}.`),
+      ...r.already.map((id) => `${id} was already loaded.`),
+      ...(r.unknown.length
+        ? [
+            `Unknown or unavailable: ${r.unknown.join(', ')}. Available groups: ${r.available.join(', ')}.`,
+          ]
+        : []),
+    ];
+    if (r.loaded.length) lines.push('They are available from your next step.');
+    return {
+      content: lines.join('\n'),
+      summary: [...r.loaded.map((g) => g.id), ...r.already].join(', ') || 'nothing loaded',
+    };
+  },
+});

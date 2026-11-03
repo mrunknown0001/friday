@@ -16,10 +16,22 @@ const totals = (over: Partial<UsageTotals> = {}): UsageTotals => ({
   callsWithoutTokens: 0,
   inputTokens: 0,
   outputTokens: 0,
+  cachedInputTokens: 0,
   durationMs: 0,
   cost: null,
   ...over,
 });
+
+const noContext = {
+  requests: 0,
+  system: 0,
+  tools: 0,
+  history: 0,
+  toolResults: 0,
+  baseline: 0,
+  inputTokens: 0,
+  cachedInputTokens: 0,
+};
 
 const summary = (over: Partial<UsageSummaryDto> = {}): UsageSummaryDto => ({
   days: 7,
@@ -54,6 +66,9 @@ const summary = (over: Partial<UsageSummaryDto> = {}): UsageSummaryDto => ({
   ],
   outsideSessions: totals({ calls: 2, inputTokens: 2_400 }),
   prices: {},
+  context: noContext,
+  recentRuns: [],
+  optimization: 'standard',
   ...over,
 });
 
@@ -167,5 +182,64 @@ describe('usage view', () => {
     );
     render(<UsageSettings />);
     expect(await screen.findByText('No model calls in the last 7 days.')).toBeTruthy();
+  });
+
+  it('shows where input went, what optimization saved, cache hits, and switches it off', async () => {
+    const context = {
+      requests: 30,
+      system: 30_000,
+      tools: 60_000,
+      history: 50_000,
+      toolResults: 60_000,
+      baseline: 500_000,
+      inputTokens: 180_000,
+      cachedInputTokens: 135_000,
+    };
+    vi.spyOn(api, 'usage').mockResolvedValue(
+      summary({
+        context,
+        recentRuns: [
+          {
+            runId: 'r1',
+            sessionId: 's1',
+            title: 'Fix login',
+            startedAt: '2026-10-30T01:00:00Z',
+            ...context,
+          },
+        ],
+      }),
+    );
+    const set = vi.spyOn(api, 'setTokenOptimization').mockResolvedValue({ optimization: 'off' });
+    render(<UsageSettings />);
+    expect(
+      await screen.findByText(
+        "30 chat requests, ~200K tokens sent · optimization saved ~300K (60%) · 75% of input read from the provider's cache",
+      ),
+    ).toBeTruthy();
+    const parts = screen.getAllByTestId('context-part');
+    expect(parts).toHaveLength(4);
+    fireEvent.mouseEnter(parts[1]!);
+    expect(screen.getByRole('tooltip').textContent).toBe('Tool definitions: ~60,000 tokens (30%)');
+    const runs = screen.getByRole('table', { name: 'Recent runs' });
+    expect(within(runs).getByText('Fix login')).toBeTruthy();
+    expect(within(runs).getAllByText('60%')).toHaveLength(1);
+
+    const group = screen.getByRole('group', { name: 'Token optimization' });
+    expect(
+      within(group).getByRole('button', { name: 'Standard' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    fireEvent.click(within(group).getByRole('button', { name: 'Off' }));
+    expect(set).toHaveBeenCalledWith('off');
+    await waitFor(() =>
+      expect(within(group).getByRole('button', { name: 'Off' }).getAttribute('aria-pressed')).toBe(
+        'true',
+      ),
+    );
+  });
+
+  it('says when nothing has been recorded yet', async () => {
+    vi.spyOn(api, 'usage').mockResolvedValue(summary());
+    render(<UsageSettings />);
+    expect(await screen.findByText(/Nothing recorded yet/)).toBeTruthy();
   });
 });

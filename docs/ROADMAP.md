@@ -542,11 +542,15 @@ approved), credentials never reach the model, and results from other systems are
 
 ### Queued (requested 2026-11-03)
 
-- **Token and context optimization.** Spend fewer tokens per request without losing what the model needs. Starting
-  points: measure where a run's tokens go (system prompt, tool definitions, history, tool results) and show it in
-  Usage; send only the tool definitions that fit the request; shrink old tool results and repeated file reads in the
-  history; summarize earlier; prompt caching where the provider offers it (done for Anthropic). Open questions: how
-  aggressive to be by default, and whether the user can see and tune it.
+- ✅ **Token and context optimization** (requested 2026-11-03). Done, on by default (Settings → Usage → Token
+  optimization: Standard or Off), migration 29:
+  - Measured first: 88 input tokens per output token, ~24K of each request fixed (72 tool definitions and the full
+    prompt). Now about 30 core tools plus groups loaded on demand (`load_tools`, message hints, or a direct call),
+    which stay loaded for the conversation, and a prompt that carries only the loaded groups' instructions: ~9K.
+  - The current run's older tool results are clipped a few turns at a time (prompt-cache friendly), out-of-date file
+    reads are dropped, and each request is capped at ~100K tokens with older turns summarized.
+  - Usage shows where input went, what optimization saved and the prompt-cache share, overall and per run; the
+    Anthropic provider adds a cache breakpoint at the end of the settled history.
 - ✅ **Modes: auto (default), code, plan, debug and ask** (requested 2026-11-03). Done: a mode picker next to the
   message box, saved with the conversation (migration 28); each reply shows the mode it was written in.
   - **ask** and **plan** are only offered reading tools (read, search, web, plan, questions, read-only database

@@ -59,6 +59,16 @@ export interface ToolContext {
   setNextSteps?: (steps: Array<{ label: string; prompt: string }>) => void;
   /** Offer a switch to another mode at the end of the run (auto mode only). */
   setModeSuggestion?: (s: { mode: Exclude<AgentMode, 'auto'>; reason: string }) => void;
+  /**
+   * Offer more tool groups from the next model turn on (load_tools); undefined when every tool
+   * is offered already (token optimization off).
+   */
+  loadToolGroups?: (ids: string[]) => {
+    loaded: Array<{ id: string; tools: string[] }>;
+    already: string[];
+    unknown: string[];
+    available: string[];
+  };
   /** Show a recorded deployment plan to the user immediately. */
   emitDeploymentPlan?: (plan: DeploymentPlanDto) => void;
   /** DevOps configuration (SSH hosts, authorized log sources, deployment plans). */

@@ -50,6 +50,7 @@ import type {
   SshHostDto,
   SystemInfoDto,
   TreeEntryDto,
+  TokenOptimization,
   UsageSummaryDto,
   VoiceModelDto,
   VoiceModelId,
@@ -190,6 +191,10 @@ export const api = {
   providerCalls: () => request<{ calls: ProviderCallDto[] }>('GET', '/api/provider/calls'),
   usage: (days: number, tzOffsetMinutes: number) =>
     request<UsageSummaryDto>('GET', `/api/usage?days=${days}&tz=${tzOffsetMinutes}`),
+  setTokenOptimization: (optimization: TokenOptimization) =>
+    request<{ optimization: TokenOptimization }>('PUT', '/api/usage/optimization', {
+      optimization,
+    }),
   saveUsagePrices: (prices: Record<string, ModelPrice>) =>
     request<{ prices: Record<string, ModelPrice> }>('PUT', '/api/usage/prices', { prices }),
 

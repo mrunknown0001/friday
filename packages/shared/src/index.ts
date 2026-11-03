@@ -123,10 +123,33 @@ export interface UsageTotals {
   callsWithoutTokens: number;
   inputTokens: number;
   outputTokens: number;
+  /** Part of inputTokens the provider served from its prompt cache (when it reports it). */
+  cachedInputTokens: number;
   /** Time spent waiting for the model. */
   durationMs: number;
   /** Estimated from the prices entered in Settings; null when none of the calls has a price. */
   cost: number | null;
+}
+
+/** Token optimization: Standard (core tools, shrunk history, capped context) or Off. */
+export type TokenOptimization = 'standard' | 'off';
+
+/**
+ * Where chat requests' input tokens went, from Friday's own estimates (pessimistic, ~3.5
+ * characters per token), next to what the provider counted.
+ */
+export interface ContextUsageDto {
+  requests: number;
+  system: number;
+  tools: number;
+  /** User and assistant messages, plus the summary of earlier conversation. */
+  history: number;
+  toolResults: number;
+  /** The same requests without token optimization. */
+  baseline: number;
+  /** As counted by the provider (or estimated when it reports nothing). */
+  inputTokens: number;
+  cachedInputTokens: number;
 }
 
 export interface UsageSummaryDto {
@@ -142,6 +165,18 @@ export interface UsageSummaryDto {
   /** Calls made outside a conversation: capability probes and connection tests. */
   outsideSessions: UsageTotals;
   prices: Record<string, ModelPrice>;
+  /** Chat requests recorded with a breakdown (since token optimization was added). */
+  context: ContextUsageDto;
+  /** The latest runs with a breakdown, newest first, at most 10. */
+  recentRuns: Array<
+    ContextUsageDto & {
+      runId: string;
+      sessionId: string | null;
+      title: string | null;
+      startedAt: string;
+    }
+  >;
+  optimization: TokenOptimization;
 }
 
 export interface ProjectDto {

@@ -1,4 +1,10 @@
-import type { ModelPrice, ProviderCallDto, UsageSummaryDto, UsageTotals } from '@friday/shared';
+import type {
+  ContextUsageDto,
+  ModelPrice,
+  ProviderCallDto,
+  UsageSummaryDto,
+  UsageTotals,
+} from '@friday/shared';
 import type { Db } from '../db/database.js';
 import type { ProviderCallRecord } from '../providers/types.js';
 
@@ -9,8 +15,9 @@ export class ProviderCallRepo {
     this.db
       .prepare(
         `INSERT INTO provider_calls
-          (created_at, model, operation, status, error_kind, duration_ms, attempts, input_tokens, output_tokens, session_id, tokens_estimated)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (created_at, model, operation, status, error_kind, duration_ms, attempts, input_tokens, output_tokens, session_id, tokens_estimated,
+           run_id, cached_tokens, cache_write_tokens, ctx_system, ctx_tools, ctx_history, ctx_tool_results, ctx_baseline)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         new Date().toISOString(),
@@ -24,6 +31,14 @@ export class ProviderCallRepo {
         r.usage?.outputTokens ?? null,
         r.sessionId,
         r.tokensEstimated ? 1 : 0,
+        r.runId ?? null,
+        r.usage?.cachedInputTokens ?? null,
+        r.usage?.cacheWriteTokens ?? null,
+        r.breakdown?.system ?? null,
+        r.breakdown?.tools ?? null,
+        r.breakdown?.history ?? null,
+        r.breakdown?.toolResults ?? null,
+        r.breakdown?.baseline ?? null,
       );
   }
 
@@ -60,7 +75,19 @@ interface UsageRow {
   without_tokens: number;
   input_tokens: number;
   output_tokens: number;
+  cached_tokens: number;
   duration_ms: number;
+}
+
+interface ContextRow {
+  requests: number;
+  system: number | null;
+  tools: number | null;
+  history: number | null;
+  tool_results: number | null;
+  baseline: number | null;
+  input_tokens: number;
+  cached_tokens: number;
 }
 
 const emptyTotals = (): UsageTotals => ({
@@ -70,6 +97,7 @@ const emptyTotals = (): UsageTotals => ({
   callsWithoutTokens: 0,
   inputTokens: 0,
   outputTokens: 0,
+  cachedInputTokens: 0,
   durationMs: 0,
   cost: null,
 });
@@ -81,6 +109,7 @@ function add(into: UsageTotals, r: UsageRow, price: ModelPrice | undefined): voi
   into.callsWithoutTokens += r.without_tokens;
   into.inputTokens += r.input_tokens;
   into.outputTokens += r.output_tokens;
+  into.cachedInputTokens += r.cached_tokens;
   into.durationMs += r.duration_ms;
   if (price)
     into.cost =
@@ -100,7 +129,7 @@ export class UsageRepo {
     tzOffsetMinutes: number;
     prices: Record<string, ModelPrice>;
     now?: Date;
-  }): UsageSummaryDto {
+  }): Omit<UsageSummaryDto, 'optimization'> {
     const shift = opts.tzOffsetMinutes * 60_000;
     const localToday = new Date((opts.now ?? new Date()).getTime() + shift)
       .toISOString()
@@ -118,6 +147,7 @@ export class UsageRepo {
                 SUM(c.input_tokens IS NULL AND c.output_tokens IS NULL) AS without_tokens,
                 COALESCE(SUM(c.input_tokens), 0) AS input_tokens,
                 COALESCE(SUM(c.output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(c.cached_tokens), 0) AS cached_tokens,
                 SUM(c.duration_ms) AS duration_ms
            FROM provider_calls c LEFT JOIN sessions s ON s.id = c.session_id
           WHERE c.created_at >= ? AND c.operation != 'list_models'
@@ -164,8 +194,59 @@ export class UsageRepo {
       add(session, r, price);
     }
 
+    // Where chat requests' input went (Friday's estimates, recorded since token optimization).
+    const ctx = `COUNT(*) AS requests,
+                 SUM(c.ctx_system) AS system, SUM(c.ctx_tools) AS tools,
+                 SUM(c.ctx_history) AS history, SUM(c.ctx_tool_results) AS tool_results,
+                 SUM(c.ctx_baseline) AS baseline,
+                 COALESCE(SUM(c.input_tokens), 0) AS input_tokens,
+                 COALESCE(SUM(c.cached_tokens), 0) AS cached_tokens`;
+    const toContext = (r: ContextRow): ContextUsageDto => ({
+      requests: r.requests,
+      system: r.system ?? 0,
+      tools: r.tools ?? 0,
+      history: r.history ?? 0,
+      toolResults: r.tool_results ?? 0,
+      baseline: r.baseline ?? 0,
+      inputTokens: r.input_tokens,
+      cachedInputTokens: r.cached_tokens,
+    });
+    const context = toContext(
+      this.db
+        .prepare(
+          `SELECT ${ctx} FROM provider_calls c
+            WHERE c.created_at >= ? AND c.ctx_baseline IS NOT NULL`,
+        )
+        .get(since) as unknown as ContextRow,
+    );
+    const recentRuns = (
+      this.db
+        .prepare(
+          `SELECT c.run_id, c.session_id, s.title, MIN(c.created_at) AS started_at, ${ctx}
+             FROM provider_calls c LEFT JOIN sessions s ON s.id = c.session_id
+            WHERE c.created_at >= ? AND c.ctx_baseline IS NOT NULL AND c.run_id IS NOT NULL
+            GROUP BY c.run_id ORDER BY started_at DESC LIMIT 10`,
+        )
+        .all(since) as unknown as Array<
+        ContextRow & {
+          run_id: string;
+          session_id: string | null;
+          title: string | null;
+          started_at: string;
+        }
+      >
+    ).map((r) => ({
+      runId: r.run_id,
+      sessionId: r.session_id,
+      title: r.title,
+      startedAt: r.started_at,
+      ...toContext(r),
+    }));
+
     const tokens = (t: UsageTotals) => t.inputTokens + t.outputTokens;
     return {
+      context,
+      recentRuns,
       days: opts.days,
       since,
       totals,

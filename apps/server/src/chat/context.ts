@@ -6,15 +6,42 @@ export { estimateMessageTokens, estimateTokens };
 export interface HistoryItem {
   id: number;
   message: ChatMessage;
+  /** Tool results: whether the call succeeded (an applied change, a completed read). */
+  ok?: boolean;
 }
+
+/**
+ * Token optimization of the history (see chat/optimization.ts). Results of the current run's
+ * older model turns are "settled": clipped like earlier turns' results, and file reads made
+ * obsolete by a later read or change are dropped. The settled boundary moves `settleStep` turns at
+ * a time, so the requests in between share the same prefix and the provider's prompt cache keeps
+ * working.
+ */
+export interface ContextOptimization {
+  /** The whole request (tool definitions, system prompt, history) in estimated tokens. */
+  maxContextTokens: number;
+  /** The current run's latest model turns whose tool results always stay whole. */
+  keepRecentTurns: number;
+  settleStep: number;
+}
+
+export const STANDARD_OPTIMIZATION: ContextOptimization = {
+  maxContextTokens: 100_000,
+  keepRecentTurns: 3,
+  settleStep: 4,
+};
 
 export interface ContextInput {
   systemPrompt: string;
   summary: string | null;
   /** Chronological history not yet covered by `summary`. The last item is the current request. */
   history: HistoryItem[];
+  /** The model's window minus provider overhead and the tool definitions. */
   contextWindow: number;
   reserveOutputTokens: number;
+  /** Estimated tokens of the tool definitions sent with the request. */
+  toolTokens?: number;
+  optimization?: ContextOptimization | null;
 }
 
 export interface ContextPlan {
@@ -22,6 +49,10 @@ export interface ContextPlan {
   /** Oldest history items that did not fit and should be folded into the summary. */
   dropped: HistoryItem[];
   estimatedTokens: number;
+  /** Where the request's input goes, in estimated tokens (the tool definitions included). */
+  breakdown: { system: number; tools: number; history: number; toolResults: number };
+  /** Leading messages (the system message included) that stay the same for the next requests. */
+  stablePrefix: number;
 }
 
 export class ContextOverflowError extends Error {}
@@ -68,27 +99,118 @@ function clipTool(m: ChatMessage, max: number): ChatMessage {
 
 const groupCost = (g: HistoryItem[]) => g.reduce((n, h) => n + estimateMessageTokens(h.message), 0);
 
+/**
+ * Index in `turn` (the current request and its run so far) where the unsettled part starts: the
+ * assistant message of the first model turn whose results stay whole.
+ */
+function settledEnd(turn: HistoryItem[], o: ContextOptimization): number {
+  const starts = turn.flatMap((h, i) => (h.message.role === 'assistant' ? [i] : []));
+  const settled =
+    starts.length > o.keepRecentTurns
+      ? Math.floor((starts.length - o.keepRecentTurns) / o.settleStep) * o.settleStep
+      : 0;
+  return settled > 0 ? starts[settled]! : 0;
+}
+
+const READ_LINES = 400; // read_file's default range (tools/workspaceTools.ts)
+const CHANGES = new Set(['write_file', 'edit_file', 'edit_files', 'delete_file', 'move_file']);
+
+function args(json: string): Record<string, unknown> {
+  try {
+    const v: unknown = JSON.parse(json || '{}');
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Paths a successful file change touched (its earlier reads are stale). */
+function changedPaths(name: string, a: Record<string, unknown>): string[] {
+  if (name === 'edit_files' && Array.isArray(a['changes']))
+    return a['changes'].flatMap((c: unknown) => {
+      const p = (c as { path?: unknown } | null)?.path;
+      return typeof p === 'string' ? [p] : [];
+    });
+  const p = name === 'move_file' ? a['from'] : a['path'];
+  return typeof p === 'string' ? [p] : [];
+}
+
+/**
+ * Replace file reads that a later read (of the same lines or more) or a successful change of the
+ * file made obsolete, so the history carries one current copy instead of several.
+ */
+function dropSupersededReads(items: HistoryItem[]): void {
+  const calls = new Map<string, { name: string; args: Record<string, unknown> }>();
+  const reads: Array<{ item: HistoryItem; path: string; from: number; to: number }> = [];
+  for (const item of items) {
+    const m = item.message;
+    if (m.role === 'assistant')
+      for (const c of m.toolCalls ?? [])
+        calls.set(c.id, { name: c.name, args: args(c.argumentsJson) });
+    if (m.role !== 'tool' || item.ok === false) continue;
+    const call = calls.get(m.toolCallId);
+    if (!call) continue;
+    if (call.name === 'read_file' && typeof call.args['path'] === 'string') {
+      const from = Number(call.args['start_line']) || 1;
+      const to = Number(call.args['end_line']) || from + READ_LINES - 1;
+      const path = call.args['path'];
+      for (const r of reads)
+        if (r.path === path && r.from >= from && r.to <= to)
+          r.item.message = {
+            ...(r.item.message as typeof m),
+            content: superseded(path, 'read again later'),
+          };
+      reads.push({ item, path, from, to });
+    } else if (CHANGES.has(call.name) && item.ok) {
+      const paths = changedPaths(call.name, call.args);
+      for (const r of reads)
+        if (paths.includes(r.path))
+          r.item.message = {
+            ...(r.item.message as typeof m),
+            content: superseded(r.path, 'changed later'),
+          };
+    }
+  }
+}
+
+const superseded = (path: string, why: string) =>
+  `[earlier read of ${path} omitted: the file was ${why} in this conversation; read it again if you need it]`;
+
 export function fitHistory(input: ContextInput): ContextPlan {
+  const o = input.optimization ?? null;
   const system = buildSystemMessage(input.systemPrompt, input.summary);
-  const budget =
-    Math.floor(input.contextWindow * WINDOW_UTILIZATION) -
-    input.reserveOutputTokens -
-    estimateMessageTokens(system);
+  const systemCost = estimateMessageTokens(system);
+  const toolTokens = input.toolTokens ?? 0;
+  const windowBudget =
+    Math.floor(input.contextWindow * WINDOW_UTILIZATION) - input.reserveOutputTokens - systemCost;
+  const capBudget = o ? o.maxContextTokens - toolTokens - systemCost : windowBudget;
 
   const groups = groupTurns(input.history).map((g, i, all) =>
     i === all.length - 1
       ? g.map((h) => ({ ...h }))
       : g.map((h) => ({ ...h, message: clipTool(h.message, OLD_TOOL_OUTPUT_CHARS) })),
   );
+  const current = groups.at(-1);
+
+  // Everything before the current turn is settled; with optimization, so is the start of the
+  // current run (all but its latest model turns).
+  let settledInCurrent = 0;
+  if (o && current) {
+    settledInCurrent = settledEnd(current, o);
+    for (const h of current.slice(0, settledInCurrent))
+      h.message = clipTool(h.message, OLD_TOOL_OUTPUT_CHARS);
+    dropSupersededReads([...groups.slice(0, -1).flat(), ...current.slice(0, settledInCurrent)]);
+  }
 
   // The current turn must fit. If its tool output is too large, stub the oldest results first.
-  const current = groups.at(-1);
-  if (current && groupCost(current) > budget) {
+  // A capped budget gives way to the window when the current turn needs more.
+  if (current && groupCost(current) > Math.min(windowBudget, capBudget)) {
     for (const h of current) {
-      if (groupCost(current) <= budget) break;
+      if (groupCost(current) <= Math.min(windowBudget, capBudget)) break;
       if (h.message.role === 'tool') h.message = clipTool(h.message, 0);
     }
   }
+  const budget = Math.min(windowBudget, Math.max(capBudget, current ? groupCost(current) : 0));
 
   const kept: HistoryItem[][] = [];
   let used = 0;
@@ -112,10 +234,24 @@ export function fitHistory(input: ContextInput): ContextPlan {
 
   const keptItems = kept.flat();
   const dropped = input.history.slice(0, input.history.length - keptItems.length);
+  const messages = [system, ...keptItems.map((h) => h.message)];
+  const promptCost = estimateTokens(input.systemPrompt);
+  const toolResults = keptItems.reduce(
+    (n, h) => n + (h.message.role === 'tool' ? estimateMessageTokens(h.message) : 0),
+    0,
+  );
+  const unsettled = current && kept.at(-1) === current ? current.length - settledInCurrent : 0;
   return {
-    messages: [system, ...keptItems.map((h) => h.message)],
+    messages,
     dropped,
-    estimatedTokens: used + estimateMessageTokens(system),
+    estimatedTokens: used + systemCost,
+    breakdown: {
+      system: promptCost,
+      tools: toolTokens,
+      history: used - toolResults + systemCost - promptCost,
+      toolResults,
+    },
+    stablePrefix: messages.length - unsettled,
   };
 }
 
