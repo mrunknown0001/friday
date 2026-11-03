@@ -34,9 +34,16 @@ import {
 
 const TOKEN_HEADER = 'x-friday-token';
 const ENV_TEMPLATE = `# Friday configuration. Keep this file private: it is created readable by you only.
-# Get an API key from https://notokenlimit.com, paste it after the = sign, then use
+# Paste the API key of at least one model provider after its = sign, then use
 # Friday > Restart Server.
+# NoTokenLimit (https://notokenlimit.com)
 NTL_API_KEY=
+# Anthropic (https://console.anthropic.com)
+ANTHROPIC_API_KEY=
+# OpenAI (https://platform.openai.com)
+OPENAI_API_KEY=
+# OpenRouter (https://openrouter.ai)
+OPENROUTER_API_KEY=
 # Optional: default model ID. You can also choose a model in Settings.
 NTL_MODEL=
 # Optional: Tavily API key for web search (https://tavily.com). Reading pages works without it.

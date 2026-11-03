@@ -10,14 +10,16 @@ import type { LLMProvider } from './types.js';
 const ASSUMED_WINDOWS: Array<[RegExp, number]> = [
   [/^(claude|premium-fable|uncensored-claude)/i, 180_000],
   [/^gemini/i, 900_000],
-  [/^gpt/i, 120_000],
+  [/^(gpt|o\d)/i, 120_000],
   [/^(deepseek|kimi|glm|qwen3|minimax|grok)/i, 120_000],
   [/^llama-4/i, 120_000],
 ];
 const DEFAULT_WINDOW = 32_000;
 
 export function assumedContextWindow(model: string): number {
-  return ASSUMED_WINDOWS.find(([re]) => re.test(model))?.[1] ?? DEFAULT_WINDOW;
+  // "anthropic:claude-…" and "openrouter:anthropic/claude-…" are judged by the model's own name.
+  const name = model.replace(/^(anthropic|openai|openrouter):/, '').replace(/^[\w.-]+\//, '');
+  return ASSUMED_WINDOWS.find(([re]) => re.test(name))?.[1] ?? DEFAULT_WINDOW;
 }
 
 export interface ProbeResult {

@@ -518,6 +518,16 @@ approved), credentials never reach the model, and results from other systems are
   up to three questions first when the answer would change the request, and the result replaces the draft with
   Undo. `ask_user` lets Friday pause a task on a question card with options until the user answers or lets it
   decide.
+- ✅ **More model providers** (requested 2026-11-03). Done: Anthropic (the Messages API called directly, with prompt
+  caching), OpenAI and OpenRouter, usable next to NoTokenLimit. Every provider with a key in `.env` is used, and the
+  model list groups models by provider (`anthropic:…`, `openai:…`, `openrouter:…`; NoTokenLimit ids unchanged).
+  Settings shows which keys are set and any provider whose list failed. Live check on 2026-11-03, with only a
+  NoTokenLimit key and invalid keys for the others:
+  - The real Anthropic and OpenAI APIs refused the keys with errors that name the provider and its variable. A masked
+    key fragment quoted back by OpenAI was redacted.
+  - OpenRouter's public list loaded 451 models, and a completion request was refused for the key.
+  - NoTokenLimit chat and the connection test still worked through the router.
+  - Streaming from Anthropic with a valid key is covered only by tests with hand-written event streams.
 
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,

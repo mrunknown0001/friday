@@ -24,7 +24,7 @@ import type {
   MemorySettingsDto,
   MessageDto,
   ModelCapabilities,
-  ModelInfo,
+  ModelListDto,
   ModelPrice,
   MonitorDetailDto,
   MonitorDto,
@@ -173,7 +173,7 @@ export const api = {
   setModel: (model: string) => request<{ model: string }>('PUT', '/api/settings/model', { model }),
   resetModel: () => request<unknown>('DELETE', '/api/settings/model'),
   models: (refresh = false) =>
-    request<{ models: ModelInfo[] }>('GET', `/api/provider/models${refresh ? '?refresh=1' : ''}`),
+    request<ModelListDto>('GET', `/api/provider/models${refresh ? '?refresh=1' : ''}`),
   testConnection: (model?: string) =>
     request<ConnectionTestResult>('POST', '/api/provider/test', model ? { model } : {}),
   capabilities: () => request<ModelCapabilities>('GET', '/api/provider/capabilities'),

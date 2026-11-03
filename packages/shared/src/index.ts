@@ -27,11 +27,32 @@ export interface ApiErrorBody {
   };
 }
 
+/** Model providers Friday can use; each needs its own API key in the server's .env. */
+export type ProviderId = 'notokenlimit' | 'anthropic' | 'openai' | 'openrouter';
+
 export interface ModelInfo {
+  /** NoTokenLimit models keep their plain id; other providers' are prefixed ("anthropic:…"). */
   id: string;
   name?: string;
   description?: string;
   tier?: string;
+  provider?: ProviderId;
+}
+
+/** A provider in Settings: whether its key is set (never the key itself). */
+export interface ProviderStatusDto {
+  id: ProviderId;
+  label: string;
+  configured: boolean;
+  /** The .env variable that holds its key. */
+  envVar: string;
+  baseUrl: string;
+}
+
+/** GET /api/provider/models: every configured provider's models, and the ones that failed. */
+export interface ModelListDto {
+  models: ModelInfo[];
+  errors: Array<{ provider: ProviderId; message: string }>;
 }
 
 export type CapabilityState = 'unknown' | 'supported' | 'unsupported';
@@ -52,7 +73,9 @@ export interface ModelCapabilities {
 export interface SettingsDto {
   model: string | null;
   modelSource: 'settings' | 'env' | 'none';
+  /** At least one provider has a key. */
   apiKeyConfigured: boolean;
+  providers: ProviderStatusDto[];
   /** Absolute path of the file the server reads NTL_* settings from. */
   envFile: string;
   baseUrl: string;

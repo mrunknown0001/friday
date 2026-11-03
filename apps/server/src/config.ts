@@ -39,6 +39,10 @@ const envSchema = z.object({
     ),
   NTL_TIMEOUT_MS: intFromEnv(120_000, 1_000, 600_000),
   NTL_MAX_RETRIES: intFromEnv(2, 0, 5),
+  /** Other model providers, used next to NoTokenLimit. Same rules as NTL_API_KEY. */
+  ANTHROPIC_API_KEY: optionalString,
+  OPENAI_API_KEY: optionalString,
+  OPENROUTER_API_KEY: optionalString,
   /** Web search (Tavily). Read here like NTL_API_KEY; never stored, logged or sent to the UI. */
   TAVILY_API_KEY: optionalString,
   // 0 = any free port (the desktop app reads the bound port from the server).
@@ -71,6 +75,12 @@ export interface AppConfig {
     baseUrl: string;
     timeoutMs: number;
     maxRetries: number;
+  };
+  /** Keys of the other providers (timeout and retries are shared with NoTokenLimit's). */
+  providers: {
+    anthropic: { apiKey: string | null };
+    openai: { apiKey: string | null };
+    openrouter: { apiKey: string | null };
   };
   server: {
     host: '127.0.0.1';
@@ -122,6 +132,11 @@ export function loadConfig(env: NodeJS.ProcessEnv, repoRoot: string): AppConfig 
       baseUrl: e.NTL_BASE_URL.replace(/\/+$/, ''),
       timeoutMs: e.NTL_TIMEOUT_MS,
       maxRetries: e.NTL_MAX_RETRIES,
+    },
+    providers: {
+      anthropic: { apiKey: e.ANTHROPIC_API_KEY },
+      openai: { apiKey: e.OPENAI_API_KEY },
+      openrouter: { apiKey: e.OPENROUTER_API_KEY },
     },
     server: {
       host: '127.0.0.1',

@@ -2,7 +2,7 @@ import type { EnhancePromptResult, QuestionDto } from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { enhancePrompt, MAX_DRAFT_CHARS } from '../../chat/enhance.js';
-import { ProviderError } from '../../providers/errors.js';
+import { NO_PROVIDER, ProviderError } from '../../providers/errors.js';
 import { MAX_ANSWER_CHARS } from '../../questions/service.js';
 import type { Services } from '../../services.js';
 import { detectProject } from '../../workspace/detect.js';
@@ -57,7 +57,11 @@ export function registerQuestionRoutes(app: FastifyInstance, s: Services) {
     if (!body.draft.trim())
       throw new HttpError(400, 'empty_draft', 'Write something to improve first.');
     if (!s.provider.isConfigured())
-      throw new HttpError(400, 'not_configured', new ProviderError('not_configured').message);
+      throw new HttpError(
+        400,
+        'not_configured',
+        new ProviderError('not_configured', null, { source: NO_PROVIDER }).message,
+      );
     const model = s.modelSettings.resolve().model;
     if (!model) throw new HttpError(400, 'model_not_selected', 'Select a model in Settings first.');
 

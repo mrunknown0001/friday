@@ -10,25 +10,66 @@ const RETRYABLE: ReadonlySet<ProviderErrorKind> = new Set([
   'upstream',
 ]);
 
-const USER_MESSAGES: Record<ProviderErrorKind, string> = {
-  not_configured:
-    'NoTokenLimit is not configured. Set NTL_API_KEY (see Settings for the file) and restart Friday.',
-  auth: 'NoTokenLimit rejected the API key. Check NTL_API_KEY.',
-  permission: 'Your NoTokenLimit account is not permitted to use this model or endpoint.',
-  rate_limit: 'NoTokenLimit is rate limiting requests. Wait a moment and retry.',
-  quota: 'Your NoTokenLimit quota or credit is exhausted.',
-  timeout: 'The request to NoTokenLimit timed out.',
-  network: 'Could not reach NoTokenLimit (network error).',
-  bad_request: 'NoTokenLimit rejected the request as invalid.',
-  model_not_found: 'The selected model is not available to your account.',
-  unsupported: 'The selected model does not support a feature this request needs.',
-  server: 'NoTokenLimit returned a server error.',
-  upstream:
-    "NoTokenLimit couldn't get an answer from the model's provider. This is on NoTokenLimit's side: try again in a few minutes, or choose another model in Settings.",
-  malformed: 'NoTokenLimit returned a response that could not be understood.',
-  cancelled: 'The request was cancelled.',
-  unknown: 'Unexpected error while calling NoTokenLimit.',
+/** Who an error is about, for messages that name the provider and its key. */
+export interface ProviderSource {
+  label: string;
+  envVar: string;
+  /** Passes requests on to other companies' models (NoTokenLimit, OpenRouter). */
+  gateway: boolean;
+}
+
+export const NOTOKENLIMIT: ProviderSource = {
+  label: 'NoTokenLimit',
+  envVar: 'NTL_API_KEY',
+  gateway: true,
 };
+
+/** No provider has a key at all. */
+export const NO_PROVIDER: ProviderSource = {
+  label: 'No model provider',
+  envVar: 'NTL_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY',
+  gateway: false,
+};
+
+function userMessage(kind: ProviderErrorKind, p: ProviderSource): string {
+  const n = p.label;
+  switch (kind) {
+    case 'not_configured':
+      return p === NO_PROVIDER
+        ? `No model provider is configured. Set ${p.envVar} (see Settings for the file) and restart Friday.`
+        : `${n} is not configured. Set ${p.envVar} (see Settings for the file) and restart Friday.`;
+    case 'auth':
+      return `${n} rejected the API key. Check ${p.envVar}.`;
+    case 'permission':
+      return `Your ${n} account is not permitted to use this model or endpoint.`;
+    case 'rate_limit':
+      return `${n} is rate limiting requests. Wait a moment and retry.`;
+    case 'quota':
+      return `Your ${n} quota or credit is exhausted.`;
+    case 'timeout':
+      return `The request to ${n} timed out.`;
+    case 'network':
+      return `Could not reach ${n} (network error).`;
+    case 'bad_request':
+      return `${n} rejected the request as invalid.`;
+    case 'model_not_found':
+      return 'The selected model is not available to your account.';
+    case 'unsupported':
+      return 'The selected model does not support a feature this request needs.';
+    case 'server':
+      return `${n} returned a server error.`;
+    case 'upstream':
+      return p.gateway
+        ? `${n} couldn't get an answer from the model's provider. This is on ${n}'s side: try again in a few minutes, or choose another model in Settings.`
+        : `${n} is overloaded or couldn't answer right now. Try again in a few minutes, or choose another model in Settings.`;
+    case 'malformed':
+      return `${n} returned a response that could not be understood.`;
+    case 'cancelled':
+      return 'The request was cancelled.';
+    case 'unknown':
+      return `Unexpected error while calling ${n}.`;
+  }
+}
 
 export class ProviderError extends Error {
   readonly kind: ProviderErrorKind;
@@ -41,9 +82,14 @@ export class ProviderError extends Error {
   constructor(
     kind: ProviderErrorKind,
     detail?: string | null,
-    opts: { status?: number | null; retryAfterMs?: number | null; cause?: unknown } = {},
+    opts: {
+      status?: number | null;
+      retryAfterMs?: number | null;
+      cause?: unknown;
+      source?: ProviderSource;
+    } = {},
   ) {
-    const base = USER_MESSAGES[kind];
+    const base = userMessage(kind, opts.source ?? NOTOKENLIMIT);
     super(detail ? `${base} (${detail})` : base, { cause: opts.cause });
     this.name = 'ProviderError';
     this.kind = kind;
@@ -53,7 +99,7 @@ export class ProviderError extends Error {
   }
 }
 
-function parseRetryAfter(headers: Headers | undefined): number | null {
+export function parseRetryAfter(headers: Headers | undefined): number | null {
   if (!headers) return null;
   const ms = headers.get('retry-after-ms');
   if (ms && Number.isFinite(Number(ms))) return Number(ms);
@@ -75,31 +121,44 @@ function extractProviderDetail(err: InstanceType<typeof OpenAI.APIError>): {
   return { code, message };
 }
 
-const QUOTA_HINT =
+export const QUOTA_HINT =
   /quota|credit|balance|insufficient|billing|payment|exhausted|plan limit|limit reached/i;
 const MODEL_HINT = /model/i;
 /** NoTokenLimit's wording when the model's own provider fails or is unreachable. */
 const UPSTREAM_HINT =
   /upstream|bad gateway|gateway time-?out|service unavailable|overloaded|provider (failed|error|unavailable)/i;
 /** Upstream outages last longer than a blip: wait at least this long before retrying. */
-const UPSTREAM_RETRY_MS = 2_000;
+export const UPSTREAM_RETRY_MS = 2_000;
 const UNSUPPORTED_HINT =
   /not support|unsupported|tool_choice|tools? (are|is) not|function calling/i;
 
-/** Map any thrown value from the OpenAI SDK (or our own code) to a ProviderError. */
-export function classifyError(err: unknown, redactor: Redactor): ProviderError {
-  if (err instanceof ProviderError) return err;
+type ErrorOpts = ConstructorParameters<typeof ProviderError>[2];
 
-  if (err instanceof OpenAI.APIUserAbortError) return new ProviderError('cancelled');
-  if (err instanceof OpenAI.APIConnectionTimeoutError)
-    return new ProviderError('timeout', null, { cause: err });
+/**
+ * Providers quote part of a rejected key ("sk-proj-***…abcd"); not even that is shown. Exported for
+ * the Anthropic classifier.
+ */
+export function withoutKeyHints(text: string): string {
+  return text.replace(/[\w-]*\*{3,}[\w-]*/g, '[REDACTED]');
+}
+
+/** Map any thrown value from the OpenAI SDK (or our own code) to a ProviderError. */
+export function classifyError(
+  err: unknown,
+  redactor: Redactor,
+  source: ProviderSource = NOTOKENLIMIT,
+): ProviderError {
+  if (err instanceof ProviderError) return err;
+  const E = (kind: ProviderErrorKind, detail?: string | null, opts: ErrorOpts = {}) =>
+    new ProviderError(kind, detail, { ...opts, source });
+
+  if (err instanceof OpenAI.APIUserAbortError) return E('cancelled');
+  if (err instanceof OpenAI.APIConnectionTimeoutError) return E('timeout', null, { cause: err });
   if (err instanceof OpenAI.APIConnectionError) {
-    return new ProviderError(
+    return E(
       'network',
       redactor.redact(err.cause instanceof Error ? err.cause.message : err.message),
-      {
-        cause: err,
-      },
+      { cause: err },
     );
   }
 
@@ -107,63 +166,56 @@ export function classifyError(err: unknown, redactor: Redactor): ProviderError {
     const status = typeof err.status === 'number' ? err.status : null;
     const { code, message } = extractProviderDetail(err);
     const text = `${code} ${message}`.trim();
-    const detail = redactor.redact(message || code || `HTTP ${status ?? '?'}`).slice(0, 300);
+    const detail = redactor
+      .redact(withoutKeyHints(message || code || `HTTP ${status ?? '?'}`))
+      .slice(0, 300);
     const retryAfterMs = parseRetryAfter(err.headers);
     const opts = { status, retryAfterMs, cause: err };
     const upstream = () =>
-      new ProviderError('upstream', detail, {
+      E('upstream', detail, {
         ...opts,
         retryAfterMs: Math.max(retryAfterMs ?? 0, UPSTREAM_RETRY_MS),
       });
 
     switch (true) {
       case status === 401:
-        return new ProviderError('auth', detail, opts);
+        return E('auth', detail, opts);
       case status === 402:
-        return new ProviderError('quota', detail, opts);
+        return E('quota', detail, opts);
       case status === 403:
-        return new ProviderError(QUOTA_HINT.test(text) ? 'quota' : 'permission', detail, opts);
+        return E(QUOTA_HINT.test(text) ? 'quota' : 'permission', detail, opts);
       case status === 404:
-        return new ProviderError(
-          MODEL_HINT.test(text) ? 'model_not_found' : 'bad_request',
-          detail,
-          opts,
-        );
+        return E(MODEL_HINT.test(text) ? 'model_not_found' : 'bad_request', detail, opts);
       case status === 408:
-        return new ProviderError('timeout', detail, opts);
+        return E('timeout', detail, opts);
       case status === 429:
-        return new ProviderError(QUOTA_HINT.test(text) ? 'quota' : 'rate_limit', detail, opts);
+        return E(QUOTA_HINT.test(text) ? 'quota' : 'rate_limit', detail, opts);
       case status === 400 || status === 422:
         if (
           MODEL_HINT.test(text) &&
           /not (found|exist|available|allowed)|invalid model|unknown model/i.test(text)
         ) {
-          return new ProviderError('model_not_found', detail, opts);
+          return E('model_not_found', detail, opts);
         }
-        return new ProviderError(
-          UNSUPPORTED_HINT.test(text) ? 'unsupported' : 'bad_request',
-          detail,
-          opts,
-        );
-      // A bad gateway or gateway timeout: NoTokenLimit got no good answer from the model's provider.
+        return E(UNSUPPORTED_HINT.test(text) ? 'unsupported' : 'bad_request', detail, opts);
+      // A bad gateway or gateway timeout: no good answer came back from the model's provider.
       case status === 502 || status === 504:
         return upstream();
       case status !== null && status >= 500:
-        return UPSTREAM_HINT.test(text) ? upstream() : new ProviderError('server', detail, opts);
+        return UPSTREAM_HINT.test(text) ? upstream() : E('server', detail, opts);
       default:
         // Errors embedded in an SSE stream arrive without an HTTP status.
-        if (QUOTA_HINT.test(text)) return new ProviderError('quota', detail, opts);
-        if (/rate.?limit|too many requests/i.test(text))
-          return new ProviderError('rate_limit', detail, opts);
+        if (QUOTA_HINT.test(text)) return E('quota', detail, opts);
+        if (/rate.?limit|too many requests/i.test(text)) return E('rate_limit', detail, opts);
         if (UPSTREAM_HINT.test(text)) return upstream();
-        return new ProviderError('unknown', detail, opts);
+        return E('unknown', detail, opts);
     }
   }
 
-  if (err instanceof Error && err.name === 'AbortError') return new ProviderError('cancelled');
+  if (err instanceof Error && err.name === 'AbortError') return E('cancelled');
   if (err instanceof SyntaxError)
-    return new ProviderError('malformed', redactor.redact(err.message), { cause: err });
+    return E('malformed', redactor.redact(err.message), { cause: err });
 
   const message = err instanceof Error ? err.message : String(err);
-  return new ProviderError('unknown', redactor.redact(message).slice(0, 300), { cause: err });
+  return E('unknown', redactor.redact(message).slice(0, 300), { cause: err });
 }

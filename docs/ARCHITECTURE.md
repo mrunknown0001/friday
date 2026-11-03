@@ -3,16 +3,16 @@
 ## Overview
 
 ```
-Browser (React UI)                 Local server (Node, 127.0.0.1 only)                NoTokenLimit
-┌───────────────────┐  fetch/SSE  ┌──────────────────────────────────────────┐  HTTPS  ┌────────────┐
-│ Sidebar / Chat /  │ ──────────▶ │ http/   guards → routes → zod validation │ ──────▶ │ /models    │
-│ Settings          │ ◀────────── │ chat/   RunManager, context, prompt      │ ◀────── │ /chat/...  │
-└───────────────────┘   events    │ providers/ LLMProvider ← NoTokenLimit    │         └────────────┘
-                                  │ repositories/ → SQLite (.data/friday.db) │
-                                  └──────────────────────────────────────────┘
+Browser (React UI)                 Local server (Node, 127.0.0.1 only)                Model providers
+┌───────────────────┐  fetch/SSE  ┌──────────────────────────────────────────┐  HTTPS  ┌──────────────┐
+│ Sidebar / Chat /  │ ──────────▶ │ http/   guards → routes → zod validation │ ──────▶ │ NoTokenLimit │
+│ Settings          │ ◀────────── │ chat/   RunManager, context, prompt      │ ◀────── │ Anthropic    │
+└───────────────────┘   events    │ providers/ ProviderRouter → each API     │         │ OpenAI       │
+                                  │ repositories/ → SQLite (.data/friday.db) │         │ OpenRouter   │
+                                  └──────────────────────────────────────────┘         └──────────────┘
 ```
 
-The browser never talks to the provider and never sees the API key. All model traffic, persistence, and (from Phase 2)
+The browser never talks to a provider and never sees an API key. All model traffic, persistence, and (from Phase 2)
 tool execution happen in the server process.
 
 ## Server modules (`apps/server/src`)
@@ -41,14 +41,29 @@ Agent code depends only on `LLMProvider`:
 - `complete(request)` is non-streaming. It is used for summaries, probes, and models where streaming is unsupported.
 - `listModels()`
 
-Errors are classified into kinds (`providers/errors.ts`); rate limits, timeouts, network, server and `upstream`
-errors are retried with jittered backoff (`providers/retry.ts`). `upstream` covers NoTokenLimit failing to get an
-answer from the model's own provider: a 502/504, or an error such as "Upstream provider failed" sent inside an
-already-open stream. Such a stream is sent again only while nothing has reached the caller yet, waiting at least 2 s
-between tries, and the final message says the outage is on NoTokenLimit's side and suggests another model.
+The server's provider is a `ProviderRouter` (`providers/router.ts`) over four providers. The model id picks one:
+`anthropic:`, `openai:` and `openrouter:` prefixes, and no prefix for NoTokenLimit (so existing settings, capabilities
+and usage records keep their ids). Each provider strips its prefix before calling its API, and records calls under the
+full id. A provider is used only when its key is set; `listAll()` lists the configured ones in parallel and reports the
+ones that fail next to the models of the others (`ModelListDto`).
 
-Switching models changes nothing outside the request's `model` field. Adding another OpenAI-compatible provider means
-implementing this interface. Nothing else should change.
+- `OpenAICompatibleProvider` (`providers/openaiCompatible.ts`, the OpenAI SDK) serves NoTokenLimit
+  (`NoTokenLimitProvider`, which adds its ~1,500-token hidden-prompt overhead), OpenAI (`max_completion_tokens`,
+  chat models only) and OpenRouter.
+- `AnthropicProvider` (`providers/anthropic.ts`) calls the Messages API with `fetch` and parses its server-sent
+  events itself; no SDK. It moves system messages to `system`, sends tool results as `tool_result` blocks in user
+  turns, merges consecutive turns of one role, and sets `max_tokens`, which the API requires. It marks the system
+  prompt, the last tool and the last message as cache breakpoints (prompt caching), and counts cached input tokens in
+  the usage.
+
+Errors are classified into kinds (`providers/errors.ts`), and their messages name the provider and its key variable.
+Rate limits, timeouts, network, server and `upstream` errors are retried with jittered backoff
+(`providers/retry.ts`). For the gateways (NoTokenLimit, OpenRouter), `upstream` covers failing to get an answer from
+the model's own provider: a 502/504, or an error such as "Upstream provider failed" sent inside an already-open stream.
+For Anthropic it is an `overloaded_error` (529). Such a stream is sent again only while nothing has reached the caller
+yet, waiting at least 2 s between tries.
+
+Switching models, and so providers, changes nothing outside the request's `model` field.
 
 Capabilities are **not assumed**. `model_capabilities` stores probe results (`unknown`, `supported`, or `unsupported`).
 The run manager falls back to `complete()` when streaming is known to be unsupported. Context windows start as

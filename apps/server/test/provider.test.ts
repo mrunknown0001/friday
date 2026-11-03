@@ -430,7 +430,7 @@ describe('NoTokenLimitProvider', () => {
         }),
     ]);
     await expect(ok.provider.listModels()).resolves.toEqual([
-      { id: 'claude-opus-5', name: 'Opus', tier: 'high' },
+      { id: 'claude-opus-5', provider: 'notokenlimit', name: 'Opus', tier: 'high' },
     ]);
     expect(ok.calls[0]!.url).toBe('https://ntl.test/api/v1/models');
     const bad = makeProvider([() => jsonResponse(200, { models: 'nope' })]);

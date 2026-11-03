@@ -27,6 +27,11 @@ export function testConfig(overrides: Partial<AppConfig['provider']> = {}): AppC
       maxRetries: 2,
       ...overrides,
     },
+    providers: {
+      anthropic: { apiKey: null },
+      openai: { apiKey: null },
+      openrouter: { apiKey: null },
+    },
     server: {
       host: '127.0.0.1',
       port: 4317,

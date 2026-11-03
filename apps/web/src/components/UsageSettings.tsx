@@ -529,11 +529,11 @@ export function UsageSettings() {
           <p className="mt-2 text-[11px] text-zinc-500">
             Counted from Friday&apos;s own record of each model call; no prompt or reply content.
             {usage.totals.estimatedCalls > 0 &&
-              ` Token counts marked ~ include Friday's estimates (${usage.totals.estimatedCalls} of ${usage.totals.calls} calls): NoTokenLimit doesn't report usage on streamed replies, so Friday counts what it sent and received.`}
+              ` Token counts marked ~ include Friday's estimates (${usage.totals.estimatedCalls} of ${usage.totals.calls} calls): some providers (NoTokenLimit) don't report usage on streamed replies, so Friday counts what it sent and received.`}
             {usage.totals.callsWithoutTokens > 0 &&
               ` ${plural(usage.totals.callsWithoutTokens, 'call')} (failed, or from before Friday estimated tokens) ${usage.totals.callsWithoutTokens === 1 ? 'has' : 'have'} no token counts.`}{' '}
-            NoTokenLimit doesn&apos;t publish per-token prices, so the cost is only an estimate from
-            the prices you enter.
+            Friday doesn&apos;t know your providers&apos; per-token prices, so the cost is only an
+            estimate from the prices you enter.
           </p>
         </>
       )}
