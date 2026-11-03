@@ -52,3 +52,21 @@ export const suggestNextSteps = defineTool({
     };
   },
 });
+
+export const suggestMode = defineTool({
+  name: 'suggest_mode',
+  description:
+    'Offer the user a one-click switch to another mode when the request clearly fits it better: ask (questions, no changes), plan (agree on a plan before a large or risky change), debug (track down a bug or failure), code (implement). Call it at most once, in the same message as your final answer. It only shows a button; the mode changes only if the user clicks it.',
+  category: 'agent_state',
+  risk: 'none',
+  requiresProject: false,
+  schema: z.object({
+    mode: z.enum(['code', 'plan', 'debug', 'ask']),
+    reason: z.string().min(5).max(200).describe('Why this mode fits, in a few words.'),
+  }),
+  describeCall: (a) => `${a.mode ?? ''}`,
+  async execute(args, ctx) {
+    ctx.setModeSuggestion?.({ mode: args.mode, reason: args.reason });
+    return { content: 'Suggestion recorded.', summary: `${args.mode}: ${args.reason}` };
+  },
+});

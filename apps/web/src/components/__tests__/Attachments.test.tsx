@@ -47,6 +47,7 @@ const detail = (messages: MessageDto[]): SessionDetailDto => ({
   loadTests: [],
   research: [],
   questions: [],
+  mode: 'auto',
   memoryUsage: {},
 });
 
@@ -73,6 +74,9 @@ const props = (d: SessionDetailDto, onSend = vi.fn(async () => true)) => ({
   onOpenMemory: () => {},
   onRevokeTaskPermission: async () => {},
   onAnswerQuestion: async () => {},
+  mode: 'auto' as const,
+  onModeChange: () => {},
+  onSwitchMode: async () => {},
 });
 
 function paste(target: HTMLElement, files: File[], text = '') {

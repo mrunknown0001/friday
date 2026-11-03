@@ -121,6 +121,13 @@ Not reviewed in depth: the deployment-plan module beyond its remote tools.
 | Losing review or undo                        | Covered actions are still re-checked before running (stale if changed), recorded as approvals with `granted_by`, shown with their diff, undoable, in the report, and audited (`approval_approved_by_task_permission`).             |
 | Notifications leaking content                | Notices carry ids, status and the approval title only; no diffs, command output or model text. The `/api/events` stream is behind the same local-only guards and, in the desktop app, the launch token.                            |
 
+## Modes
+
+| Threat                              | Mitigation                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A read-only mode changing something | In ask and plan mode the run is offered only tools of the categories `read_only`, `network`, `agent_state` and `database` (read-only queries, each still approved), and `runToolCall` refuses any other tool before validation, so a call to a tool the model was not offered (or one it guessed) never runs. `request_task_permissions` is not offered either. |
+| The model changing the mode         | Only the user changes it (`PATCH /api/sessions/:id`, audited as `mode_changed`). `suggest_mode` only adds a chip; "Accept and build" is a user click. A run keeps the mode it started with.                                                                                                                                                                     |
+
 ## Prompt enhancement and questions
 
 | Threat                                     | Mitigation                                                                                                                                                                                                                                                                                                               |

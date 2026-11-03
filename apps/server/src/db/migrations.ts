@@ -709,6 +709,16 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX questions_session ON questions (session_id, created_at);
     `,
   },
+  {
+    version: 28,
+    name: 'modes',
+    up: `
+      -- The conversation's mode (ask and plan only read), and the mode each run ran in.
+      ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'
+        CHECK (mode IN ('auto', 'code', 'plan', 'debug', 'ask'));
+      ALTER TABLE runs ADD COLUMN mode TEXT;
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

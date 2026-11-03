@@ -1,4 +1,4 @@
-import type { NextStep, PlanStep, RunReport } from '@friday/shared';
+import type { AgentMode, NextStep, PlanStep, RunReport } from '@friday/shared';
 import type { Redactor } from '../security/redact.js';
 
 export interface SuggestionInput {
@@ -14,7 +14,20 @@ export interface SuggestionInput {
   failureLocation: string | null;
   /** Follow-ups the model proposed with suggest_next_steps. */
   modelSteps: Array<{ label: string; prompt: string }>;
+  /** The mode the run ran in. */
+  mode?: AgentMode;
+  /** A mode the model proposed with suggest_mode (auto mode). */
+  modeSuggestion?: { mode: Exclude<AgentMode, 'auto'>; reason: string } | null;
+  /** The model tried a tool the mode doesn't allow (ask and plan only read). */
+  blockedByMode?: boolean;
 }
+
+const MODE_NAME: Record<Exclude<AgentMode, 'auto'>, string> = {
+  code: 'Code',
+  plan: 'Plan',
+  debug: 'Debug',
+  ask: 'Ask',
+};
 
 const MAX_TOTAL = 5;
 const MAX_RECORDS = 4;
@@ -52,6 +65,33 @@ export function buildSuggestions(input: SuggestionInput, redactor: Redactor): Ne
   const report = input.report;
   const active = report?.files.filter((f) => !f.reverted) ?? [];
 
+  // A plan written in plan mode is built in code mode, once the user accepts it.
+  if (input.mode === 'plan')
+    records.push({
+      label: 'Accept and build',
+      prompt: 'I accept the plan. Carry it out step by step, keeping the plan up to date.',
+      action: 'switch_mode',
+      mode: 'code',
+      source: 'records',
+    });
+  // It tried to change something: one click lets it, in code mode.
+  if (input.blockedByMode && input.mode === 'ask')
+    records.push({
+      label: 'Switch to Code mode',
+      prompt: 'Go ahead and make that change.',
+      action: 'switch_mode',
+      mode: 'code',
+      source: 'records',
+    });
+  if (input.modeSuggestion)
+    records.push({
+      label: `Switch to ${MODE_NAME[input.modeSuggestion.mode]} mode`,
+      prompt: '',
+      action: 'switch_mode',
+      mode: input.modeSuggestion.mode,
+      source: 'model',
+    });
+
   if (report?.status === 'failed') {
     const last = [...report.commands].reverse().find((c) => c.verification && c.afterLastChange);
     add(
@@ -87,7 +127,8 @@ export function buildSuggestions(input: SuggestionInput, redactor: Redactor): Ne
   }
 
   const next = input.plan?.find((s) => s.status === 'pending' || s.status === 'in_progress');
-  if (next && report?.status !== 'failed')
+  // In plan mode the next step is building it: "Accept and build" above.
+  if (next && report?.status !== 'failed' && input.mode !== 'plan')
     add(`Next: ${next.title}`, `Continue with the next step of the plan: ${next.title}.`);
 
   if (input.pendingMemories > 0) {

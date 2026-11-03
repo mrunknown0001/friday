@@ -1,5 +1,5 @@
-import type { NextStep } from '@friday/shared';
-import { Brain, ClipboardCheck, Sparkles } from 'lucide-react';
+import type { AgentMode, NextStep } from '@friday/shared';
+import { ArrowRightLeft, Brain, ClipboardCheck, Sparkles } from 'lucide-react';
 import { cn } from '../lib/cn';
 
 /**
@@ -12,11 +12,14 @@ export function SuggestionChips({
   disabled,
   onPrompt,
   onOpenMemory,
+  onSwitchMode,
 }: {
   steps: NextStep[];
   disabled: boolean;
   onPrompt: (prompt: string) => void;
   onOpenMemory: () => void;
+  /** Switch the conversation's mode, then send the prompt when there is one. */
+  onSwitchMode?: (mode: AgentMode, prompt: string) => void;
 }) {
   if (steps.length === 0) return null;
   return (
@@ -26,8 +29,20 @@ export function SuggestionChips({
           key={`${s.source}-${s.label}`}
           type="button"
           disabled={disabled}
-          title={s.action === 'prompt' ? s.prompt : 'Open the memory manager'}
-          onClick={() => (s.action === 'open_memory' ? onOpenMemory() : onPrompt(s.prompt))}
+          title={
+            s.action === 'open_memory'
+              ? 'Open the memory manager'
+              : s.action === 'switch_mode'
+                ? `Switch this conversation to ${s.mode} mode${s.prompt ? ` and send: ${s.prompt}` : ''}`
+                : s.prompt
+          }
+          onClick={() =>
+            s.action === 'open_memory'
+              ? onOpenMemory()
+              : s.action === 'switch_mode'
+                ? onSwitchMode?.(s.mode ?? 'auto', s.prompt)
+                : onPrompt(s.prompt)
+          }
           className={cn(
             'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50',
             s.source === 'records'
@@ -37,6 +52,8 @@ export function SuggestionChips({
         >
           {s.action === 'open_memory' ? (
             <Brain className="h-3.5 w-3.5" aria-hidden />
+          ) : s.action === 'switch_mode' ? (
+            <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden />
           ) : s.source === 'records' ? (
             <ClipboardCheck className="h-3.5 w-3.5" aria-label="from Friday's records" />
           ) : (

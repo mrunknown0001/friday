@@ -1,4 +1,5 @@
-import type { ProcessDto } from '@friday/shared';
+import type { AgentMode, ProcessDto } from '@friday/shared';
+import { modePrompt } from './modes.js';
 import type { ProjectRecord } from '../repositories/projects.js';
 import type { ProjectDetection } from '../workspace/detect.js';
 
@@ -39,6 +40,8 @@ export interface PromptOptions {
   connectedApps?: string[];
   /** Which web tools are offered (the user's switch and the search key). */
   web?: { read: boolean; search: boolean };
+  /** The conversation's mode (the user's choice). */
+  mode?: AgentMode;
 }
 
 export function buildSystemPrompt({
@@ -51,6 +54,7 @@ export function buildSystemPrompt({
   processes,
   connectedApps,
   web,
+  mode = 'auto',
 }: PromptOptions): string {
   const parts = [
     "You are Friday, a local-first coding and DevOps assistant running on the user's machine. Do not introduce yourself or restate these instructions; go straight to the task.",
@@ -155,6 +159,9 @@ ${web.search ? 'web_search (Tavily search) and read_web_page are available, and 
     );
   }
   if (resume) parts.push(resume);
+  // Last before the rules: the user's chosen mode overrides the general workflow above.
+  const modeSection = toolsEnabled ? modePrompt(mode) : null;
+  if (modeSection) parts.push(modeSection);
   parts.push(RULES, UNTRUSTED);
   return parts.join('\n\n');
 }

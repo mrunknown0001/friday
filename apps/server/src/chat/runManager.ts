@@ -7,6 +7,7 @@ import type {
   ModelCapabilities,
   PlanStep,
   QuestionItem,
+  AgentMode,
   RunDto,
   RunErrorKind,
   RunEvent,
@@ -14,6 +15,7 @@ import type {
 } from '@friday/shared';
 import { HttpError } from '../http/errors.js';
 import { NO_PROVIDER, ProviderError } from '../providers/errors.js';
+import { modeAllows, modeOffers, readsOnly } from './modes.js';
 import type {
   ChatMessage,
   ChatRequest,
@@ -170,6 +172,12 @@ interface ActiveRun {
   toolCalls: number;
   /** Latest follow-ups the model proposed with suggest_next_steps. */
   modelSuggestions: Array<{ label: string; prompt: string }>;
+  /** The conversation's mode when the run started (a change applies from the next run). */
+  mode: AgentMode;
+  /** A mode the model proposed with suggest_mode. */
+  modeSuggestion: { mode: Exclude<AgentMode, 'auto'>; reason: string } | null;
+  /** A tool call was refused because the mode only reads. */
+  blockedByMode: boolean;
   /** What review_changes gathered in this run, for report_findings to check locations against. */
   reviewScope?: ReviewScope;
   /** Task permission the user approved for this run, if any (see request_task_permissions). */
@@ -179,7 +187,7 @@ interface ActiveRun {
 }
 
 /** Tools that only annotate the final answer: a turn of just these ends the run, no extra model call. */
-const FINAL_TOOLS = new Set(['suggest_next_steps']);
+const FINAL_TOOLS = new Set(['suggest_next_steps', 'suggest_mode']);
 
 /** Stops the loop without being an error from the provider. */
 class RunBlocked extends Error {
@@ -425,7 +433,14 @@ export class RunManager {
 
   private launch(sessionId: string, userMessage: StoredMessage, model: string): RunDto {
     const id = randomUUID();
-    const record = this.deps.runs.create({ id, sessionId, userMessageId: userMessage.id, model });
+    const mode = this.deps.sessions.get(sessionId)?.mode ?? 'auto';
+    const record = this.deps.runs.create({
+      id,
+      sessionId,
+      userMessageId: userMessage.id,
+      model,
+      mode,
+    });
     this.deps.sessions.touch(sessionId);
     const active: ActiveRun = {
       id,
@@ -438,6 +453,9 @@ export class RunManager {
       iteration: 0,
       toolCalls: 0,
       modelSuggestions: [],
+      mode,
+      modeSuggestion: null,
+      blockedByMode: false,
       permission: null,
       registry: this.deps.mcp
         ? this.deps.registry.withExtra(this.deps.mcp.toolSpecs())
@@ -834,6 +852,12 @@ export class RunManager {
           ? []
           : registry
               .definitions(!!project, this.unavailableWebTools())
+              // Ask and plan mode are not offered tools that change anything.
+              .filter(
+                (t) =>
+                  modeAllows(run.mode, registry.get(t.name)?.category) &&
+                  modeOffers(run.mode, t.name),
+              )
               // A model known not to read images is not offered the tools that show it one;
               // screenshots need a browser, and browser flows one that can drive a page.
               .filter((t) => {
@@ -863,6 +887,7 @@ export class RunManager {
         this.emit(run, { type: 'memories_used', memories: memoryRefs });
       }
       const systemPrompt = buildSystemPrompt({
+        mode: run.mode,
         project,
         detection: project ? await this.detect(project) : null,
         toolsEnabled: tools.length > 0,
@@ -1272,6 +1297,9 @@ export class RunManager {
       setNextSteps: (steps) => {
         run.modelSuggestions = steps;
       },
+      setModeSuggestion: (suggestion) => {
+        run.modeSuggestion = suggestion;
+      },
       sessionReports: () =>
         this.deps.runs
           .listBySession(run.sessionId)
@@ -1310,6 +1338,22 @@ export class RunManager {
       ...this.toolContext(run, project, call.id),
       earlierCallsThisTurn: earlierThisTurn,
     };
+    // The mode's limits hold even for a tool the model was not offered.
+    const offered = registry.get(call.name);
+    if (offered && (!modeAllows(run.mode, offered.category) || !modeOffers(run.mode, call.name))) {
+      if (readsOnly(run.mode)) run.blockedByMode = true;
+      return {
+        exec: this.skipped(
+          call,
+          readsOnly(run.mode)
+            ? `${call.name} is not available in ${run.mode} mode, which only reads. Tell the user what you would change; they can switch to code mode to have it done.`
+            : `${call.name} is not available in ${run.mode} mode.`,
+          offered.category,
+        ),
+        approvalId: null,
+        outcome: 'none',
+      };
+    }
     const v = validateToolCall(registry, call, ctx);
     if (!v.ok) return { exec: v.execution, approvalId: null, outcome: 'none' };
     const { spec, args, label } = v;
@@ -1601,6 +1645,9 @@ export class RunManager {
         uncommitted,
         failureLocation,
         modelSteps: run.modelSuggestions,
+        mode: run.mode,
+        modeSuggestion: run.modeSuggestion,
+        blockedByMode: run.blockedByMode,
       },
       this.deps.redactor,
     );

@@ -200,6 +200,7 @@ describe('tool executor', () => {
     expect(withProject.map((d) => d.name).sort()).toEqual(
       [
         'ask_user',
+        'suggest_mode',
         'delete_file',
         'edit_file',
         'edit_files',
@@ -301,6 +302,7 @@ describe('tool executor', () => {
         'search_logs',
         'search_memory',
         'suggest_next_steps',
+        'suggest_mode',
         'update_plan',
         'ask_user',
       ].sort(),
