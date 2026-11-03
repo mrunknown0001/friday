@@ -534,6 +534,29 @@ approved), credentials never reach the model, and results from other systems are
   key: Google's chat endpoint answers errors with a list, which is now read, and its "Please pass a valid API key" is
   reported as a key problem. Not yet tried with a valid key.
 
+- ✅ **Regex search without ripgrep, and a search panel** (requested 2026-11-03). Done: without `rg`, `search_code`
+  matches JavaScript regexes in a worker thread that is stopped after 2 s on one file (ReDoS), and the Files panel
+  has a search box (text or regex, match case, file filter) whose results open the file at the line. Checked live
+  on Friday's own repo without ripgrep: regex searches took under 0.3 s, and `(a+)+$` on a 40-character line was
+  stopped after 2 s with the server unaffected.
+
+### Queued (requested 2026-11-03)
+
+- **Token and context optimization.** Spend fewer tokens per request without losing what the model needs. Starting
+  points: measure where a run's tokens go (system prompt, tool definitions, history, tool results) and show it in
+  Usage; send only the tool definitions that fit the request; shrink old tool results and repeated file reads in the
+  history; summarize earlier; prompt caching where the provider offers it (done for Anthropic). Open questions: how
+  aggressive to be by default, and whether the user can see and tune it.
+- **Modes: auto (default), code, plan, debug and ask.** A mode picker in the composer that changes how Friday works:
+  - **ask**: answers questions and explains; reads only, never changes anything.
+  - **plan**: investigates and writes a plan; changes nothing until the user accepts the plan.
+  - **code**: implements, with tests where the project has them.
+  - **debug**: reproduces the problem first, finds the cause, fixes it, and shows the fix works.
+  - **auto**: Friday picks the approach from the request (today's behaviour).
+
+  Open questions: per message or per conversation; whether a mode's limits (ask and plan never edit) are enforced by
+  the tool policy or only asked of the model; and whether the model may suggest switching modes.
+
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,
 test insights, safe rename, then saved actions, Docker Compose, health monitors, dependency upgrades, browser flows

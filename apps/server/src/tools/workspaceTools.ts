@@ -188,7 +188,7 @@ export const fileInfo = defineTool({
 export const searchCode = defineTool({
   name: 'search_code',
   description:
-    'Search file contents across the project (ripgrep when available). Literal by default; set regex=true for a regular expression. Respects .gitignore. Credential files (.env, keys, …) and .git are never searched. Returns matching lines grouped by file with line numbers. To find where a named class, function or method is defined or called, use find_symbol instead (exact definitions, no noise).',
+    'Search file contents across the project (ripgrep when available). Literal by default; set regex=true for a regular expression (the syntax of ripgrep when it is installed, otherwise of JavaScript; a pattern that backtracks for too long is stopped). Respects .gitignore. Credential files (.env, keys, …) and .git are never searched. Returns matching lines grouped by file with line numbers. To find where a named class, function or method is defined or called, use find_symbol instead (exact definitions, no noise).',
   category: 'read_only',
   risk: 'none',
   requiresProject: true,

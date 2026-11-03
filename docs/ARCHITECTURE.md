@@ -111,17 +111,17 @@ loop.
 
 ## Tools and workspace (`tools/`, `workspace/`)
 
-| Module                    | Responsibility                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `tools/types.ts`          | `ToolSpec`: name, description, permission category, risk, zod schema, executor. zod → JSON Schema.                       |
-| `tools/policy.ts`         | The only place that decides allow, deny, or (Phase 3) approval. Phase 2 allows `read_only` and `agent_state`.            |
-| `tools/registry.ts`       | Registers tools, advertises only policy-allowed ones, and validates and executes calls.                                  |
-| `tools/workspaceTools.ts` | `inspect_project`, `list_directory`, `find_files`, `search_code`, `read_file`, `file_info`.                              |
-| `tools/planTool.ts`       | `update_plan`: stores the checklist on the session and emits `plan_updated`.                                             |
-| `workspace/paths.ts`      | Canonical resolution inside the root, symlink-escape checks, credential and `.git` blocking, project-root authorization. |
-| `workspace/walk.ts`       | Depth-first listing honouring nested `.gitignore` and default exclusions; symlinks not followed.                         |
-| `workspace/search.ts`     | ripgrep via argv (no shell) with JSON output, or a literal-only built-in fallback.                                       |
-| `workspace/detect.ts`     | Stack, package-manager, manifest, and script detection from top-level files.                                             |
+| Module                    | Responsibility                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools/types.ts`          | `ToolSpec`: name, description, permission category, risk, zod schema, executor. zod → JSON Schema.                                                                                                                                    |
+| `tools/policy.ts`         | The only place that decides allow, deny, or (Phase 3) approval. Phase 2 allows `read_only` and `agent_state`.                                                                                                                         |
+| `tools/registry.ts`       | Registers tools, advertises only policy-allowed ones, and validates and executes calls.                                                                                                                                               |
+| `tools/workspaceTools.ts` | `inspect_project`, `list_directory`, `find_files`, `search_code`, `read_file`, `file_info`.                                                                                                                                           |
+| `tools/planTool.ts`       | `update_plan`: stores the checklist on the session and emits `plan_updated`.                                                                                                                                                          |
+| `workspace/paths.ts`      | Canonical resolution inside the root, symlink-escape checks, credential and `.git` blocking, project-root authorization.                                                                                                              |
+| `workspace/walk.ts`       | Depth-first listing honouring nested `.gitignore` and default exclusions; symlinks not followed.                                                                                                                                      |
+| `workspace/search.ts`     | ripgrep via argv (no shell) with JSON output, or the built-in search: literal, or a JavaScript regex in a worker that is stopped when one file takes over 2 s. Also serves the Files panel's search (`GET /api/projects/:id/search`). |
+| `workspace/detect.ts`     | Stack, package-manager, manifest, and script detection from top-level files.                                                                                                                                                          |
 
 The UI's file explorer (`/api/projects/:id/tree` and `/file`) uses the same `resolveInside` confinement as the agent.
 

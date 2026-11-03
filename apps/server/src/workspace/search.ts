@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { looksBinary, splitLines } from './files.js';
 import { isGitInternal, isSecretPath, isWithin, WorkspaceError } from './paths.js';
 import { DEFAULT_EXCLUDED_DIRS, walk } from './walk.js';
@@ -43,12 +44,6 @@ export async function search(
 ): Promise<SearchResult> {
   if (!opts.query) throw new WorkspaceError('invalid_path', 'Search query is empty.');
   if (rgPath) return ripgrep(root, rgPath, opts);
-  if (opts.regex) {
-    throw new WorkspaceError(
-      'unsupported',
-      'Regex search requires ripgrep (rg), which is not installed. Retry with regex=false for a literal search.',
-    );
-  }
   return builtinSearch(root, opts);
 }
 
@@ -169,8 +164,105 @@ function ripgrep(root: string, rgPath: string, opts: SearchOptions): Promise<Sea
 const MAX_BUILTIN_FILES = 5_000;
 const MAX_BUILTIN_FILE_BYTES = 1024 * 1024;
 
-/** Literal search used when ripgrep is unavailable. Deliberately has no regex mode (ReDoS risk). */
+/** Limits of the built-in regex engine. */
+export const REGEX_LIMITS = {
+  patternChars: 1_000,
+  /** One file: a pattern still running after this backtracks catastrophically. */
+  fileMs: 2_000,
+  /** The whole search; what was found so far is returned, marked truncated. */
+  totalMs: 20_000,
+  /** Longer lines (minified code) are matched on their start only. */
+  lineChars: 10_000,
+};
+
+/**
+ * Matches lines against a JavaScript regex in a worker thread. JavaScript regexes can take
+ * exponential time ("(a+)+$"), and a running regex can't be interrupted, so the worker is stopped
+ * when one file takes too long. It is plain code with no imports, so it runs the same from source,
+ * compiled and in the desktop bundle.
+ */
+const WORKER_SOURCE = `
+const { parentPort, workerData } = require('node:worker_threads');
+const re = new RegExp(workerData.pattern, workerData.flags);
+parentPort.on('message', ({ lines, max }) => {
+  const hits = [];
+  for (let i = 0; i < lines.length && hits.length < max; i++) {
+    const line = lines[i].length > workerData.lineChars ? lines[i].slice(0, workerData.lineChars) : lines[i];
+    if (re.test(line)) hits.push(i);
+  }
+  parentPort.postMessage(hits);
+});
+`;
+
+class RegexMatcher {
+  private readonly worker: Worker;
+
+  constructor(pattern: string, flags: string) {
+    this.worker = new Worker(WORKER_SOURCE, {
+      eval: true,
+      workerData: { pattern, flags, lineChars: REGEX_LIMITS.lineChars },
+      resourceLimits: { maxOldGenerationSizeMb: 128 },
+    });
+    // Errors surface through the pending match; this keeps an unexpected one from crashing.
+    this.worker.on('error', () => undefined);
+  }
+
+  /** Indexes of the matching lines, or 'timeout' when the file took longer than `ms`. */
+  match(lines: string[], max: number, ms: number): Promise<number[] | 'timeout'> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve('timeout');
+      }, ms);
+      const onMessage = (hits: number[]) => {
+        cleanup();
+        resolve(hits);
+      };
+      const onError = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.worker.off('message', onMessage);
+        this.worker.off('error', onError);
+      };
+      this.worker.on('message', onMessage);
+      this.worker.on('error', onError);
+      this.worker.postMessage({ lines, max });
+    });
+  }
+
+  stop(): void {
+    void this.worker.terminate();
+  }
+}
+
+/** The pattern as a JavaScript regex, or why it isn't one. */
+function compileRegex(query: string, caseSensitive: boolean): string {
+  if (query.length > REGEX_LIMITS.patternChars)
+    throw new WorkspaceError(
+      'invalid_path',
+      `The regex is too long (over ${REGEX_LIMITS.patternChars} characters).`,
+    );
+  const flags = caseSensitive ? '' : 'i';
+  try {
+    new RegExp(query, flags);
+  } catch (err) {
+    throw new WorkspaceError(
+      'invalid_path',
+      `Invalid regex: ${(err as Error).message.replace(/^Invalid regular expression: /, '')}`,
+    );
+  }
+  return flags;
+}
+
+/**
+ * Search used when ripgrep is unavailable: literal text, or a regex matched in a worker that is
+ * stopped when a pattern runs away (see RegexMatcher).
+ */
 async function builtinSearch(root: string, opts: SearchOptions): Promise<SearchResult> {
+  const flags = opts.regex ? compileRegex(opts.query, opts.caseSensitive) : '';
   const stat = await fs.stat(opts.targetAbs);
   const files = stat.isFile()
     ? [path.relative(root, opts.targetAbs).split(path.sep).join('/')]
@@ -190,30 +282,53 @@ async function builtinSearch(root: string, opts: SearchOptions): Promise<SearchR
   const matches: SearchMatch[] = [];
   const truncated = files.length >= MAX_BUILTIN_FILES;
   const done = (t: boolean): SearchResult => ({ matches, truncated: t, engine: 'builtin' });
-
-  for (const rel of files) {
-    if (opts.signal?.aborted) throw new WorkspaceError('unsupported', 'Search cancelled.');
-    if (globRe && !globRe.test(rel) && !globRe.test(path.posix.basename(rel))) continue;
-    // Credential files and git internals are never opened.
-    if (isSecretPath(rel) || isGitInternal(rel)) continue;
-    let buf: Buffer;
-    try {
-      buf = await fs.readFile(path.join(root, rel));
-    } catch {
-      continue;
-    }
-    if (looksBinary(buf)) continue;
-    const lines = splitLines(buf.toString('utf8'));
-    let perFile = 0;
-    for (let i = 0; i < lines.length; i++) {
+  const literal = (lines: string[]) => {
+    const hits: number[] = [];
+    for (let i = 0; i < lines.length && hits.length < 20; i++) {
       const hay = opts.caseSensitive ? lines[i]! : lines[i]!.toLowerCase();
-      if (!hay.includes(needle)) continue;
-      matches.push({ path: rel, line: i + 1, text: clip(lines[i]!) });
-      if (++perFile >= 20) break;
-      if (matches.length >= opts.maxResults) return done(true);
+      if (hay.includes(needle)) hits.push(i);
     }
+    return hits;
+  };
+  const matcher = opts.regex ? new RegexMatcher(opts.query, flags) : null;
+  const deadline = Date.now() + REGEX_LIMITS.totalMs;
+
+  try {
+    for (const rel of files) {
+      if (opts.signal?.aborted) throw new WorkspaceError('unsupported', 'Search cancelled.');
+      if (globRe && !globRe.test(rel) && !globRe.test(path.posix.basename(rel))) continue;
+      // Credential files and git internals are never opened.
+      if (isSecretPath(rel) || isGitInternal(rel)) continue;
+      let buf: Buffer;
+      try {
+        buf = await fs.readFile(path.join(root, rel));
+      } catch {
+        continue;
+      }
+      if (looksBinary(buf)) continue;
+      const lines = splitLines(buf.toString('utf8'));
+      let hits: number[];
+      if (matcher) {
+        if (Date.now() > deadline) return done(true);
+        const found = await matcher.match(lines, 20, REGEX_LIMITS.fileMs);
+        if (found === 'timeout')
+          throw new WorkspaceError(
+            'unsupported',
+            `The regex took over ${REGEX_LIMITS.fileMs / 1000} s on ${rel}, so the search was stopped. It probably backtracks catastrophically (nested quantifiers such as (a+)+ or (.*)*); simplify it.`,
+          );
+        hits = found;
+      } else {
+        hits = literal(lines);
+      }
+      for (const i of hits) {
+        matches.push({ path: rel, line: i + 1, text: clip(lines[i]!) });
+        if (matches.length >= opts.maxResults) return done(true);
+      }
+    }
+    return done(truncated);
+  } finally {
+    matcher?.stop();
   }
-  return done(truncated);
 }
 
 /** Minimal glob → RegExp: `**` any path, `*` any segment chars, `?` one char. Linear-time pattern. */
