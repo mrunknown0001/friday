@@ -5,6 +5,7 @@ import type {
   RunErrorKind,
   RunReport,
   RunStatus,
+  AgentMode,
 } from '@friday/shared';
 import type { Db } from '../db/database.js';
 
@@ -14,6 +15,7 @@ interface RunRow {
   user_message_id: number;
   status: RunStatus;
   model: string | null;
+  mode: AgentMode | null;
   error_kind: RunErrorKind | null;
   error_message: string | null;
   retryable: number;
@@ -44,6 +46,7 @@ function toRecord(r: RunRow): RunRecord {
     userMessageId: r.user_message_id,
     status: r.status,
     model: r.model,
+    mode: r.mode,
     errorKind: r.error_kind,
     errorMessage: r.error_message,
     retryable: r.retryable === 1,
@@ -63,13 +66,19 @@ export function toRunDto(r: RunRecord): RunDto {
 export class RunRepo {
   constructor(private readonly db: Db) {}
 
-  create(r: { id: string; sessionId: string; userMessageId: number; model: string }): RunRecord {
+  create(r: {
+    id: string;
+    sessionId: string;
+    userMessageId: number;
+    model: string;
+    mode?: AgentMode;
+  }): RunRecord {
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, user_message_id, status, model, started_at)
-         VALUES (?, ?, ?, 'running', ?, ?)`,
+        `INSERT INTO runs (id, session_id, user_message_id, status, model, mode, started_at)
+         VALUES (?, ?, ?, 'running', ?, ?, ?)`,
       )
-      .run(r.id, r.sessionId, r.userMessageId, r.model, new Date().toISOString());
+      .run(r.id, r.sessionId, r.userMessageId, r.model, r.mode ?? null, new Date().toISOString());
     return this.get(r.id)!;
   }
 

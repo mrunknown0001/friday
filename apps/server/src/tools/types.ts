@@ -1,4 +1,5 @@
 import type {
+  AgentMode,
   ApprovalDetails,
   BrowserFlowDto,
   LoadTestDto,
@@ -56,6 +57,8 @@ export interface ToolContext {
   memory?: MemoryContext;
   /** Store follow-up suggestions for the end of the run. */
   setNextSteps?: (steps: Array<{ label: string; prompt: string }>) => void;
+  /** Offer a switch to another mode at the end of the run (auto mode only). */
+  setModeSuggestion?: (s: { mode: Exclude<AgentMode, 'auto'>; reason: string }) => void;
   /** Show a recorded deployment plan to the user immediately. */
   emitDeploymentPlan?: (plan: DeploymentPlanDto) => void;
   /** DevOps configuration (SSH hosts, authorized log sources, deployment plans). */

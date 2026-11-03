@@ -1,4 +1,5 @@
 import type {
+  AgentMode,
   ApprovalDto,
   AttachmentDto,
   BrowserFlowDto,
@@ -47,6 +48,7 @@ import { WorktreeDialog } from './WorktreeDialog';
 import { ATTACH_IMAGE_EVENT } from './PreviewPane';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
+import { ModePicker, modeInfo } from './ModePicker';
 import { SuggestionChips } from './SuggestionChips';
 import { usePromptEnhancer } from './PromptEnhancer';
 import { QuestionCard } from './QuestionCard';
@@ -97,6 +99,11 @@ interface Props {
   onOpenMemory: () => void;
   onRevokeTaskPermission: (runId: string) => Promise<void>;
   onAnswerQuestion: (question: QuestionDto, reply: QuestionReply) => Promise<void>;
+  /** The conversation's mode (or the one a new conversation will get). */
+  mode: AgentMode;
+  onModeChange: (mode: AgentMode) => void;
+  /** A "switch mode" suggestion: change the mode, then send the prompt if any. */
+  onSwitchMode: (mode: AgentMode, prompt: string) => Promise<void>;
 }
 
 const Avatar = () => (
@@ -241,12 +248,28 @@ function withRunRecords(
   return out;
 }
 
-function MessageFooter({ m, speak }: { m: MessageDto; speak?: ReactNode }) {
+function MessageFooter({
+  m,
+  speak,
+  mode,
+}: {
+  m: MessageDto;
+  speak?: ReactNode;
+  /** The mode the reply was written in (not shown for auto). */
+  mode?: AgentMode | null | undefined;
+}) {
   const status = m.status !== 'complete' ? MESSAGE_STATUS_LABEL[m.status] : null;
-  if (!status && !m.model && !speak) return null;
+  const shownMode = mode && mode !== 'auto' ? modeInfo(mode) : null;
+  if (!status && !m.model && !speak && !shownMode) return null;
   return (
     <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500">
       {status && <Badge tone={status.tone}>{status.label}</Badge>}
+      {shownMode && (
+        <Badge title={`Written in ${shownMode.label} mode: ${shownMode.description}`}>
+          {shownMode.icon}
+          {shownMode.label}
+        </Badge>
+      )}
       {m.model && <span>{m.model}</span>}
       {speak}
     </div>
@@ -736,6 +759,7 @@ export function ChatView(props: Props) {
                     footer={
                       <MessageFooter
                         m={r.m}
+                        mode={r.m.runId ? runsById.get(r.m.runId)?.mode : null}
                         speak={
                           sessionId && r.m.runId && replyEnds.has(r.m.id) ? (
                             <SpeakReplyButton sessionId={sessionId} runId={r.m.runId} />
@@ -791,6 +815,11 @@ export function ChatView(props: Props) {
                     void onSend(prompt).finally(() => setSubmitting(false));
                   }}
                   onOpenMemory={props.onOpenMemory}
+                  onSwitchMode={(m, prompt) => {
+                    stickToBottom.current = true;
+                    setSubmitting(true);
+                    void props.onSwitchMode(m, prompt).finally(() => setSubmitting(false));
+                  }}
                 />
               )}
             </div>
@@ -886,6 +915,7 @@ export function ChatView(props: Props) {
                   <ImagePlus className="h-4 w-4" />
                 </Button>
                 {enhancer.button}
+                <ModePicker mode={props.mode} onChange={props.onModeChange} />
                 <textarea
                   id="composer"
                   value={draft}
@@ -901,7 +931,15 @@ export function ChatView(props: Props) {
                   title="Enter sends · Shift+Enter for a new line"
                   rows={Math.min(10, Math.max(1, draft.split('\n').length))}
                   placeholder={
-                    project ? `Ask about ${project.name}…` : 'Ask about code, DevOps, deployments…'
+                    props.mode === 'plan'
+                      ? 'Describe what to plan; nothing changes until you accept…'
+                      : props.mode === 'debug'
+                        ? 'Describe the problem: what fails, and how to reproduce it…'
+                        : props.mode === 'ask'
+                          ? 'Ask a question; Friday only reads in this mode…'
+                          : project
+                            ? `Ask about ${project.name}…`
+                            : 'Ask about code, DevOps, deployments…'
                   }
                   className="max-h-64 min-h-[2.25rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.94rem] outline-none placeholder:text-zinc-500"
                 />

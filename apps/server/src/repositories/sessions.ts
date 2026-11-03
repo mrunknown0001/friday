@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { PlanStep, RunStatus, SessionSummaryDto } from '@friday/shared';
+import type { AgentMode, PlanStep, RunStatus, SessionSummaryDto } from '@friday/shared';
 import type { Db } from '../db/database.js';
 
 interface SessionRow {
   id: string;
   project_id: string | null;
   title: string;
+  mode: AgentMode;
   plan: string | null;
   summary: string | null;
   summary_through_message_id: number | null;
@@ -44,6 +45,7 @@ function toRecord(r: SessionRow): SessionRecord {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     lastRunStatus: r.last_run_status,
+    mode: r.mode,
     summary: r.summary,
     summaryThroughMessageId: r.summary_through_message_id,
     plan: parsePlan(r.plan),
@@ -55,14 +57,18 @@ export const DEFAULT_SESSION_TITLE = 'New conversation';
 export class SessionRepo {
   constructor(private readonly db: Db) {}
 
-  create(title = DEFAULT_SESSION_TITLE, projectId: string | null = null): SessionRecord {
+  create(
+    title = DEFAULT_SESSION_TITLE,
+    projectId: string | null = null,
+    mode: AgentMode = 'auto',
+  ): SessionRecord {
     const id = randomUUID();
     const now = new Date().toISOString();
     this.db
       .prepare(
-        'INSERT INTO sessions (id, project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO sessions (id, project_id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
       )
-      .run(id, projectId, title, now, now);
+      .run(id, projectId, title, mode, now, now);
     return this.get(id)!;
   }
 
@@ -94,6 +100,10 @@ export class SessionRepo {
     this.db
       .prepare('UPDATE sessions SET plan = ? WHERE id = ?')
       .run(plan ? JSON.stringify(plan) : null, id);
+  }
+
+  setMode(id: string, mode: AgentMode): boolean {
+    return this.db.prepare('UPDATE sessions SET mode = ? WHERE id = ?').run(mode, id).changes > 0;
   }
 
   rename(id: string, title: string): boolean {

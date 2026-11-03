@@ -38,6 +38,7 @@ const run = (r: RunReport | null): RunDto => ({
   id: 'r1',
   sessionId: 's1',
   status: 'completed',
+  mode: null,
   model: 'm',
   errorKind: null,
   errorMessage: null,

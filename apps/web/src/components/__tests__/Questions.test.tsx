@@ -30,6 +30,7 @@ const detail = (over: Partial<SessionDetailDto> = {}): SessionDetailDto => ({
   loadTests: [],
   research: [],
   questions: [],
+  mode: 'auto',
   memoryUsage: {},
   ...over,
 });
@@ -53,6 +54,9 @@ const props = (d: SessionDetailDto) => ({
   onOpenMemory: () => {},
   onRevokeTaskPermission: async () => {},
   onAnswerQuestion: async () => {},
+  mode: 'auto' as const,
+  onModeChange: () => {},
+  onSwitchMode: async () => {},
 });
 
 const question = (over: Partial<QuestionDto> = {}): QuestionDto => ({

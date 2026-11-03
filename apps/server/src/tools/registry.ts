@@ -40,7 +40,7 @@ import { runLoadTest } from './loadTestTools.js';
 import { deepResearch, readWebPage, webSearch } from './webTools.js';
 import { remember, searchMemory } from './memoryTools.js';
 import { askUser } from './askUserTool.js';
-import { suggestNextSteps, updatePlan } from './planTool.js';
+import { suggestMode, suggestNextSteps, updatePlan } from './planTool.js';
 import { listProcesses, readProcessOutput, startProcess, stopProcess } from './processTools.js';
 import { requestTaskPermissions } from './taskPermissionTool.js';
 import { decide, type PolicyDecision } from './policy.js';
@@ -120,6 +120,7 @@ export const DEFAULT_TOOLS = [
   inspectPage,
   runBrowserFlow,
   updatePlan,
+  suggestMode,
   askUser,
   requestTaskPermissions,
   writeFile,

@@ -1467,12 +1467,23 @@ export interface ReviewDto {
   createdAt: string;
 }
 
+/**
+ * How Friday works in a conversation. ask and plan only read (enforced by the tool policy); code
+ * and debug change things with approvals; auto lets Friday choose, as before modes existed.
+ */
+export type AgentMode = 'auto' | 'code' | 'plan' | 'debug' | 'ask';
+
 /** A suggested follow-up shown as a chip after a run. */
 export interface NextStep {
   label: string;
-  /** For action "prompt": the exact message sent when the chip is clicked. */
+  /**
+   * For action "prompt": the exact message sent when the chip is clicked. For "switch_mode": sent
+   * after switching, when not empty.
+   */
   prompt: string;
-  action: 'prompt' | 'open_memory';
+  action: 'prompt' | 'open_memory' | 'switch_mode';
+  /** For action "switch_mode": the mode to switch the conversation to. */
+  mode?: AgentMode;
   /** records: derived by Friday from what actually happened; model: proposed by the model. */
   source: 'records' | 'model';
 }
@@ -1482,6 +1493,8 @@ export interface RunDto {
   sessionId: string;
   status: RunStatus;
   model: string | null;
+  /** The conversation's mode when the run started; null for runs from before modes. */
+  mode: AgentMode | null;
   errorKind: RunErrorKind | null;
   errorMessage: string | null;
   retryable: boolean;
@@ -1499,6 +1512,7 @@ export interface SessionSummaryDto {
   createdAt: string;
   updatedAt: string;
   lastRunStatus: RunStatus | null;
+  mode: AgentMode;
 }
 
 export interface SessionDetailDto extends SessionSummaryDto {

@@ -1,4 +1,5 @@
 import type {
+  AgentMode,
   ApiErrorBody,
   AnswerQuestionRequest,
   ApprovalDto,
@@ -307,8 +308,11 @@ export const api = {
       'GET',
       `/api/sessions?project=${projectId ?? 'none'}`,
     ),
-  createSession: (projectId: string | null) =>
-    request<SessionSummaryDto>('POST', '/api/sessions', { projectId }),
+  createSession: (projectId: string | null, mode?: AgentMode) =>
+    request<SessionSummaryDto>('POST', '/api/sessions', { projectId, ...(mode ? { mode } : {}) }),
+  /** Applies from the next message; a run in progress keeps its mode. */
+  setSessionMode: (id: string, mode: AgentMode) =>
+    request<SessionSummaryDto>('PATCH', `/api/sessions/${id}`, { mode }),
   session: (id: string) => request<SessionDetailDto>('GET', `/api/sessions/${id}`),
   renameSession: (id: string, title: string) =>
     request<SessionSummaryDto>('PATCH', `/api/sessions/${id}`, { title }),

@@ -367,6 +367,18 @@ synthetic user message right after the tool results, since chat APIs only accept
 The probe sends a 16×16 red PNG. The web app downsizes images (`lib/images.ts`) and uploads them as soon as they are
 pasted, dropped or picked.
 
+### Modes (`chat/modes.ts`)
+
+`sessions.mode` (migration 28) is the conversation's mode, set by `POST /api/sessions` and `PATCH /api/sessions/:id`;
+`runs.mode` records the mode each run started with (`RunDto.mode`). `RunManager.launch` reads it once per run.
+`modeAllows` and `modeOffers` filter the tool definitions sent to the model (ask and plan: only `read_only`,
+`network`, `agent_state` and `database`; `suggest_mode` only in auto; `request_task_permissions` not in ask or plan),
+and `runToolCall` refuses any other call before validation. `modePrompt` adds the mode's section last, after the
+general workflow it overrides. `buildSuggestions` adds `switch_mode` chips: **Accept and build** after a plan-mode run,
+**Switch to Code mode** after ask mode refused a call, and the mode `suggest_mode` proposed (a final tool, like
+`suggest_next_steps`). In the web app `ModePicker` sits in the composer; a new conversation is created with the mode
+picked before the first message.
+
 ### Questions and prompt enhancement (`questions/`, `tools/askUserTool.ts`, `chat/enhance.ts`, `routes/questions.ts`)
 
 `ask_user` (category `agent_state`) calls `ToolContext.askUser`. `RunManager.askUser` records the question in the

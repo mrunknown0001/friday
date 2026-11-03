@@ -1,4 +1,5 @@
 import type { AppNotice, RunEvent, SessionDetailDto } from '@friday/shared';
+import { AGENT_MODES } from '../../chat/modes.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { IMAGE_LIMITS } from '../../attachments/image.js';
@@ -12,6 +13,7 @@ import { parseInput } from '../validation.js';
 
 const idParams = z.object({ id: z.uuid() });
 const title = z.string().trim().min(1).max(200);
+const mode = z.enum(AGENT_MODES);
 
 const SSE_HEARTBEAT_MS = 15_000;
 
@@ -29,6 +31,7 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     lastRunStatus: r.lastRunStatus,
+    mode: r.mode,
   });
 
   app.get('/api/sessions', async (req) => {
@@ -43,14 +46,18 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
 
   app.post('/api/sessions', async (req, reply) => {
     const body = parseInput(
-      z.object({ title: title.optional(), projectId: z.uuid().nullable().optional() }),
+      z.object({
+        title: title.optional(),
+        projectId: z.uuid().nullable().optional(),
+        mode: mode.optional(),
+      }),
       req.body,
     );
     if (body.projectId && !s.projects.get(body.projectId)) {
       throw new HttpError(404, 'project_not_found', 'Project not found.');
     }
     // The project binding is fixed at creation so a conversation can never span projects.
-    const session = s.sessions.create(body.title, body.projectId ?? null);
+    const session = s.sessions.create(body.title, body.projectId ?? null, body.mode ?? 'auto');
     if (body.projectId) s.projects.touch(body.projectId);
     reply.code(201);
     return summary(session);
@@ -81,9 +88,24 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
 
   app.patch('/api/sessions/:id', async (req) => {
     const { id } = parseInput(idParams, req.params);
-    const body = parseInput(z.object({ title }), req.body);
-    requireSession(id);
-    s.sessions.rename(id, body.title);
+    const body = parseInput(
+      z
+        .object({ title: title.optional(), mode: mode.optional() })
+        .refine((b) => b.title !== undefined || b.mode !== undefined, 'Nothing to change.'),
+      req.body,
+    );
+    const session = requireSession(id);
+    if (body.title !== undefined) s.sessions.rename(id, body.title);
+    if (body.mode !== undefined && body.mode !== session.mode) {
+      // Applies from the next message; a run in progress keeps the mode it started with.
+      s.sessions.setMode(id, body.mode);
+      s.audit.record({
+        sessionId: id,
+        actor: 'user',
+        action: 'mode_changed',
+        details: { from: session.mode, to: body.mode },
+      });
+    }
     return summary(s.sessions.get(id)!);
   });
 

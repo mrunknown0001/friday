@@ -345,6 +345,24 @@ finishes, while you are in another window, another app, or another conversation.
 It is on by default in the desktop app; in a browser, turn it on in **Settings › Notifications** (the browser asks
 for permission). Notifications contain the action's title only (e.g. "Run: npm test").
 
+### Modes
+
+The picker next to the message box sets how Friday works in this conversation. The choice is saved with the
+conversation and applies from your next message; each reply shows the mode it was written in.
+
+| Mode               | What Friday does                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Auto** (default) | Chooses the approach itself. It may offer a one-click switch to a better-fitting mode, never switching on its own.                                     |
+| **Code**           | Implements the change and verifies it (tests, type-check, build), with the usual approvals.                                                            |
+| **Plan**           | Investigates and writes a plan in the Plan panel; changes nothing. **Accept and build** switches to Code mode and asks for the plan to be carried out. |
+| **Debug**          | Reproduces the problem first, names the cause with evidence, makes the smallest fix and shows the reproduction now passes.                             |
+| **Ask**            | Answers and explains; changes nothing. If you ask for a change, it says what it would change, and **Switch to Code mode** does it.                     |
+
+Ask and Plan are enforced by the tool policy, not just asked of the model: Friday is only given reading tools
+(reading and searching files, git status and diffs, the web, the plan, questions, and read-only database queries,
+which still need approval). Editing, commands, git commits and pushes, SSH, browser flows, load tests and connected
+apps are refused even if the model calls them.
+
 ### Improve prompt and clarifying questions
 
 The wand button in the message box (or **Ctrl+E**, **⌘E** on a Mac) rewrites your draft into a clear, specific

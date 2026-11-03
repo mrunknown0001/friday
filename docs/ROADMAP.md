@@ -547,15 +547,19 @@ approved), credentials never reach the model, and results from other systems are
   Usage; send only the tool definitions that fit the request; shrink old tool results and repeated file reads in the
   history; summarize earlier; prompt caching where the provider offers it (done for Anthropic). Open questions: how
   aggressive to be by default, and whether the user can see and tune it.
-- **Modes: auto (default), code, plan, debug and ask.** A mode picker in the composer that changes how Friday works:
-  - **ask**: answers questions and explains; reads only, never changes anything.
-  - **plan**: investigates and writes a plan; changes nothing until the user accepts the plan.
-  - **code**: implements, with tests where the project has them.
-  - **debug**: reproduces the problem first, finds the cause, fixes it, and shows the fix works.
-  - **auto**: Friday picks the approach from the request (today's behaviour).
+- ✅ **Modes: auto (default), code, plan, debug and ask** (requested 2026-11-03). Done: a mode picker next to the
+  message box, saved with the conversation (migration 28); each reply shows the mode it was written in.
+  - **ask** and **plan** are only offered reading tools (read, search, web, plan, questions, read-only database
+    queries), and anything else is refused if called anyway.
+  - **plan** ends with **Accept and build**, which switches to code mode and asks for the plan to be carried out.
+  - **debug** reproduces first, names the cause, makes the smallest fix and shows the reproduction passing.
+  - **auto** may suggest a mode with a one-click chip (`suggest_mode`), never switching by itself.
 
-  Open questions: per message or per conversation; whether a mode's limits (ask and plan never edit) are enforced by
-  the tool policy or only asked of the model; and whether the model may suggest switching modes.
+  Checked live on 2026-11-03 with `gemini-3.5-flash`, because NoTokenLimit's Claude models were failing upstream:
+  - Asked to rename a function in ask mode: no edit tool was offered, there were no approvals, and the file was
+    unchanged. That model writes tool calls as text instead of calling them, in any mode, so its replies claimed
+    work it never did; the ask instructions now say not to.
+  - plan mode published a 3-step plan; "Accept and build" switched to code mode and an edit then waited for approval.
 
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,

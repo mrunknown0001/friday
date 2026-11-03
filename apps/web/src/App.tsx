@@ -1,4 +1,5 @@
 import type {
+  AgentMode,
   ApprovalDto,
   FileChangeDto,
   MonitorDto,
@@ -412,11 +413,29 @@ export function App() {
     }
   };
 
+  /** The mode chosen before the conversation exists; it is created with it. */
+  const [draftMode, setDraftMode] = useState<AgentMode>('auto');
+  const mode = shownDetail?.mode ?? draftMode;
+  const changeMode = async (next: AgentMode) => {
+    if (!activeId) {
+      setDraftMode(next);
+      return;
+    }
+    try {
+      await api.setSessionMode(activeId, next);
+      await loadDetail(activeId);
+      void loadSessions();
+    } catch (e) {
+      report(e);
+    }
+  };
+
   const send = async (text: string, attachmentIds: string[] = []): Promise<boolean> => {
     try {
       let id = activeId;
       if (!id) {
-        id = (await api.createSession(projectId)).id;
+        id = (await api.createSession(projectId, draftMode)).id;
+        setDraftMode('auto');
         setActiveId(id);
       }
       const { run } = await api.sendMessage(id, text, attachmentIds);
@@ -533,6 +552,12 @@ export function App() {
           onRevokeTaskPermission={(id) =>
             api.revokeTaskPermission(id).then(() => undefined, report)
           }
+          mode={mode}
+          onModeChange={(m) => void changeMode(m)}
+          onSwitchMode={async (m, prompt) => {
+            await changeMode(m);
+            if (prompt) await send(prompt);
+          }}
           onAnswerQuestion={async (q, reply) => {
             try {
               await api.answerQuestion(q.id, { ...reply, sessionId: q.sessionId });
