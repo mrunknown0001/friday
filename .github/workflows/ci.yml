@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # This name is the required status check in the protect-main ruleset; keep them in sync.
+    name: Lint, typecheck and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # The desktop app's Electron binary isn't needed to lint, type-check or test.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Git identity for tests that make commits
+        run: |
+          git config --global user.name "Friday CI"
+          git config --global user.email "ci@friday.invalid"
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Build the web app
+        run: npm run build -w @friday/web
+      # Tests that need Docker images, a browser, k6, voice models or live API keys skip themselves.
+      - name: Server tests
+        run: npx vitest run --maxWorkers=4
+        working-directory: apps/server
+      - name: Web tests
+        run: npx vitest run
+        working-directory: apps/web
