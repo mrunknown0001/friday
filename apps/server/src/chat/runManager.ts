@@ -12,7 +12,7 @@ import type {
   RunPhase,
 } from '@friday/shared';
 import { HttpError } from '../http/errors.js';
-import { ProviderError } from '../providers/errors.js';
+import { NO_PROVIDER, ProviderError } from '../providers/errors.js';
 import type {
   ChatMessage,
   ChatRequest,
@@ -401,7 +401,11 @@ export class RunManager {
     if (!this.deps.sessions.get(sessionId))
       throw new HttpError(404, 'session_not_found', 'Session not found.');
     if (!this.deps.provider.isConfigured()) {
-      throw new HttpError(400, 'not_configured', new ProviderError('not_configured').message);
+      throw new HttpError(
+        400,
+        'not_configured',
+        new ProviderError('not_configured', null, { source: NO_PROVIDER }).message,
+      );
     }
     const model = this.deps.resolveModel();
     if (!model) throw new HttpError(400, 'model_not_selected', 'Select a model in Settings first.');
@@ -566,7 +570,7 @@ export class RunManager {
     const toolTokens = tools.length ? estimateTokens(JSON.stringify(tools)) : 0;
     const contextWindow =
       capabilities.get(model).contextWindow -
-      (this.deps.provider.promptOverheadTokens ?? 0) -
+      (this.deps.provider.overheadTokens?.(model) ?? 0) -
       toolTokens;
 
     const plan = () => {

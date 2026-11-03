@@ -2,6 +2,7 @@ import type {
   ConnectionTestResult,
   ModelCapabilities,
   ModelInfo,
+  ModelListDto,
   ProviderCallDto,
   SettingsDto,
 } from '@friday/shared';
@@ -130,6 +131,7 @@ export function SettingsDialog({
   onSettingsChanged: () => void;
 }) {
   const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [listErrors, setListErrors] = useState<ModelListDto['errors']>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState(settings?.apiKeyConfigured ?? false);
   const [filter, setFilter] = useState('');
@@ -149,7 +151,9 @@ export function SettingsDialog({
 
   const loadModels = useCallback(async (refresh: boolean) => {
     try {
-      setModels((await api.models(refresh)).models);
+      const list = await api.models(refresh);
+      setModels(list.models);
+      setListErrors(list.errors);
       setModelsError(null);
     } catch (e) {
       setModelsError(message(e));
@@ -193,12 +197,23 @@ export function SettingsDialog({
     void loadModels(true);
   };
 
-  const filtered = useMemo(() => {
+  const providers = settings?.providers ?? [];
+  const labelOf = (id: string | undefined) =>
+    providers.find((p) => p.id === id)?.label ?? 'NoTokenLimit';
+  // Models by provider, in the order Settings lists the providers.
+  const groups = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    return (models ?? []).filter(
+    const shown = (models ?? []).filter(
       (m) => !q || m.id.toLowerCase().includes(q) || m.name?.toLowerCase().includes(q),
     );
-  }, [models, filter]);
+    const order = (settings?.providers ?? []).map((p) => p.id as string);
+    const by = new Map<string, ModelInfo[]>();
+    for (const m of shown) {
+      const key = m.provider ?? 'notokenlimit';
+      by.set(key, [...(by.get(key) ?? []), m]);
+    }
+    return [...by.entries()].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
+  }, [models, filter, settings?.providers]);
 
   const saveModel = async () => {
     if (!selected) return;
@@ -258,43 +273,50 @@ export function SettingsDialog({
 
   return (
     <Dialog open onClose={onClose} title="Settings">
-      <Section title="NoTokenLimit API key">
-        {settings?.apiKeyConfigured ? (
-          <p className="flex items-center gap-2 text-sm text-emerald-300">
-            <KeyRound className="h-4 w-4" aria-hidden /> Configured via{' '}
-            <code className="font-mono">NTL_API_KEY</code>. The key never leaves the local server.
+      <Section title="Model providers">
+        <ul className="space-y-1.5 text-sm" aria-label="Model providers">
+          {providers.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <KeyRound
+                className={`h-4 w-4 ${p.configured ? 'text-emerald-300' : 'text-zinc-500'}`}
+                aria-hidden
+              />
+              <span className="w-28 font-medium text-zinc-200">{p.label}</span>
+              {p.configured ? <Badge tone="success">key set</Badge> : <Badge>not set</Badge>}
+              <code className="font-mono text-xs text-zinc-400">{p.envVar}</code>
+              <span className="font-mono text-xs text-zinc-500">{p.baseUrl}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 text-sm text-zinc-300">
+          {!settings?.apiKeyConfigured && (
+            <p className="mb-1 flex items-center gap-2 text-amber-300">
+              <KeyRound className="h-4 w-4" aria-hidden /> No provider is configured yet.
+            </p>
+          )}
+          <ol className="list-decimal space-y-1 pl-5 text-zinc-400">
+            <li>
+              Open <code className="font-mono break-all">{settings?.envFile ?? '.env'}</code>
+              {desktop ? '' : ' (copy .env.example if it does not exist)'}.
+            </li>
+            <li>
+              Set the key of each provider you want to use (and optionally{' '}
+              <code className="font-mono">NTL_MODEL</code> as the default model).
+            </li>
+            <li>{desktop ? 'Restart the server below.' : 'Restart the server.'}</li>
+          </ol>
+          {desktop && (
+            <div className="mt-2 flex gap-2">
+              <Button onClick={() => void desktop!.showConfigFile()}>Show config file</Button>
+              <Button onClick={() => void desktop!.restartServer()}>Restart server</Button>
+            </div>
+          )}
+          <p className="mt-2 text-xs text-zinc-500">
+            Keys are read from the server environment only and are never stored in the database or
+            sent to this page. Don&apos;t paste keys into the chat.
           </p>
-        ) : (
-          <div className="text-sm text-zinc-300">
-            <p className="flex items-center gap-2 text-amber-300">
-              <KeyRound className="h-4 w-4" aria-hidden /> Not configured.
-            </p>
-            <ol className="mt-2 list-decimal space-y-1 pl-5 text-zinc-400">
-              <li>
-                Open <code className="font-mono break-all">{settings?.envFile ?? '.env'}</code>
-                {desktop ? '' : ' (copy .env.example if it does not exist)'}.
-              </li>
-              <li>
-                Set <code className="font-mono">NTL_API_KEY</code> (and optionally{' '}
-                <code className="font-mono">NTL_MODEL</code>).
-              </li>
-              <li>{desktop ? 'Restart the server below.' : 'Restart the server.'}</li>
-            </ol>
-            {desktop && (
-              <div className="mt-2 flex gap-2">
-                <Button onClick={() => void desktop!.showConfigFile()}>Show config file</Button>
-                <Button onClick={() => void desktop!.restartServer()}>Restart server</Button>
-              </div>
-            )}
-            <p className="mt-2 text-xs text-zinc-500">
-              Keys are read from the server environment only and are never stored in the database or
-              sent to this page. Don't paste keys into the chat.
-            </p>
-          </div>
-        )}
+        </div>
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-zinc-400">
-          <dt>Base URL</dt>
-          <dd className="font-mono text-zinc-300">{settings?.baseUrl}</dd>
           <dt>Timeout</dt>
           <dd className="text-zinc-300">{settings ? `${settings.timeoutMs / 1000}s` : ''}</dd>
           <dt>Retries</dt>
@@ -319,9 +341,7 @@ export function SettingsDialog({
           {settings?.modelSource === 'settings' && ' (saved in settings)'}
         </p>
         {!settings?.apiKeyConfigured ? (
-          <p className="text-sm text-zinc-500">
-            Configure an API key to load the NoTokenLimit model list.
-          </p>
+          <p className="text-sm text-zinc-500">Add a provider&apos;s API key to load its models.</p>
         ) : (
           <>
             <input
@@ -338,19 +358,37 @@ export function SettingsDialog({
               onChange={(e) => setSelected(e.target.value)}
               className="w-full rounded-md border border-zinc-700 bg-zinc-950 p-1 font-mono text-sm outline-none focus:border-sky-500"
             >
-              {filtered.map((m) => (
-                <option key={m.id} value={m.id} className="rounded px-1.5 py-0.5">
-                  {m.id}
-                  {m.name && m.name !== m.id ? ` — ${m.name}` : ''}
-                </option>
+              {groups.map(([provider, list]) => (
+                <optgroup key={provider} label={labelOf(provider)}>
+                  {list.map((m) => {
+                    const id = m.id.slice(m.id.indexOf(':') + 1 || 0);
+                    const shownId = m.provider && m.provider !== 'notokenlimit' ? id : m.id;
+                    return (
+                      <option key={m.id} value={m.id} className="rounded px-1.5 py-0.5">
+                        {shownId}
+                        {m.name && m.name !== shownId ? ` — ${m.name}` : ''}
+                      </option>
+                    );
+                  })}
+                </optgroup>
               ))}
             </select>
             {models && (
               <p className="mt-1 text-xs text-zinc-500">
-                {models.length} models in the NoTokenLimit catalog. Some require a specific plan;
-                after selecting one, use Test connection to confirm your account can use it.
+                {models.length} models from{' '}
+                {providers
+                  .filter((p) => models.some((m) => (m.provider ?? 'notokenlimit') === p.id))
+                  .map((p) => p.label)
+                  .join(', ')}
+                . Some need a specific plan or access; after selecting one, use Test connection to
+                confirm your account can use it.
               </p>
             )}
+            {listErrors.map((e) => (
+              <p key={e.provider} role="alert" className="mt-1 text-xs text-amber-300">
+                {labelOf(e.provider)}: {e.message}
+              </p>
+            ))}
             <ErrorText error={modelsError ?? saveError} />
             <div className="mt-2 flex gap-2">
               <Button
@@ -410,7 +448,7 @@ export function SettingsDialog({
             )}
             {test.modelListed === false && (
               <p className="mt-1 text-amber-300">
-                Warning: the current model is not in the NoTokenLimit model list.
+                Warning: the current model is not in any configured provider&apos;s model list.
               </p>
             )}
             {test.error && (

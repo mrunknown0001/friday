@@ -1,10 +1,11 @@
+import type { ModelListDto } from '@friday/shared';
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/database.js';
 import { RunManager } from './chat/runManager.js';
-import { NoTokenLimitProvider } from './providers/notokenlimit.js';
+import { createProviders, ProviderRouter } from './providers/router.js';
 import type { LLMProvider, ModelInfo } from './providers/types.js';
 import { CapabilityRepo } from './repositories/capabilities.js';
 import { ApprovalService } from './approvals/service.js';
@@ -73,20 +74,28 @@ export class ModelSettings {
   }
 }
 
-/** Caches the account's model list briefly so model validation doesn't hit the API every time. */
+/** Caches the model lists briefly so model validation doesn't hit the APIs every time. */
 export class ModelCatalog {
-  private cache: { at: number; models: ModelInfo[] } | null = null;
+  private cache: { at: number; list: ModelListDto } | null = null;
 
   constructor(
     private readonly provider: LLMProvider,
     private readonly ttlMs = 5 * 60_000,
   ) {}
 
+  /** Every configured provider's models, and the providers whose list failed. */
+  async lists(refresh = false): Promise<ModelListDto> {
+    if (!refresh && this.cache && Date.now() - this.cache.at < this.ttlMs) return this.cache.list;
+    const list =
+      this.provider instanceof ProviderRouter
+        ? await this.provider.listAll()
+        : { models: await this.provider.listModels(), errors: [] };
+    this.cache = { at: Date.now(), list };
+    return list;
+  }
+
   async list(refresh = false): Promise<ModelInfo[]> {
-    if (!refresh && this.cache && Date.now() - this.cache.at < this.ttlMs) return this.cache.models;
-    const models = await this.provider.listModels();
-    this.cache = { at: Date.now(), models };
-    return models;
+    return (await this.lists(refresh)).models;
   }
 }
 
@@ -177,15 +186,17 @@ export function createServices(
   db: Db,
   overrides: ServiceOverrides = {},
 ): Services {
-  const redactor = new Redactor([config.provider.apiKey, config.web.tavilyApiKey]);
+  const redactor = new Redactor([
+    config.provider.apiKey,
+    config.providers.anthropic.apiKey,
+    config.providers.openai.apiKey,
+    config.providers.openrouter.apiKey,
+    config.web.tavilyApiKey,
+  ]);
   const providerCalls = new ProviderCallRepo(db);
   const provider =
     overrides.provider ??
-    new NoTokenLimitProvider({
-      apiKey: config.provider.apiKey,
-      baseUrl: config.provider.baseUrl,
-      timeoutMs: config.provider.timeoutMs,
-      maxRetries: config.provider.maxRetries,
+    createProviders(config, {
       redactor,
       recorder: (r) => providerCalls.insert(r),
       ...(overrides.fetch ? { fetch: overrides.fetch } : {}),

@@ -1,8 +1,14 @@
-import type { ConnectionTestResult, SettingsDto } from '@friday/shared';
+import type {
+  ConnectionTestResult,
+  ModelListDto,
+  ProviderStatusDto,
+  SettingsDto,
+} from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { probeCapabilities } from '../../providers/capabilities.js';
-import { classifyError } from '../../providers/errors.js';
+import { classifyError, NOTOKENLIMIT } from '../../providers/errors.js';
+import { ProviderRouter } from '../../providers/router.js';
 import type { Services } from '../../services.js';
 import { HttpError } from '../errors.js';
 import { parseInput } from '../validation.js';
@@ -10,6 +16,19 @@ import { parseInput } from '../validation.js';
 const modelId = z.string().trim().min(1).max(200);
 
 export function registerProviderRoutes(app: FastifyInstance, s: Services) {
+  const providers = (): ProviderStatusDto[] =>
+    s.provider instanceof ProviderRouter
+      ? s.provider.statuses()
+      : [
+          {
+            id: 'notokenlimit',
+            label: NOTOKENLIMIT.label,
+            configured: s.provider.isConfigured(),
+            envVar: NOTOKENLIMIT.envVar,
+            baseUrl: s.config.provider.baseUrl,
+          },
+        ];
+
   const requireModel = (model?: string): string => {
     const resolved = model ?? s.modelSettings.resolve().model;
     if (!resolved)
@@ -23,6 +42,7 @@ export function registerProviderRoutes(app: FastifyInstance, s: Services) {
       model,
       modelSource: source,
       apiKeyConfigured: s.provider.isConfigured(),
+      providers: providers(),
       envFile: s.config.envFile,
       baseUrl: s.config.provider.baseUrl,
       timeoutMs: s.config.provider.timeoutMs,
@@ -32,15 +52,15 @@ export function registerProviderRoutes(app: FastifyInstance, s: Services) {
 
   app.put('/api/settings/model', async (req) => {
     const { model } = parseInput(z.object({ model: modelId }), req.body);
-    // Reject IDs that are not in the provider's model list. NoTokenLimit's /models endpoint returns
-    // its public catalog (it does not check the key or plan), so plan access is verified separately
-    // by the connection test, which makes a real completion request.
+    // Reject IDs that are not in a configured provider's model list. NoTokenLimit's /models
+    // endpoint returns its public catalog (it does not check the key or plan), so access is
+    // verified separately by the connection test, which makes a real completion request.
     const models = await s.catalog.list(true);
     if (!models.some((m) => m.id === model)) {
       throw new HttpError(
         400,
         'model_not_available',
-        `Model "${model}" is not in the NoTokenLimit model list.`,
+        `Model "${model}" is not in the model list of any configured provider.`,
       );
     }
     const previous = s.modelSettings.resolve().model;
@@ -59,9 +79,9 @@ export function registerProviderRoutes(app: FastifyInstance, s: Services) {
     return s.modelSettings.resolve();
   });
 
-  app.get('/api/provider/models', async (req) => {
+  app.get('/api/provider/models', async (req): Promise<ModelListDto> => {
     const { refresh } = parseInput(z.object({ refresh: z.enum(['0', '1']).optional() }), req.query);
-    return { models: await s.catalog.list(refresh === '1') };
+    return s.catalog.lists(refresh === '1');
   });
 
   app.post('/api/provider/test', async (req): Promise<ConnectionTestResult> => {
@@ -81,7 +101,7 @@ export function registerProviderRoutes(app: FastifyInstance, s: Services) {
           modelListed,
           error: {
             kind: 'bad_request',
-            message: `Reached NoTokenLimit (${models.length} models listed), but no model is selected. Select a model, then test again to verify the key.`,
+            message: `Listed ${models.length} models, but no model is selected. Select a model, then test again to verify the key.`,
           },
         };
       }

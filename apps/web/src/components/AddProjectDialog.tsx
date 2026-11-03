@@ -86,7 +86,7 @@ export function AddProjectDialog({
             </p>
             <p>
               Credential files (.env, private keys, …) and .git internals are never read. File
-              contents Friday reads are sent to your NoTokenLimit model. Every file change and
+              contents Friday reads are sent to the model provider you chose. Every file change and
               command needs your approval first.
             </p>
             <p>Broad locations such as your home folder or system directories are refused.</p>

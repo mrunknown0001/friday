@@ -437,7 +437,7 @@ export function App() {
   const blockedReason = !settings
     ? null
     : !settings.apiKeyConfigured
-      ? 'NoTokenLimit API key is not configured.'
+      ? 'No model provider is configured.'
       : !settings.model
         ? 'No model selected.'
         : null;
