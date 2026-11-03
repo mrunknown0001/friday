@@ -32,6 +32,7 @@ function ctx(root: string | null, over: Partial<ToolContext> = {}): ToolContext 
           lastOpenedAt: null,
           sandbox: null,
           worktree: null,
+          externalFolders: [],
         }
       : null,
     sessionId: 's1',

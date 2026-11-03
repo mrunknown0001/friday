@@ -9,8 +9,10 @@ import {
   assertRootAvailable,
   isGitInternal,
   isWithin,
-  resolveForWrite,
+  resolveWrite,
   WorkspaceError,
+  workspaceOf,
+  type Workspace,
 } from '../workspace/paths.js';
 import { defineTool, type Proposal, type ToolContext } from './types.js';
 
@@ -24,7 +26,13 @@ const reason = z
   .min(3)
   .max(500)
   .describe('Why this change is needed. Shown to the user when they approve or reject it.');
-const relPath = z.string().min(1).max(1024).describe('Path relative to the project root.');
+const relPath = z
+  .string()
+  .min(1)
+  .max(1024)
+  .describe(
+    "Path relative to the project root, or the absolute path of a file in one of the project's external folders.",
+  );
 
 export async function root(ctx: ToolContext): Promise<string> {
   if (!ctx.project)
@@ -32,6 +40,15 @@ export async function root(ctx: ToolContext): Promise<string> {
   await assertRootAvailable(ctx.project.rootPath);
   return ctx.project.rootPath;
 }
+
+/** The project and its external folders, which the file tools also write in (with approval). */
+async function workspace(ctx: ToolContext): Promise<Workspace> {
+  await root(ctx);
+  return workspaceOf(ctx.project!);
+}
+
+const asWorkspace = (w: string | Workspace): Workspace =>
+  typeof w === 'string' ? { root: w, external: [] } : w;
 
 /** Current text content of an existing file; refuses binary and oversized files. */
 async function readText(abs: string, rel: string): Promise<{ buf: Buffer; text: string }> {
@@ -119,7 +136,7 @@ const sizeRisk = (p: FileChangePreview): RiskLevel =>
 /** A computed, not-yet-applied change to one text file. */
 export interface FilePlan {
   rel: string;
-  /** Canonical project root the plan was made for. */
+  /** Canonical folder the plan was confined to: the project root or an external folder. */
   root: string;
   abs: string;
   before: { buf: Buffer; text: string } | null;
@@ -129,15 +146,19 @@ export interface FilePlan {
   fingerprint: string;
 }
 
-export async function planWrite(root: string, p: string, content: string): Promise<FilePlan> {
-  const target = await resolveForWrite(root, p);
+export async function planWrite(
+  ws: string | Workspace,
+  p: string,
+  content: string,
+): Promise<FilePlan> {
+  const target = await resolveWrite(asWorkspace(ws), p);
   const before = target.exists ? await readText(target.abs, target.rel) : null;
   if (before?.text === content) {
     throw new WorkspaceError('unsupported', `"${target.rel}" already has exactly this content.`);
   }
   return {
     rel: target.rel,
-    root,
+    root: target.root,
     abs: target.abs,
     before,
     after: content,
@@ -173,8 +194,8 @@ export async function planFromText(
   return plan;
 }
 
-async function planEdit(root: string, p: string, edits: Edit[]): Promise<FilePlan> {
-  const target = await resolveForWrite(root, p);
+async function planEdit(ws: Workspace, p: string, edits: Edit[]): Promise<FilePlan> {
+  const target = await resolveWrite(ws, p);
   if (!target.exists) {
     throw new WorkspaceError(
       'not_found',
@@ -205,7 +226,7 @@ async function planEdit(root: string, p: string, edits: Edit[]): Promise<FilePla
     throw new WorkspaceError('unsupported', `The edits do not change ${target.rel}.`);
   return {
     rel: target.rel,
-    root,
+    root: target.root,
     abs: target.abs,
     before,
     after,
@@ -266,7 +287,7 @@ export const writeFile = defineTool({
   schema: z.object({ path: relPath, content: z.string().max(MAX_WRITE_CHARS), reason }),
   describeCall: (a) => a.path,
   async prepare(args, ctx): Promise<Proposal> {
-    const plan = await planWrite(await root(ctx), args.path, args.content);
+    const plan = await planWrite(await workspace(ctx), args.path, args.content);
     const verb = plan.before ? 'updated' : 'created';
     return {
       title: `${plan.before ? 'Overwrite' : 'Create'} ${plan.rel}`,
@@ -297,7 +318,7 @@ export const editFile = defineTool({
   describeCall: (a) =>
     `${a.path} (${a.edits?.length ?? 0} edit${a.edits?.length === 1 ? '' : 's'})`,
   async prepare(args, ctx): Promise<Proposal> {
-    const plan = await planEdit(await root(ctx), args.path, args.edits);
+    const plan = await planEdit(await workspace(ctx), args.path, args.edits);
     return {
       title: `Edit ${plan.rel}`,
       summary: `Applies ${args.edits.length} edit${args.edits.length === 1 ? '' : 's'} to ${plan.rel} (${counts(plan.preview)}).`,
@@ -342,7 +363,7 @@ export const editFiles = defineTool({
   }),
   describeCall: (a) => `${a.changes?.length ?? 0} files`,
   async prepare(args, ctx): Promise<Proposal> {
-    const r = await root(ctx);
+    const r = await workspace(ctx);
     const plans: FilePlan[] = [];
     for (const c of args.changes) {
       plans.push(
@@ -386,8 +407,7 @@ export const deleteFile = defineTool({
   schema: z.object({ path: relPath, reason }),
   describeCall: (a) => a.path,
   async prepare(args, ctx): Promise<Proposal> {
-    const r = await root(ctx);
-    const target = await resolveForWrite(r, args.path);
+    const target = await resolveWrite(await workspace(ctx), args.path);
     if (!target.exists) throw new WorkspaceError('not_found', `"${target.rel}" does not exist.`);
     const buf = await fs.readFile(target.abs);
     if (buf.length > MAX_TEXT_FILE_BYTES)
@@ -425,17 +445,22 @@ export const deleteFile = defineTool({
 export const moveFile = defineTool({
   name: 'move_file',
   description:
-    "Move or rename one file within the project. The destination must not exist. Requires the user's explicit approval.",
+    "Move or rename one file within the project (or within one external folder). The destination must not exist. Requires the user's explicit approval.",
   category: 'file_delete',
   risk: 'medium',
   requiresProject: true,
   schema: z.object({ from: relPath, to: relPath, reason }),
   describeCall: (a) => `${a.from} → ${a.to}`,
   async prepare(args, ctx): Promise<Proposal> {
-    const r = await root(ctx);
-    const from = await resolveForWrite(r, args.from);
-    const to = await resolveForWrite(r, args.to);
+    const ws = await workspace(ctx);
+    const from = await resolveWrite(ws, args.from);
+    const to = await resolveWrite(ws, args.to);
     if (!from.exists) throw new WorkspaceError('not_found', `"${from.rel}" does not exist.`);
+    if (from.root !== to.root)
+      throw new WorkspaceError(
+        'unsupported',
+        'move_file moves files within one folder (the project or one external folder); write the new file and delete the old one instead.',
+      );
     if (to.exists)
       throw new WorkspaceError(
         'unsupported',

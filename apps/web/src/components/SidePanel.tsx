@@ -469,6 +469,25 @@ export function SidePanel({
                   onOpen={(path) => open(path)}
                 />
               ))}
+              {project.externalFolders.length > 0 && (
+                <li className="mt-3 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                  External folders
+                </li>
+              )}
+              {project.externalFolders.map((folder) => (
+                <TreeNode
+                  key={folder}
+                  entry={{
+                    name: folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder,
+                    path: folder,
+                    type: 'dir',
+                    size: null,
+                  }}
+                  projectId={project.id}
+                  depth={0}
+                  onOpen={(path) => open(path)}
+                />
+              ))}
             </ul>
           </ProjectSearch>
         )}

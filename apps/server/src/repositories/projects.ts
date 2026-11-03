@@ -11,6 +11,8 @@ export interface ProjectRecord {
   lastOpenedAt: string | null;
   sandbox: SandboxSettings | null;
   worktree: WorktreeInfo | null;
+  /** Canonical folders outside the root the user authorized: readable, writes need approval. */
+  externalFolders: string[];
 }
 
 interface ProjectRow {
@@ -21,6 +23,7 @@ interface ProjectRow {
   last_opened_at: string | null;
   sandbox: string | null;
   worktree: string | null;
+  external_folders: string;
 }
 
 const toRecord = (r: ProjectRow): ProjectRecord => ({
@@ -31,6 +34,7 @@ const toRecord = (r: ProjectRow): ProjectRecord => ({
   lastOpenedAt: r.last_opened_at,
   sandbox: r.sandbox ? (JSON.parse(r.sandbox) as SandboxSettings) : null,
   worktree: r.worktree ? (JSON.parse(r.worktree) as WorktreeInfo) : null,
+  externalFolders: JSON.parse(r.external_folders) as string[],
 });
 
 export class ProjectRepo {
@@ -44,17 +48,21 @@ export class ProjectRepo {
     return this.get(id)!;
   }
 
-  /** A worktree project: a child of `worktree.parentId`, with the parent's sandbox settings. */
+  /**
+   * A worktree project: a child of `worktree.parentId`, with the parent's sandbox settings and
+   * external folders.
+   */
   createWorktree(
     name: string,
     rootPath: string,
     worktree: WorktreeInfo,
     sandbox: SandboxSettings | null,
+    externalFolders: string[] = [],
   ): ProjectRecord {
     const id = randomUUID();
     this.db
       .prepare(
-        'INSERT INTO projects (id, name, root_path, created_at, parent_id, worktree, sandbox) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO projects (id, name, root_path, created_at, parent_id, worktree, sandbox, external_folders) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         id,
@@ -64,6 +72,7 @@ export class ProjectRepo {
         worktree.parentId,
         JSON.stringify(worktree),
         sandbox ? JSON.stringify(sandbox) : null,
+        JSON.stringify(externalFolders),
       );
     return this.get(id)!;
   }
@@ -112,6 +121,14 @@ export class ProjectRepo {
       this.db
         .prepare('UPDATE projects SET sandbox = ? WHERE id = ?')
         .run(sandbox ? JSON.stringify(sandbox) : null, id).changes > 0
+    );
+  }
+
+  setExternalFolders(id: string, folders: string[]): boolean {
+    return (
+      this.db
+        .prepare('UPDATE projects SET external_folders = ? WHERE id = ?')
+        .run(JSON.stringify(folders), id).changes > 0
     );
   }
 

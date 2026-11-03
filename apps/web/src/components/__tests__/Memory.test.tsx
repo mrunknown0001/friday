@@ -46,6 +46,7 @@ const project: ProjectDto = {
   available: true,
   sandbox: null,
   worktree: null,
+  externalFolders: [],
 };
 
 describe('MemoriesUsed', () => {

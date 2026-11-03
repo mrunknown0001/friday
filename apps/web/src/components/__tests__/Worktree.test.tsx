@@ -38,6 +38,7 @@ const project = (wt = info()): ProjectDto => ({
   available: wt.status === 'active',
   sandbox: null,
   worktree: wt,
+  externalFolders: [],
 });
 
 const status = (over: Partial<WorktreeStatusDto> = {}): WorktreeStatusDto => ({

@@ -96,19 +96,96 @@ export interface ResolvedPath {
   rel: string;
 }
 
+/** The project root plus the external folders the user authorized for it, all canonical. */
+export interface Workspace {
+  root: string;
+  external: readonly string[];
+}
+
+export const workspaceOf = (p: {
+  rootPath: string;
+  externalFolders: readonly string[];
+}): Workspace => ({ root: p.rootPath, external: p.externalFolders });
+
+/** A folder paths are confined to, and how paths in it are shown. */
+interface Scope {
+  root: string;
+  /** External folders show absolute paths; the project shows paths relative to its root. */
+  external: boolean;
+  /** What a path that escapes is outside of, for error messages. */
+  outsideOf: string;
+}
+
+const projectScope = (root: string): Scope => ({
+  root,
+  external: false,
+  outsideOf: 'the project root',
+});
+
+const show = (scope: Scope, abs: string) => (scope.external ? abs : toRel(scope.root, abs));
+
+/**
+ * The folder a path is confined to: an absolute path inside one of the external folders resolves
+ * against that folder; everything else (relative paths, paths in the project) against the root.
+ */
+function scopeFor(ws: Workspace, input: unknown): Scope {
+  const trimmed = typeof input === 'string' ? input.trim() : '';
+  if (path.isAbsolute(trimmed) && !trimmed.includes('\0')) {
+    const lexical = path.normalize(trimmed);
+    const folder = isWithin(ws.root, lexical)
+      ? undefined
+      : ws.external.find((f) => isWithin(f, lexical));
+    if (folder) return { root: folder, external: true, outsideOf: `the external folder ${folder}` };
+  }
+  return {
+    root: ws.root,
+    external: false,
+    outsideOf: ws.external.length
+      ? 'the project root and its external folders'
+      : 'the project root',
+  };
+}
+
+/** A path resolved in a workspace, with the folder it was confined to. */
+export interface ScopedPath extends ResolvedPath {
+  root: string;
+  external: boolean;
+}
+
+/** How a path relative to `scoped.root` (from walk or search) is shown: absolute when external. */
+export function shownPath(scoped: { root: string; external: boolean }, rel: string): string {
+  if (!scoped.external) return rel;
+  return rel === '.' ? scoped.root : path.join(scoped.root, ...rel.split('/'));
+}
+
 /**
  * Resolve a model-supplied path inside `root` (which must already be canonical).
  * Rejects traversal, absolute paths outside the root, symlinks that escape the root,
  * secret files, and git internals. The target must exist.
  */
 export async function resolveInside(root: string, input: string): Promise<ResolvedPath> {
+  return resolveInScope(projectScope(root), input);
+}
+
+/**
+ * `resolveInside` for a project with external folders: relative paths resolve in the project,
+ * absolute paths in the project or in an external folder (with the same rules inside it). `rel`
+ * is the form shown to the model and the user: relative in the project, absolute outside it.
+ */
+export async function resolveRead(ws: Workspace, input: string): Promise<ScopedPath> {
+  const scope = scopeFor(ws, input);
+  return { ...(await resolveInScope(scope, input)), root: scope.root, external: scope.external };
+}
+
+async function resolveInScope(scope: Scope, input: string): Promise<ResolvedPath> {
   if (typeof input !== 'string' || input.includes('\0') || input.length > 4096) {
     throw new WorkspaceError('invalid_path', 'Invalid path.');
   }
+  const { root } = scope;
   const trimmed = input.trim() || '.';
   const lexical = path.isAbsolute(trimmed) ? path.normalize(trimmed) : path.resolve(root, trimmed);
   if (!isWithin(root, lexical)) {
-    throw new WorkspaceError('outside_root', `Path "${input}" is outside the project root.`);
+    throw new WorkspaceError('outside_root', `Path "${input}" is outside ${scope.outsideOf}.`);
   }
 
   let real: string;
@@ -116,30 +193,30 @@ export async function resolveInside(root: string, input: string): Promise<Resolv
     real = await fs.realpath(lexical);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new WorkspaceError('not_found', `Path "${toRel(root, lexical)}" does not exist.`);
+      throw new WorkspaceError('not_found', `Path "${show(scope, lexical)}" does not exist.`);
     }
-    throw new WorkspaceError('invalid_path', `Cannot access "${toRel(root, lexical)}".`);
+    throw new WorkspaceError('invalid_path', `Cannot access "${show(scope, lexical)}".`);
   }
   if (!isWithin(root, real)) {
     throw new WorkspaceError(
       'outside_root',
-      `Path "${toRel(root, lexical)}" resolves (via a symlink) to a location outside the project root.`,
+      `Path "${show(scope, lexical)}" resolves (via a symlink) to a location outside ${scope.outsideOf}.`,
     );
   }
 
-  const rel = toRel(root, real);
-  for (const candidate of [toRel(root, lexical), rel]) {
-    if (isSecretPath(candidate)) {
+  for (const candidate of [lexical, real]) {
+    const rel = toRel(root, candidate);
+    if (isSecretPath(rel)) {
       throw new WorkspaceError(
         'secret_file',
-        `"${candidate}" looks like a credentials file, so it is never read (its contents could be sent to the model provider).`,
+        `"${show(scope, candidate)}" looks like a credentials file, so it is never read (its contents could be sent to the model provider).`,
       );
     }
-    if (isGitInternal(candidate)) {
+    if (isGitInternal(rel)) {
       throw new WorkspaceError('forbidden_path', 'Reading .git internals is not allowed.');
     }
   }
-  return { abs: real, rel };
+  return { abs: real, rel: show(scope, real) };
 }
 
 const FORBIDDEN_ROOTS = new Set([
@@ -239,25 +316,44 @@ export interface WritePath extends ResolvedPath {
  * symlink is never replaced. Credential files and .git internals are never written.
  */
 export async function resolveForWrite(root: string, input: string): Promise<WritePath> {
+  return resolveWriteInScope(projectScope(root), input);
+}
+
+/** `resolveForWrite` for a project with external folders (see `resolveRead`). */
+export async function resolveWrite(
+  ws: Workspace,
+  input: string,
+): Promise<WritePath & { root: string; external: boolean }> {
+  const scope = scopeFor(ws, input);
+  return {
+    ...(await resolveWriteInScope(scope, input)),
+    root: scope.root,
+    external: scope.external,
+  };
+}
+
+async function resolveWriteInScope(scope: Scope, input: string): Promise<WritePath> {
   if (typeof input !== 'string' || input.includes('\0') || input.length > 4096 || !input.trim()) {
     throw new WorkspaceError('invalid_path', 'Invalid path.');
   }
+  const { root } = scope;
   const trimmed = input.trim();
   const lexical = path.isAbsolute(trimmed) ? path.normalize(trimmed) : path.resolve(root, trimmed);
   if (!isWithin(root, lexical) || lexical === root) {
-    throw new WorkspaceError('outside_root', `Path "${input}" is outside the project root.`);
+    throw new WorkspaceError('outside_root', `Path "${input}" is outside ${scope.outsideOf}.`);
   }
-  const check = (rel: string) => {
+  const check = (abs: string) => {
+    const rel = toRel(root, abs);
     if (isSecretPath(rel)) {
       throw new WorkspaceError(
         'secret_file',
-        `"${rel}" looks like a credentials file; Friday does not write credential files. Ask the user to edit it.`,
+        `"${show(scope, abs)}" looks like a credentials file; Friday does not write credential files. Ask the user to edit it.`,
       );
     }
     if (isGitInternal(rel))
       throw new WorkspaceError('forbidden_path', 'Writing .git internals is not allowed.');
   };
-  check(toRel(root, lexical));
+  check(lexical);
 
   let probe = lexical;
   for (;;) {
@@ -272,23 +368,48 @@ export async function resolveForWrite(root: string, input: string): Promise<Writ
   if (!isWithin(root, realProbe)) {
     throw new WorkspaceError(
       'outside_root',
-      `Path "${toRel(root, lexical)}" resolves (via a symlink) to a location outside the project root.`,
+      `Path "${show(scope, lexical)}" resolves (via a symlink) to a location outside ${scope.outsideOf}.`,
     );
   }
 
   if (probe === lexical) {
     const stat = await fs.stat(realProbe);
     if (!stat.isFile())
-      throw new WorkspaceError('not_a_file', `"${toRel(root, lexical)}" is not a regular file.`);
-    const rel = toRel(root, realProbe);
-    check(rel);
-    return { abs: realProbe, rel, exists: true };
+      throw new WorkspaceError('not_a_file', `"${show(scope, lexical)}" is not a regular file.`);
+    check(realProbe);
+    return { abs: realProbe, rel: show(scope, realProbe), exists: true };
   }
   if (!(await fs.stat(realProbe)).isDirectory()) {
-    throw new WorkspaceError('not_a_directory', `"${toRel(root, probe)}" is a file, not a folder.`);
+    throw new WorkspaceError('not_a_directory', `"${show(scope, probe)}" is a file, not a folder.`);
   }
   const abs = path.join(realProbe, path.relative(probe, lexical));
-  const rel = toRel(root, abs);
-  check(rel);
-  return { abs, rel, exists: false };
+  check(abs);
+  return { abs, rel: show(scope, abs), exists: false };
+}
+
+export const MAX_EXTERNAL_FOLDERS = 10;
+
+/**
+ * Validate a folder the user wants to add to a project's external folders and return its
+ * canonical path: the same breadth rules as a project root, and no overlap with the project or
+ * with another external folder (each path then belongs to exactly one folder).
+ */
+export async function resolveExternalFolder(
+  input: string,
+  projectRoot: string,
+  others: readonly string[],
+): Promise<string> {
+  const real = await resolveProjectRoot(input);
+  if (isWithin(projectRoot, real) || isWithin(real, projectRoot)) {
+    throw new WorkspaceError(
+      'forbidden_path',
+      `${real} overlaps the project folder; external folders must be outside it.`,
+    );
+  }
+  if (others.includes(real))
+    throw new WorkspaceError('invalid_path', `${real} is already an external folder.`);
+  const overlap = others.find((o) => isWithin(o, real) || isWithin(real, o));
+  if (overlap)
+    throw new WorkspaceError('forbidden_path', `${real} overlaps the external folder ${overlap}.`);
+  return real;
 }

@@ -54,6 +54,7 @@ function ctx(root: string) {
       lastOpenedAt: null,
       sandbox: null,
       worktree: null,
+      externalFolders: [],
     },
     sessionId: 's',
     runId: 'r',

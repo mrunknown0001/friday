@@ -5,8 +5,9 @@ import { HttpError } from '../http/errors.js';
 import type { FileChangeRecord } from '../repositories/fileChanges.js';
 import {
   assertRootAvailable,
-  resolveForWrite,
+  resolveWrite,
   WorkspaceError,
+  type Workspace,
   type WritePath,
 } from '../workspace/paths.js';
 
@@ -38,14 +39,22 @@ function asHttp(err: unknown): never {
   throw err;
 }
 
+const asWorkspace = (w: string | Workspace): Workspace =>
+  typeof w === 'string' ? { root: w, external: [] } : w;
+
 /**
  * Check that a change can be undone without losing anything: the file must still be exactly as
- * Friday left it. Performs no writes.
+ * Friday left it. Performs no writes. Changes in an external folder (absolute paths) can be undone
+ * while that folder is still one of the project's.
  */
-export async function checkRevertable(change: FileChangeRecord, root: string): Promise<RevertPlan> {
+export async function checkRevertable(
+  change: FileChangeRecord,
+  workspace: string | Workspace,
+): Promise<RevertPlan> {
+  const ws = asWorkspace(workspace);
   try {
-    await assertRootAvailable(root);
-    const target = await resolveForWrite(root, change.path);
+    await assertRootAvailable(ws.root);
+    const target = await resolveWrite(ws, change.path);
     const now = target.exists ? await currentHash(target.abs) : null;
     switch (change.change) {
       case 'create':
@@ -65,7 +74,7 @@ export async function checkRevertable(change: FileChangeRecord, root: string): P
         return { target, back: null };
       case 'move': {
         if (now !== change.afterHash || !change.fromPath) throw changedSince(change.path);
-        const back = await resolveForWrite(root, change.fromPath);
+        const back = await resolveWrite(ws, change.fromPath);
         if (back.exists) {
           throw new HttpError(
             409,
@@ -102,8 +111,11 @@ async function applyRevert(change: FileChangeRecord, plan: RevertPlan): Promise<
 }
 
 /** Undo one applied change, only if the file is still exactly as Friday left it. */
-export async function revertFileChange(change: FileChangeRecord, root: string): Promise<void> {
-  const plan = await checkRevertable(change, root);
+export async function revertFileChange(
+  change: FileChangeRecord,
+  workspace: string | Workspace,
+): Promise<void> {
+  const plan = await checkRevertable(change, workspace);
   try {
     await applyRevert(change, plan);
   } catch (err) {
@@ -118,15 +130,15 @@ export async function revertFileChange(change: FileChangeRecord, root: string): 
  */
 export async function revertChanges(
   changes: FileChangeRecord[],
-  root: string,
+  workspace: string | Workspace,
   onReverted: (c: FileChangeRecord) => void,
 ): Promise<void> {
   const ordered = [...changes].sort((a, b) => b.id - a.id);
   const newestPerPath = new Map<string, FileChangeRecord>();
   for (const c of ordered) if (!newestPerPath.has(c.path)) newestPerPath.set(c.path, c);
-  for (const c of newestPerPath.values()) await checkRevertable(c, root);
+  for (const c of newestPerPath.values()) await checkRevertable(c, workspace);
   for (const c of ordered) {
-    await revertFileChange(c, root);
+    await revertFileChange(c, workspace);
     onReverted(c);
   }
 }

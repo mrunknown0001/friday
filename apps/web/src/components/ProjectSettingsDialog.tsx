@@ -1,5 +1,5 @@
 import type { CodeMapStatusDto, ProjectDto, SandboxStatusDto } from '@friday/shared';
-import { Box, Download, Loader2, Network, RefreshCw } from 'lucide-react';
+import { Box, Download, FolderOpen, Loader2, Network, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { SavedActionsSection } from './SavedActions';
@@ -72,6 +72,108 @@ function CodeMapSection({ projectId }: { projectId: string }) {
           Rebuild
         </Button>
       </div>
+      {error && (
+        <p role="alert" className="text-xs text-red-400">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Folders outside the project Friday may read (by absolute path). Saved as soon as one is added or
+ * removed; changes there are always asked one by one.
+ */
+function ExternalFoldersSection({
+  project,
+  onSaved,
+}: {
+  project: ProjectDto;
+  onSaved: (p: ProjectDto) => void;
+}) {
+  const [folders, setFolders] = useState(project.externalFolders);
+  const [adding, setAdding] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async (next: string[]) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await api.setExternalFolders(project.id, next);
+      setFolders(p.externalFolders);
+      onSaved(p);
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const add = async () => {
+    if (await save([...folders, adding.trim()])) setAdding('');
+  };
+
+  return (
+    <section aria-labelledby="external-heading" className="space-y-2 border-t border-zinc-800 pt-4">
+      <h3 id="external-heading" className="flex items-center gap-2 text-sm font-semibold">
+        <FolderOpen className="h-4 w-4 text-sky-400" aria-hidden /> External folders
+      </h3>
+      <p className="text-sm text-zinc-300">
+        Folders outside the project Friday may read, such as a shared library or another repository.
+        Credential files and <code className="font-mono">.git</code> stay off limits there too, and
+        every change Friday proposes in them needs your approval, one at a time. Commands, git and
+        tests still run only in the project.
+      </p>
+      {folders.length > 0 && (
+        <ul className="space-y-1" aria-label="External folders">
+          {folders.map((f) => (
+            <li
+              key={f}
+              className="flex items-center gap-2 rounded-md border border-zinc-800 px-2.5 py-1.5"
+            >
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200" title={f}>
+                {f}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`Remove ${f}`}
+                disabled={busy}
+                onClick={() => void save(folders.filter((x) => x !== f))}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (adding.trim()) void add();
+        }}
+      >
+        <input
+          aria-label="Folder to add"
+          value={adding}
+          onChange={(e) => setAdding(e.target.value)}
+          placeholder="/absolute/path/to/folder"
+          spellCheck={false}
+          className={`${input} font-mono`}
+        />
+        <Button size="sm" type="submit" disabled={busy || !adding.trim()}>
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : (
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+          )}
+          Add
+        </Button>
+      </form>
       {error && (
         <p role="alert" className="text-xs text-red-400">
           {error}
@@ -276,6 +378,8 @@ export function ProjectSettingsDialog({
             </select>
           </div>
         </section>
+
+        <ExternalFoldersSection project={project} onSaved={onSaved} />
 
         <CodeMapSection projectId={project.id} />
 

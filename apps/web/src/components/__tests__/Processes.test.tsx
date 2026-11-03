@@ -88,6 +88,7 @@ describe('processes panel', () => {
       name: 'shop',
       rootPath: '/home/u/shop',
       available: true,
+      externalFolders: [],
     } as never;
     const { rerender } = render(
       <SidePanel project={project} plan={null} changes={[]} onRevert={vi.fn()} />,

@@ -206,6 +206,8 @@ export const api = {
   projectSandbox: (id: string) => request<SandboxStatusDto>('GET', `/api/projects/${id}/sandbox`),
   setProjectSandbox: (id: string, settings: SandboxSettings) =>
     request<ProjectDto>('PUT', `/api/projects/${id}/sandbox`, settings),
+  setExternalFolders: (id: string, folders: string[]) =>
+    request<ProjectDto>('PUT', `/api/projects/${id}/external-folders`, { folders }),
   pullSandboxImage: (id: string, image: string) =>
     request<SandboxStatusDto>('POST', `/api/projects/${id}/sandbox/pull`, { image }),
   exportConversation: (

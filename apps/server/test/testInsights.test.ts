@@ -86,6 +86,7 @@ function ctx(root: string, repo?: TestRunRepo, tree?: { projectId: string; sessi
       lastOpenedAt: null,
       sandbox: null,
       worktree: null,
+      externalFolders: [],
     },
     sessionId: 's',
     runId: 'r',

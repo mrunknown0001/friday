@@ -41,6 +41,7 @@ function ctx(s: ReturnType<typeof services>, root: string | null, sessionId = 's
           lastOpenedAt: null,
           sandbox: null,
           worktree: null,
+          externalFolders: [],
         }
       : null,
     sessionId,

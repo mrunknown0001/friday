@@ -91,6 +91,11 @@ export function buildSystemPrompt({
     parts.push(`## Current project
 Name: ${project.name}
 Root: ${project.rootPath}${
+      project.externalFolders.length
+        ? `
+External folders: ${project.externalFolders.join(', ')}. These are outside the project; the user authorized reading them. Use their absolute paths with list_directory, read_file, file_info, search_code and find_files. The file-change tools work there too, but every change outside the project needs its own approval. Commands, git, tests and the code map cover only the project.`
+        : ''
+    }${
       detection
         ? `
 Detected stack: ${detection.stack.join(', ') || 'unknown'}

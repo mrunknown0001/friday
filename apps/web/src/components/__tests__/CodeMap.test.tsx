@@ -15,6 +15,7 @@ const project = {
   rootPath: '/home/u/shop',
   available: true,
   sandbox: null,
+  externalFolders: [],
 } as unknown as ProjectDto;
 
 describe('code map in project settings', () => {
