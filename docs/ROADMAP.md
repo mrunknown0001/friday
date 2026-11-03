@@ -513,6 +513,12 @@ approved), credentials never reach the model, and results from other systems are
   and addresses leave the machine, with page text as untrusted data. Open questions were the search provider,
   approvals, and project details in queries.
 
+- ✅ **Prompt enhancement and clarifying questions** (requested 2026-11-03). Done: **Improve prompt** in the
+  composer (wand button, Ctrl+E) rewrites the draft from the draft, recent messages and a project summary. It asks
+  up to three questions first when the answer would change the request, and the result replaces the draft with
+  Undo. `ask_user` lets Friday pause a task on a question card with options until the user answers or lets it
+  decide.
+
 Suggested order (quick wins first, then the ones that build on each other): usage and cost view, export
 conversations, CI diagnosis, before/after visuals, then push and pull requests, worktree per task, code review mode,
 test insights, safe rename, then saved actions, Docker Compose, health monitors, dependency upgrades, browser flows

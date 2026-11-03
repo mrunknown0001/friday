@@ -34,6 +34,8 @@ async function main() {
 
   const interrupted = services.runs.markInterrupted();
   services.research.stopUnfinished();
+  // Like approvals: the run waiting for an answer is gone.
+  services.questionRepo.cancelPending();
   // Approvals cannot survive a restart: the run that would execute them is gone.
   const orphanedApprovals = services.approvalRepo.cancelOrphans();
   if (orphanedApprovals > 0) {

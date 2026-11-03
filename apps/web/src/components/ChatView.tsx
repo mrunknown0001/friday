@@ -4,7 +4,9 @@ import type {
   BrowserFlowDto,
   DeploymentPlanDto,
   LoadTestDto,
+  QuestionDto,
   ResearchDto,
+  QuestionReply,
   MemoryRef,
   MessageDto,
   ProjectDto,
@@ -46,6 +48,8 @@ import { ATTACH_IMAGE_EVENT } from './PreviewPane';
 import { MemoriesUsed } from './MemoriesUsed';
 import { RunSummary } from './RunSummary';
 import { SuggestionChips } from './SuggestionChips';
+import { usePromptEnhancer } from './PromptEnhancer';
+import { QuestionCard } from './QuestionCard';
 import { TaskPermissionBanner } from './TaskPermissionBanner';
 import { Markdown } from './Markdown';
 import { MESSAGE_STATUS_LABEL, PHASE_LABEL } from './status';
@@ -92,6 +96,7 @@ interface Props {
   onWorktreeChanged?: () => void;
   onOpenMemory: () => void;
   onRevokeTaskPermission: (runId: string) => Promise<void>;
+  onAnswerQuestion: (question: QuestionDto, reply: QuestionReply) => Promise<void>;
 }
 
 const Avatar = () => (
@@ -143,6 +148,7 @@ export interface CallCards {
   browserFlows: Map<string, BrowserFlowDto>;
   loadTests: Map<string, LoadTestDto>;
   research: Map<string, ResearchDto>;
+  questions: Map<string, QuestionDto>;
 }
 
 const NO_CARDS: CallCards = {
@@ -151,6 +157,7 @@ const NO_CARDS: CallCards = {
   browserFlows: new Map(),
   loadTests: new Map(),
   research: new Map(),
+  questions: new Map(),
 };
 
 /** Turn persisted messages into rows; consecutive tool results form one activity group. */
@@ -191,6 +198,7 @@ export function toRows(
         browserFlow: m.toolCallId ? cards.browserFlows.get(m.toolCallId) : undefined,
         loadTest: m.toolCallId ? cards.loadTests.get(m.toolCallId) : undefined,
         research: m.toolCallId ? cards.research.get(m.toolCallId) : undefined,
+        question: m.toolCallId ? cards.questions.get(m.toolCallId) : undefined,
         attachments: m.attachments,
       };
       const last = rows.at(-1);
@@ -351,6 +359,7 @@ function LiveOutput({
         browserFlow: cards.browserFlows.get(b.callId),
         loadTest: cards.loadTests.get(b.callId),
         research: cards.research.get(b.callId),
+        question: cards.questions.get(b.callId),
       };
       const last = groups.at(-1);
       if (last?.kind === 'tools') last.items.push(item);
@@ -428,7 +437,7 @@ export function ChatView(props: Props) {
       setUnseen(true);
     }
     setAwayFromBottom(!isNearBottom(el));
-  }, [sessionId, detail?.messages.length, live?.blocks, approvals.length]);
+  }, [sessionId, detail?.messages.length, live?.blocks, approvals.length, live?.questions]);
 
   const scrollToBottom = () => {
     const el = scrollRef.current;
@@ -494,7 +503,16 @@ export function ChatView(props: Props) {
     }
   };
 
+  const enhancer = usePromptEnhancer({
+    draft,
+    setDraft,
+    projectId: project?.id ?? null,
+    sessionId: sessionId ?? null,
+    disabled: !canSend,
+  });
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (enhancer.onKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void submit();
@@ -519,6 +537,9 @@ export function ChatView(props: Props) {
     research: new Map(
       [...(detail?.research ?? []), ...(live?.research ?? [])].map((r) => [r.toolCallId, r]),
     ),
+    questions: new Map(
+      [...(detail?.questions ?? []), ...(live?.questions ?? [])].map((q) => [q.toolCallId, q]),
+    ),
     browserFlows: new Map(
       [...(detail?.browserFlows ?? []), ...(live?.browserFlows ?? [])].map((f) => [
         f.toolCallId,
@@ -528,6 +549,7 @@ export function ChatView(props: Props) {
   };
   const rows = toRows(messages, byId, plansByCall, detail?.memoryUsage ?? {}, cards);
   const pending = approvals.filter((a) => a.status === 'pending');
+  const waitingQuestions = [...cards.questions.values()].filter((q) => q.status === 'pending');
   const replyEnds = lastReplyOfRuns(messages);
   const latest = detail?.latestRun;
   const showProblem =
@@ -751,6 +773,13 @@ export function ChatView(props: Props) {
                   onCancelRun={running ? onStop : undefined}
                 />
               ))}
+              {waitingQuestions.map((q) => (
+                <QuestionCard
+                  key={q.id}
+                  question={q}
+                  onAnswer={(reply) => props.onAnswerQuestion(q, reply)}
+                />
+              ))}
               {showProblem && <RunProblem run={latest} onRetry={onRetry} disabled={!canSend} />}
               {!running && latest?.status === 'completed' && latest.suggestions && (
                 <SuggestionChips
@@ -823,6 +852,7 @@ export function ChatView(props: Props) {
                 dragging ? 'border-sky-500' : 'border-zinc-800',
               )}
             >
+              {enhancer.panel}
               <DraftImages images={images} onRemove={removeImage} />
               {images.length > 0 && (
                 <p className="px-1 pb-1 text-[11px] text-zinc-500">
@@ -855,6 +885,7 @@ export function ChatView(props: Props) {
                 >
                   <ImagePlus className="h-4 w-4" />
                 </Button>
+                {enhancer.button}
                 <textarea
                   id="composer"
                   value={draft}

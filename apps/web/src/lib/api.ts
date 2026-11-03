@@ -1,10 +1,13 @@
 import type {
   ApiErrorBody,
+  AnswerQuestionRequest,
   ApprovalDto,
   AttachmentDto,
   CodeMapStatusDto,
   ConnectionTestResult,
   DbConnectionDto,
+  EnhancePromptRequest,
+  EnhancePromptResult,
   DbConnectionInput,
   DbConnectionTestResult,
   FileChangeDto,
@@ -31,6 +34,7 @@ import type {
   ProjectDto,
   ProjectOverviewDto,
   ProviderCallDto,
+  QuestionDto,
   ReviewDto,
   RunDto,
   SandboxSettings,
@@ -307,6 +311,11 @@ export const api = {
       allowSimilar?: boolean;
     },
   ) => request<ApprovalDto>('POST', `/api/approvals/${id}/decision`, body),
+  answerQuestion: (id: string, body: AnswerQuestionRequest) =>
+    request<QuestionDto>('POST', `/api/questions/${id}/answer`, body),
+  /** Improve a draft: questions to answer first, or the improved prompt. */
+  enhancePrompt: (body: EnhancePromptRequest) =>
+    request<EnhancePromptResult>('POST', '/api/enhance', body),
   sessionChanges: (id: string) =>
     request<{ changes: FileChangeDto[] }>('GET', `/api/sessions/${id}/changes`),
   revertChange: (id: number) => request<FileChangeDto>('POST', `/api/file-changes/${id}/revert`),

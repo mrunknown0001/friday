@@ -6,6 +6,7 @@ import type {
   MemoryDto,
   PermissionCategory,
   PlanStep,
+  QuestionItem,
   ResearchDto,
   RiskLevel,
   ReviewDto,
@@ -27,6 +28,7 @@ import type { ProposeInput, ProposeOutcome } from '../memory/service.js';
 import type { CaptureEngine } from '../browser/capture.js';
 import type { CodeMap } from '../codemap/index.js';
 import type { ProcessManager } from '../processes/manager.js';
+import type { QuestionOutcome } from '../questions/service.js';
 import type { ProjectRecord } from '../repositories/projects.js';
 import type { SshService } from '../ssh/ssh.js';
 import type { Redactor } from '../security/redact.js';
@@ -98,6 +100,8 @@ export interface ToolContext {
   sessionReports?: () => RunReport[];
   /** Record an applied file change for the change list and undo. */
   recordFileChange?: (change: AppliedFileChange) => void;
+  /** Show the user clarifying questions and wait for the answer (ask_user). */
+  askUser?: (questions: QuestionItem[]) => Promise<QuestionOutcome>;
   /**
    * Activate the task permission the user just approved (only available while applying an
    * approved request_task_permissions call). Returns its expiry.

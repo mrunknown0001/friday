@@ -28,4 +28,5 @@ export const PHASE_LABEL: Record<RunPhase, string> = {
   running_tool: 'Running tool',
   reading_results: 'Reading results',
   awaiting_approval: 'Waiting for your approval',
+  awaiting_answer: 'Waiting for your answer',
 };

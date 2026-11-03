@@ -4,6 +4,7 @@ import type {
   BrowserFlowDto,
   DeploymentPlanDto,
   LoadTestDto,
+  QuestionDto,
   ResearchDto,
   ReviewDto,
   TestRunDto,
@@ -18,6 +19,7 @@ import { DeploymentPlanCard } from './DeploymentPlanCard';
 import { ReviewCard } from './ReviewCard';
 import { BrowserFlowCard } from './BrowserFlowCard';
 import { LoadTestCard } from './LoadTestCard';
+import { QuestionCard } from './QuestionCard';
 import { ResearchCard } from './ResearchCard';
 import { TestRunCard } from './TestRunCard';
 import { isFailedCommand } from './RunRecord';
@@ -45,6 +47,8 @@ export interface ToolItem {
   loadTest?: LoadTestDto | undefined;
   /** A deep_research call's progress and report. */
   research?: ResearchDto | undefined;
+  /** An ask_user call's questions and answers (a waiting one is shown at the end instead). */
+  question?: QuestionDto | undefined;
   /** Live process output while a command runs. */
   terminal?: string | undefined;
   /** Images the tool showed the model (view_image). */
@@ -159,6 +163,10 @@ export function toolLabel(name: string, argsJson: string): string {
       return str(a.url).replace(/^https?:\/\//, '');
     case 'deep_research':
       return str(a.question);
+    case 'ask_user':
+      return Array.isArray(a.questions)
+        ? str((a.questions[0] as { question?: unknown } | undefined)?.question)
+        : '';
     case 'run_load_test': {
       const load = Array.isArray(a.stages)
         ? `${a.stages.length} stage${a.stages.length === 1 ? '' : 's'}`
@@ -292,6 +300,9 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
   const flows = items.flatMap((i) => (i.browserFlow ? [i.browserFlow] : []));
   const loads = items.flatMap((i) => (i.loadTest ? [i.loadTest] : []));
   const research = items.flatMap((i) => (i.research ? [i.research] : []));
+  const questions = items.flatMap((i) =>
+    i.question && i.question.status !== 'pending' ? [i.question] : [],
+  );
   return (
     <>
       <div className="ml-10 rounded-lg border border-zinc-800 bg-zinc-900/40 py-1">
@@ -318,6 +329,9 @@ export function ToolActivity({ items }: { items: ToolItem[] }) {
       ))}
       {research.map((r) => (
         <ResearchCard key={r.id} research={r} />
+      ))}
+      {questions.map((q) => (
+        <QuestionCard key={q.id} question={q} />
       ))}
     </>
   );

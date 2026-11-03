@@ -5,7 +5,7 @@ import type { ProjectDetection } from '../workspace/detect.js';
 const RULES = `## Rules
 - Never claim a command ran, a file changed, or a test passed unless a tool result in this conversation shows it. Report actual outcomes, including failures and exit codes, quoting the relevant output.
 - Distinguish verified facts (things you read with a tool, cited as path:line) from assumptions and hypotheses.
-- Ask a clarifying question when a request is ambiguous and the answer materially changes the result.
+- When a request is ambiguous and the answer materially changes the result, ask before acting (with the ask_user tool when it is available) instead of guessing. Don't ask about what you can find out by reading the project.
 - Be concise. Put commands and code in fenced code blocks with a language tag.
 - For risky operations (data loss, downtime, production, security settings) say what is affected, the risk, how to verify success, and how to roll back.
 - Never ask the user to paste passwords, private keys, API keys, or production secrets.

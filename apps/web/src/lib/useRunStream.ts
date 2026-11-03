@@ -4,6 +4,7 @@ import type {
   BrowserFlowDto,
   DeploymentPlanDto,
   LoadTestDto,
+  QuestionDto,
   ResearchDto,
   MemoryDto,
   MemoryRef,
@@ -55,6 +56,8 @@ export interface LiveRun {
   loadTests: LoadTestDto[];
   /** Deep research (deep_research) in this run, latest state of each. */
   research: ResearchDto[];
+  /** Questions the agent asked in this run (ask_user), latest state of each. */
+  questions: QuestionDto[];
   /** Memories shown to the model for this run. */
   memoriesUsed: MemoryRef[];
   /** Memories the agent saved or proposed during this run. */
@@ -82,6 +85,7 @@ const EVENT_TYPES: RunEvent['type'][] = [
   'browser_flow',
   'load_test',
   'research',
+  'question',
   'memories_used',
   'memory_saved',
   'message_saved',
@@ -101,6 +105,7 @@ export const initial = (runId: string): LiveRun => ({
   browserFlows: [],
   loadTests: [],
   research: [],
+  questions: [],
   memoriesUsed: [],
   memoriesSaved: [],
   taskPermission: null,
@@ -166,6 +171,12 @@ export function applyEvent(prev: LiveRun, event: RunEvent): LiveRun {
       break;
     case 'research':
       next.research = [...prev.research.filter((r) => r.id !== event.research.id), event.research];
+      break;
+    case 'question':
+      next.questions = [
+        ...prev.questions.filter((q) => q.id !== event.question.id),
+        event.question,
+      ];
       break;
     case 'browser_flow':
       next.browserFlows = [...prev.browserFlows.filter((f) => f.id !== event.flow.id), event.flow];
