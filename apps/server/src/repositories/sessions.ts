@@ -7,6 +7,7 @@ interface SessionRow {
   project_id: string | null;
   title: string;
   mode: AgentMode;
+  tool_groups: string;
   plan: string | null;
   summary: string | null;
   summary_through_message_id: number | null;
@@ -19,6 +20,17 @@ export interface SessionRecord extends SessionSummaryDto {
   summary: string | null;
   summaryThroughMessageId: number | null;
   plan: PlanStep[] | null;
+  /** Tool groups loaded in this conversation (load_tools; see tools/groups.ts). */
+  toolGroups: string[];
+}
+
+function parseGroups(json: string): string[] {
+  try {
+    const groups: unknown = JSON.parse(json);
+    return Array.isArray(groups) ? groups.filter((g): g is string => typeof g === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function parsePlan(json: string | null): PlanStep[] | null {
@@ -49,6 +61,7 @@ function toRecord(r: SessionRow): SessionRecord {
     summary: r.summary,
     summaryThroughMessageId: r.summary_through_message_id,
     plan: parsePlan(r.plan),
+    toolGroups: parseGroups(r.tool_groups),
   };
 }
 
@@ -100,6 +113,17 @@ export class SessionRepo {
     this.db
       .prepare('UPDATE sessions SET plan = ? WHERE id = ?')
       .run(plan ? JSON.stringify(plan) : null, id);
+  }
+
+  /** Add tool groups to the conversation's loaded ones; returns the full list. */
+  addToolGroups(id: string, groups: string[]): string[] {
+    const current = this.get(id)?.toolGroups ?? [];
+    const next = [...new Set([...current, ...groups])];
+    if (next.length !== current.length)
+      this.db
+        .prepare('UPDATE sessions SET tool_groups = ? WHERE id = ?')
+        .run(JSON.stringify(next), id);
+    return next;
   }
 
   setMode(id: string, mode: AgentMode): boolean {

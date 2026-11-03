@@ -75,7 +75,13 @@ class IdleTimeout extends Error {}
 type Block =
   | { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
-  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | {
+      type: 'tool_use';
+      id: string;
+      name: string;
+      input: unknown;
+      cache_control?: { type: 'ephemeral' };
+    }
   | {
       type: 'tool_result';
       tool_use_id: string;
@@ -182,7 +188,7 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   private record(
-    req: Pick<ChatRequest, 'model' | 'operation' | 'sessionId'> &
+    req: Pick<ChatRequest, 'model' | 'operation' | 'sessionId' | 'runId' | 'breakdown'> &
       Partial<Pick<ChatRequest, 'messages' | 'tools'>>,
     started: number,
     outcome: { error?: ProviderError; attempts: number; usage: Usage | null; output?: string },
@@ -210,6 +216,8 @@ export class AnthropicProvider implements LLMProvider {
       attempts: outcome.attempts,
       usage,
       tokensEstimated,
+      runId: req.runId ?? null,
+      breakdown: req.breakdown ?? null,
     });
   }
 
@@ -300,7 +308,7 @@ export class AnthropicProvider implements LLMProvider {
             switch (data.type) {
               case 'message_start': {
                 const u = data.message?.usage;
-                if (u) usage = { inputTokens: inputTokens(u), outputTokens: null };
+                if (u) usage = { ...inputUsage(u), outputTokens: null };
                 break;
               }
               case 'content_block_start': {
@@ -327,7 +335,7 @@ export class AnthropicProvider implements LLMProvider {
                 if (data.delta?.stop_reason) finishReason = mapStopReason(data.delta.stop_reason);
                 const out = data.usage?.output_tokens;
                 if (typeof out === 'number')
-                  usage = { inputTokens: usage?.inputTokens ?? null, outputTokens: out };
+                  usage = { ...(usage ?? { inputTokens: null }), outputTokens: out };
                 break;
               }
               case 'error':
@@ -403,7 +411,7 @@ export class AnthropicProvider implements LLMProvider {
       const u = parsed.data.usage as Record<string, unknown> | null | undefined;
       const usage: Usage | null = u
         ? {
-            inputTokens: inputTokens(u),
+            ...inputUsage(u),
             outputTokens: typeof u['output_tokens'] === 'number' ? u['output_tokens'] : null,
           }
         : null;
@@ -428,10 +436,15 @@ export class AnthropicProvider implements LLMProvider {
 }
 
 /** Input tokens including the cached part (written to or read from the prompt cache). */
-function inputTokens(u: Record<string, unknown>): number | null {
+function inputUsage(u: Record<string, unknown>): Omit<Usage, 'outputTokens'> {
   const n = (k: string) => (typeof u[k] === 'number' ? (u[k] as number) : 0);
-  if (typeof u['input_tokens'] !== 'number') return null;
-  return n('input_tokens') + n('cache_creation_input_tokens') + n('cache_read_input_tokens');
+  if (typeof u['input_tokens'] !== 'number') return { inputTokens: null };
+  return {
+    inputTokens:
+      n('input_tokens') + n('cache_creation_input_tokens') + n('cache_read_input_tokens'),
+    cachedInputTokens: n('cache_read_input_tokens'),
+    cacheWriteTokens: n('cache_creation_input_tokens'),
+  };
 }
 
 /** Server-sent events from a fetch body: `event:` and `data:` lines, blocks split by blank lines. */
@@ -479,12 +492,11 @@ function toRequestBody(req: ChatRequest): Record<string, unknown> {
     .map((m) => m.content)
     .filter(Boolean)
     .join('\n\n');
-  const messages = toWireMessages(req.messages);
+  const messages = toWireMessages(req.messages, req.stablePrefix);
   // Prompt caching: the tools, the system prompt and the conversation so far are reused by the
   // next turn of the same run, so mark the end of each as a cache breakpoint.
   const lastBlock = messages.at(-1)?.content.at(-1);
-  if (lastBlock && (lastBlock.type === 'text' || lastBlock.type === 'tool_result'))
-    lastBlock.cache_control = { type: 'ephemeral' };
+  if (lastBlock && lastBlock.type !== 'image') lastBlock.cache_control = { type: 'ephemeral' };
   const tools = (req.tools ?? []).map((t, i, all) => ({
     name: t.name,
     description: t.description,
@@ -519,7 +531,11 @@ function toRequestBody(req: ChatRequest): Record<string, unknown> {
  * Chat messages to Messages API turns: tool results are user turns, consecutive turns of one
  * role are merged (the API requires them to alternate), and empty text is left out.
  */
-function toWireMessages(messages: ChatMessage[]): WireMessage[] {
+/**
+ * `stablePrefix` messages from the start stay the same for several requests (see
+ * ChatRequest.stablePrefix): the block ending them gets a cache breakpoint of its own.
+ */
+function toWireMessages(messages: ChatMessage[], stablePrefix?: number): WireMessage[] {
   const out: WireMessage[] = [];
   const push = (role: WireMessage['role'], content: Block[]) => {
     if (!content.length) return;
@@ -527,7 +543,7 @@ function toWireMessages(messages: ChatMessage[]): WireMessage[] {
     if (last?.role === role) last.content.push(...content);
     else out.push({ role, content });
   };
-  for (const m of messages) {
+  for (const [i, m] of messages.entries()) {
     switch (m.role) {
       case 'system':
         break;
@@ -556,6 +572,10 @@ function toWireMessages(messages: ChatMessage[]): WireMessage[] {
           { type: 'tool_result', tool_use_id: m.toolCallId, content: m.content || '(no output)' },
         ]);
         break;
+    }
+    if (i === (stablePrefix ?? 0) - 1) {
+      const block = out.at(-1)?.content.at(-1);
+      if (block && block.type !== 'image') block.cache_control = { type: 'ephemeral' };
     }
   }
   return out;

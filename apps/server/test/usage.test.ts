@@ -173,7 +173,15 @@ describe('usage routes', () => {
   it('records the conversation of each model call and reports it', async () => {
     const { app, services } = await setup([
       (_c, s) =>
-        sseResponse(textChunks(['Hi'], 'stop', { prompt_tokens: 40, completion_tokens: 2 }), {}, s),
+        sseResponse(
+          textChunks(['Hi'], 'stop', {
+            prompt_tokens: 40,
+            completion_tokens: 2,
+            prompt_tokens_details: { cached_tokens: 32 },
+          }),
+          {},
+          s,
+        ),
     ]);
     const session = (
       await app.inject({ method: 'POST', url: '/api/sessions', headers: MUTATE, payload: {} })
@@ -200,9 +208,17 @@ describe('usage routes', () => {
         calls: 1,
         inputTokens: 40,
         outputTokens: 2,
+        cachedInputTokens: 32,
       }),
     ]);
     expect(usage.totals.cost).toBeNull();
+    // Where the input went, per run.
+    expect(usage.context).toMatchObject({ requests: 1, inputTokens: 40, cachedInputTokens: 32 });
+    expect(usage.context.tools).toBeGreaterThan(1_000);
+    expect(usage.context.baseline).toBeGreaterThan(usage.context.tools + usage.context.system);
+    expect(usage.recentRuns).toEqual([
+      expect.objectContaining({ runId: sent.json().run.id, sessionId: session.id, requests: 1 }),
+    ]);
   });
 
   it('saves prices, validates them, and clears them', async () => {

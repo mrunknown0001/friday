@@ -121,7 +121,7 @@ export function sseResponse(
 export function textChunks(
   parts: string[],
   finish: string = 'stop',
-  usage = { prompt_tokens: 11, completion_tokens: 7 },
+  usage: Record<string, unknown> = { prompt_tokens: 11, completion_tokens: 7 },
 ) {
   return [
     ...parts.map((p) => ({

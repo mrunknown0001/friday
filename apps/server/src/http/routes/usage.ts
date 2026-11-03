@@ -1,6 +1,11 @@
 import type { ModelPrice, UsageSummaryDto } from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import {
+  OPTIMIZATION_SETTING,
+  optimizationSchema,
+  tokenOptimization,
+} from '../../chat/optimization.js';
 import type { Services } from '../../services.js';
 import { parseInput } from '../validation.js';
 
@@ -29,7 +34,23 @@ export function registerUsageRoutes(app: FastifyInstance, s: Services) {
       }),
       req.query,
     );
-    return s.usage.summary({ days: q.days, tzOffsetMinutes: q.tz, prices: prices() });
+    return {
+      ...s.usage.summary({ days: q.days, tzOffsetMinutes: q.tz, prices: prices() }),
+      optimization: tokenOptimization(s.settings),
+    };
+  });
+
+  app.put('/api/usage/optimization', async (req) => {
+    const body = parseInput(z.object({ optimization: optimizationSchema }), req.body);
+    const before = tokenOptimization(s.settings);
+    s.settings.set(OPTIMIZATION_SETTING, body.optimization);
+    if (before !== body.optimization)
+      s.audit.record({
+        actor: 'user',
+        action: 'token_optimization_changed',
+        details: { from: before, to: body.optimization },
+      });
+    return { optimization: body.optimization };
   });
 
   app.put('/api/usage/prices', async (req) => {

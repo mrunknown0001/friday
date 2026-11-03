@@ -82,6 +82,8 @@ export function toolLabel(name: string, argsJson: string): string {
       return str(a.path);
     case 'update_plan':
       return Array.isArray(a.steps) ? `${a.steps.length} steps` : '';
+    case 'load_tools':
+      return Array.isArray(a.groups) ? a.groups.map(str).join(', ') : '';
     case 'inspect_project':
       return '';
     case 'write_file':

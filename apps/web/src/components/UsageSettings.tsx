@@ -1,8 +1,9 @@
-import type { ModelPrice, UsageSummaryDto, UsageTotals } from '@friday/shared';
+import type { ModelPrice, TokenOptimization, UsageSummaryDto, UsageTotals } from '@friday/shared';
 import { Loader2, RefreshCw, Table2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
+import { ContextUsage } from './ContextUsage';
 import { Button } from './ui/button';
 
 const RANGES = [7, 30, 90] as const;
@@ -48,6 +49,7 @@ const noUsage: UsageTotals = {
   callsWithoutTokens: 0,
   inputTokens: 0,
   outputTokens: 0,
+  cachedInputTokens: 0,
   durationMs: 0,
   cost: null,
 };
@@ -273,6 +275,7 @@ export function UsageSettings() {
   const [showTable, setShowTable] = useState(false);
   const [draft, setDraft] = useState<PriceDraft>({});
   const [saving, setSaving] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   const load = useCallback(async (range: number) => {
     setLoading(true);
@@ -328,6 +331,19 @@ export function UsageSettings() {
       setError(message(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const setOptimization = async (optimization: TokenOptimization) => {
+    setSwitching(true);
+    try {
+      await api.setTokenOptimization(optimization);
+      setUsage((u) => (u ? { ...u, optimization } : u));
+      setError(null);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setSwitching(false);
     }
   };
 
@@ -427,6 +443,12 @@ export function UsageSettings() {
           ) : (
             <DayChart days={usage.byDay} />
           )}
+
+          <ContextUsage
+            usage={usage}
+            busy={switching}
+            onOptimization={(o) => void setOptimization(o)}
+          />
 
           {usage.bySession.length > 0 && (
             <div className="mt-4">

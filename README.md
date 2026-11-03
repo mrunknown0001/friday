@@ -363,6 +363,28 @@ Ask and Plan are enforced by the tool policy, not just asked of the model: Frida
 which still need approval). Editing, commands, git commits and pushes, SSH, browser flows, load tests and connected
 apps are refused even if the model calls them.
 
+### Token optimization
+
+Most of a request's tokens are what Friday sends, not what the model writes. With **Standard** optimization (the
+default; **Settings → Usage → Token optimization**):
+
+- **Tools load on demand.** Each request carries about 30 core tools (reading, searching, editing, commands, git
+  inspection, tests, plan, questions, memory) instead of all 70-odd. The others come in groups: git and CI, background
+  processes, browser, documents, review, refactoring, saved actions, DevOps, Docker, databases, load tests, the web,
+  dependencies, and each connected app. Friday loads a group when your message hints at it ("commit", "docker",
+  "database", or the name of one of its tools), or the model loads it with `load_tools`. A loaded group stays loaded
+  for the conversation. Loading a group grants nothing: approvals and the conversation's mode apply as before.
+- **Older tool results get shorter.** During a long task, results more than a few model turns old are cut to
+  1,500 characters, a few turns at a time so the provider's prompt cache keeps working. A file read that a later read
+  or a successful edit made out of date is dropped. The model can always re-read.
+- **Each request stays under ~100K tokens**, even with a 1M-token model: older conversation is summarized past that.
+  The current message and task still get the model's whole window when they need it.
+
+Usage shows where input went (system prompt, tool definitions, messages, tool results), what optimization saved
+(Friday's estimate of the same requests without it), how much the provider served from its prompt cache (Anthropic,
+OpenAI, OpenRouter and Gemini report it), and the latest runs. **Off** sends every tool and the full history up to
+the model's window, as before.
+
 ### Improve prompt and clarifying questions
 
 The wand button in the message box (or **Ctrl+E**, **⌘E** on a Mac) rewrites your draft into a clear, specific
@@ -871,6 +893,9 @@ breakdown by model. It reads Friday's own record of each model call, which holds
   records its own estimate of what it sent and received (the same estimate it uses to fit the context window), and
   the view marks such counts with `~`. Calls recorded before this, and failed calls, have no token count and are
   shown as "no count", not zero.
+- **Where input went** splits chat requests' input into system prompt, tool definitions, messages and tool results,
+  with what token optimization saved and the share read from the provider's prompt cache, overall and for the latest
+  runs. It also holds the Token optimization switch.
 - NoTokenLimit is a flat plan and publishes no per-token prices. To see an estimated cost, enter a price per million
   input and output tokens for each model in the By model table. Prices are stored in Friday's settings, and cost is
   computed only for models with a price.

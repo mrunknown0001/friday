@@ -44,11 +44,34 @@ export interface ChatRequest {
   operation?: string;
   /** The conversation the call belongs to, recorded in provider telemetry for the usage view. */
   sessionId?: string;
+  /**
+   * The first this-many messages are the same as in the previous request and will stay so for a
+   * few more (history Friday has settled): providers with explicit prompt caching mark the end.
+   */
+  stablePrefix?: number;
+  /** The run the call belongs to, and where its input went; recorded for the usage view. */
+  runId?: string;
+  breakdown?: ContextBreakdown;
 }
 
 export interface Usage {
   inputTokens: number | null;
   outputTokens: number | null;
+  /** Part of inputTokens read from the provider's prompt cache, when it says. */
+  cachedInputTokens?: number | null;
+  /** Part of inputTokens written to the prompt cache (Anthropic). */
+  cacheWriteTokens?: number | null;
+}
+
+/** Friday's estimate of where a chat request's input tokens went (see chat/context.ts). */
+export interface ContextBreakdown {
+  system: number;
+  tools: number;
+  /** User and assistant messages, plus the summary of earlier conversation. */
+  history: number;
+  toolResults: number;
+  /** The same request without token optimization (all tools, no clipping or cap). */
+  baseline: number;
 }
 
 export type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'unknown';
@@ -77,6 +100,8 @@ export interface ProviderCallRecord {
   usage: Usage | null;
   /** True when the provider reported no token counts and Friday estimated them. */
   tokensEstimated: boolean;
+  runId?: string | null;
+  breakdown?: ContextBreakdown | null;
 }
 
 export type ProviderCallRecorder = (record: ProviderCallRecord) => void;

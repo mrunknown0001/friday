@@ -719,6 +719,26 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE runs ADD COLUMN mode TEXT;
     `,
   },
+  {
+    version: 29,
+    name: 'token_optimization',
+    up: `
+      -- Tool groups loaded in the conversation (load_tools), a JSON array of group ids.
+      ALTER TABLE sessions ADD COLUMN tool_groups TEXT NOT NULL DEFAULT '[]';
+      -- Per chat request: the run it belonged to, the provider's prompt-cache counts, and
+      -- Friday's estimate of where the input went (system prompt, tool definitions, messages,
+      -- tool results) and of what the request would have been without optimization.
+      ALTER TABLE provider_calls ADD COLUMN run_id TEXT;
+      ALTER TABLE provider_calls ADD COLUMN cached_tokens INTEGER;
+      ALTER TABLE provider_calls ADD COLUMN cache_write_tokens INTEGER;
+      ALTER TABLE provider_calls ADD COLUMN ctx_system INTEGER;
+      ALTER TABLE provider_calls ADD COLUMN ctx_tools INTEGER;
+      ALTER TABLE provider_calls ADD COLUMN ctx_history INTEGER;
+      ALTER TABLE provider_calls ADD COLUMN ctx_tool_results INTEGER;
+      ALTER TABLE provider_calls ADD COLUMN ctx_baseline INTEGER;
+      CREATE INDEX provider_calls_run ON provider_calls(run_id);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

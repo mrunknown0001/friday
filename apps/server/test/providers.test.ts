@@ -141,7 +141,16 @@ describe('Anthropic provider', () => {
         type: 'tool_call',
         call: { id: 'toolu_1', name: 'read_file', argumentsJson: '{"path":"a.ts"}' },
       },
-      { type: 'finish', finishReason: 'tool_calls', usage: { inputTokens: 520, outputTokens: 31 } },
+      {
+        type: 'finish',
+        finishReason: 'tool_calls',
+        usage: {
+          inputTokens: 520,
+          outputTokens: 31,
+          cachedInputTokens: 400,
+          cacheWriteTokens: 100,
+        },
+      },
     ]);
 
     const call = calls[0]!;
@@ -190,10 +199,48 @@ describe('Anthropic provider', () => {
         operation: 'chat',
         sessionId: 's1',
         status: 'ok',
-        usage: { inputTokens: 520, outputTokens: 31 },
+        usage: {
+          inputTokens: 520,
+          outputTokens: 31,
+          cachedInputTokens: 400,
+          cacheWriteTokens: 100,
+        },
         tokensEstimated: false,
       }),
     ]);
+  });
+
+  it('marks the end of the settled history as a cache breakpoint of its own', async () => {
+    const { provider, calls } = anthropic([() => anthropicStream(TOOL_TURN, true)]);
+    await collect(
+      provider.streamChat({
+        model: 'anthropic:claude-sonnet-4-6',
+        stablePrefix: 3,
+        messages: [
+          { role: 'system', content: 'You are Friday.' },
+          { role: 'user', content: 'Fix a.ts' },
+          {
+            role: 'assistant',
+            content: 'Reading it.',
+            toolCalls: [{ id: 'toolu_0', name: 'read_file', argumentsJson: '{"path":"a.ts"}' }],
+          },
+          { role: 'tool', toolCallId: 'toolu_0', content: 'const a = 1;' },
+        ],
+      }),
+    );
+    const body = calls[0]!.body as { messages: Array<{ content: Array<Record<string, unknown>> }> };
+    expect(body.messages[1]!.content).toEqual([
+      { type: 'text', text: 'Reading it.' },
+      {
+        type: 'tool_use',
+        id: 'toolu_0',
+        name: 'read_file',
+        input: { path: 'a.ts' },
+        cache_control: { type: 'ephemeral' },
+      },
+    ]);
+    // The latest message keeps its breakpoint too.
+    expect(body.messages[2]!.content[0]).toMatchObject({ cache_control: { type: 'ephemeral' } });
   });
 
   it('completes without streaming, and lists models across pages', async () => {
@@ -231,7 +278,7 @@ describe('Anthropic provider', () => {
       text: 'pong',
       toolCalls: [{ id: 'toolu_9', name: 'update_plan', argumentsJson: '{"steps":[]}' }],
       finishReason: 'tool_calls',
-      usage: { inputTokens: 9, outputTokens: 3 },
+      usage: { inputTokens: 9, outputTokens: 3, cachedInputTokens: 0, cacheWriteTokens: 0 },
     });
     expect(calls[0]!.body).toMatchObject({ max_tokens: 16, tool_choice: { type: 'any' } });
     expect(await provider.listModels()).toEqual([

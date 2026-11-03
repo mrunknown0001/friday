@@ -81,7 +81,11 @@ const completionSchema = z.object({
     )
     .min(1),
   usage: z
-    .object({ prompt_tokens: z.number().nullish(), completion_tokens: z.number().nullish() })
+    .object({
+      prompt_tokens: z.number().nullish(),
+      completion_tokens: z.number().nullish(),
+      prompt_tokens_details: z.object({ cached_tokens: z.number().nullish() }).nullish(),
+    })
     .nullish(),
 });
 
@@ -151,7 +155,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 
   private record(
-    req: Pick<ChatRequest, 'model' | 'operation' | 'sessionId'> &
+    req: Pick<ChatRequest, 'model' | 'operation' | 'sessionId' | 'runId' | 'breakdown'> &
       Partial<Pick<ChatRequest, 'messages' | 'tools'>>,
     started: number,
     outcome: {
@@ -187,6 +191,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       attempts: outcome.attempts,
       usage,
       tokensEstimated,
+      runId: req.runId ?? null,
+      breakdown: req.breakdown ?? null,
     });
   }
 
@@ -432,10 +438,17 @@ function toWireMessage(m: ChatMessage): ChatCompletionMessageParam {
   }
 }
 
-function toUsage(u: { prompt_tokens?: number | null; completion_tokens?: number | null }): Usage {
+function toUsage(u: {
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  prompt_tokens_details?: { cached_tokens?: number | null } | null;
+}): Usage {
+  const cached = u.prompt_tokens_details?.cached_tokens;
   return {
     inputTokens: typeof u.prompt_tokens === 'number' ? u.prompt_tokens : null,
     outputTokens: typeof u.completion_tokens === 'number' ? u.completion_tokens : null,
+    // OpenAI, OpenRouter and Gemini report the part served from their automatic prompt cache.
+    ...(typeof cached === 'number' ? { cachedInputTokens: cached } : {}),
   };
 }
 

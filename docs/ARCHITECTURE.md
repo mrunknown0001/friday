@@ -89,6 +89,30 @@ deliberately low guesses, marked `assumed`, until the user configures a value.
 - If older messages are dropped, they are summarized together with the previous summary. The summary is stored in
   `sessions.summary` with `summary_through_message_id` and injected into the single system message. If summarization
   fails, the run continues with plain trimming and says so in a phase event.
+- Token optimization (`chat/optimization.ts`, setting `usage.optimization`, default `standard`) passes
+  `STANDARD_OPTIMIZATION` to `fitHistory`: the whole request (tools, system prompt, history) is capped at 100K
+  estimated tokens unless the current turn needs more; the current run's tool results are clipped to 1,500 characters
+  except the latest 3–6 model turns (the boundary advances 4 turns at a time); and in that settled part a `read_file`
+  result is replaced when a later read covers the same lines or a `completed` change touched the file.
+  `ContextPlan.stablePrefix` counts the settled leading messages; the Anthropic provider puts a cache breakpoint there
+  (tools, system, settled prefix, last message: four in all). `ContextPlan.breakdown` and a baseline (the same
+  history fitted without optimization, with every tool and the full prompt) travel on `ChatRequest.breakdown` and are
+  recorded on `provider_calls` (migration 29: `run_id`, `cached_tokens`, `cache_write_tokens`, `ctx_*`), with the
+  cache counts the providers report (`cache_read_input_tokens` / `cache_creation_input_tokens`,
+  `prompt_tokens_details.cached_tokens`). `UsageRepo.summary` returns them as `context` and `recentRuns`.
+
+### Tool groups (`tools/groups.ts`)
+
+Tools not in a group are core and always offered. `TOOL_GROUPS` lists the others with a summary line, the
+instructions moved out of the system prompt's Capabilities section, and `hints` (a regex over the user's message);
+a connected app's tools are the group `app:<name>`. With optimization on, `RunManager.execute` builds `run.toolGroups`:
+each group's tools after the mode and capability filters, and the loaded set — `sessions.tool_groups` (migration 29),
+plus `devops` and `docker` without a project, `processes` when the project has processes, and the groups the latest
+message hints at (all saved to the session). Each model turn offers the core tools plus the loaded groups; the system
+prompt includes the loaded groups' instructions and lists the rest under "More tools". `load_tools` (category
+`agent_state`) calls `ToolContext.loadToolGroups`; a call to a tool of an unloaded group also loads it. When the set
+changes, the next turn rebuilds the tools and the prompt. With optimization off, every tool is offered and
+`load_tools` is not.
 
 ## Agent loop (Phase 2)
 

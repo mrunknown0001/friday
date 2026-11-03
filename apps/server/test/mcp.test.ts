@@ -149,7 +149,7 @@ describe('connected apps (MCP)', () => {
       { chunks: ['Saved.'] },
     );
     const session = ctx.s.sessions.create();
-    const first = ctx.s.runManager.startMessage(session.id, 'note: buy milk');
+    const first = ctx.s.runManager.startMessage(session.id, 'notes: buy milk');
     let card: ApprovalDto | null = null;
     ctx.s.runManager.subscribe(first.run.id, 0, (e: RunEvent) => {
       if (e.type !== 'approval_requested') return;
