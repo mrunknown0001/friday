@@ -298,4 +298,20 @@ describe('question card', () => {
     expect(screen.queryByRole('region', { name: 'Friday has a question' })).toBeNull();
     expect(screen.getByText('Friday decided')).toBeTruthy();
   });
+
+  it('keeps its hidden choice inputs inside the scrolling conversation', () => {
+    // The radios and checkboxes are visually hidden and absolutely positioned. Unless an ancestor
+    // inside the scroller is positioned, they are placed outside it: the page grows blank space
+    // and a scrollbar, and focusing a choice scrolls the whole window.
+    render(<ChatView {...props(detail({ questions: [question()] }))} />);
+    const card = screen.getByRole('region', { name: 'Friday has a question' });
+    const inputs = [
+      ...within(card).getAllByRole('radio'),
+      ...within(card).getAllByRole('checkbox'),
+    ];
+    expect(inputs).toHaveLength(4);
+    for (const input of inputs) expect(input.closest('label')!.className).toMatch(/\brelative\b/);
+    const scroller = card.closest('.overflow-y-auto')!;
+    expect(scroller.className).toMatch(/\brelative\b/);
+  });
 });

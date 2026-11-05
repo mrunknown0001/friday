@@ -735,7 +735,7 @@ export function ChatView(props: Props) {
               setAwayFromBottom(!near);
               if (near) setUnseen(false);
             }}
-            className="flex-1 overflow-y-auto"
+            className="relative flex-1 overflow-y-auto"
             aria-live="polite"
           >
             <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-6">
