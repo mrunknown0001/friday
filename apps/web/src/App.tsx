@@ -473,7 +473,7 @@ export function App() {
         : null;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       <Sidebar
         projects={projects}
         projectId={projectId}

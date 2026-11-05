@@ -80,7 +80,7 @@ export function QuestionForm({
                     key={o.label}
                     title={o.description ?? undefined}
                     className={cn(
-                      'flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-600',
+                      'relative flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-sky-600',
                       on
                         ? 'border-sky-600 bg-sky-950/60 text-sky-100'
                         : 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-500',
