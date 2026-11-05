@@ -93,7 +93,7 @@ describe('processes panel', () => {
     const { rerender } = render(
       <SidePanel project={project} plan={null} changes={[]} onRevert={vi.fn()} />,
     );
-    expect(screen.queryByRole('heading', { name: 'Processes' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: /^Processes/ })).toBeNull();
     rerender(
       <SidePanel
         project={project}
@@ -103,6 +103,6 @@ describe('processes panel', () => {
         processes={[proc()]}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Processes' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /^Processes/ })).toBeTruthy();
   });
 });

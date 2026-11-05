@@ -17,7 +17,7 @@ import {
   Link2,
   OctagonAlert,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { formatBytes } from '../lib/format';
@@ -370,6 +370,94 @@ function Changes({
   );
 }
 
+type SectionId = 'plan' | 'changes' | 'processes' | 'files';
+const FOLDED_KEY = 'friday.sidePanel.folded';
+
+function readFolded(): SectionId[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is SectionId => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Which panel sections are folded away; remembered in this browser. */
+function useFoldedSections() {
+  const [folded, setFolded] = useState<SectionId[]>(readFolded);
+  const onToggle = (id: SectionId) =>
+    setFolded((list) => {
+      const next = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+      try {
+        localStorage.setItem(FOLDED_KEY, JSON.stringify(next));
+      } catch {
+        /* storage unavailable: the choice lasts until reload */
+      }
+      return next;
+    });
+  return { folded, onToggle };
+}
+
+/** A panel section whose heading folds it away and back. */
+function PanelSection({
+  id,
+  title,
+  extra = null,
+  grow = false,
+  folded,
+  onToggle,
+  children,
+}: {
+  id: SectionId;
+  title: string;
+  extra?: string | null;
+  /** Takes the panel's remaining height while open (the file tree). */
+  grow?: boolean;
+  folded: SectionId[];
+  onToggle: (id: SectionId) => void;
+  children: ReactNode;
+}) {
+  const open = !folded.includes(id);
+  const bodyId = `side-panel-${id}`;
+  return (
+    <section
+      className={cn(
+        'border-b border-zinc-800',
+        open ? 'py-3' : 'py-1.5',
+        open && grow && 'flex min-h-72 flex-1 flex-col border-b-0',
+      )}
+    >
+      <h2 className="px-1.5">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => onToggle(id)}
+          title={open ? `Hide ${title.toLowerCase()}` : `Show ${title.toLowerCase()}`}
+          className="flex w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-[11px] font-semibold uppercase tracking-wider text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300"
+        >
+          <ChevronRight
+            className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-90')}
+            aria-hidden
+          />
+          {title}
+          {extra && ' '}
+          {extra && (
+            <span className="min-w-0 truncate normal-case tracking-normal text-zinc-500">
+              {extra}
+            </span>
+          )}
+        </button>
+      </h2>
+      {open && (
+        <div id={bodyId} className={cn('mt-1.5', grow && 'flex min-h-0 flex-1 flex-col')}>
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function SidePanel({
   project,
   plan,
@@ -394,6 +482,7 @@ export function SidePanel({
   const [viewing, setViewing] = useState<{ path: string; line: number | null } | null>(null);
   const open = (path: string, line: number | null = null) => setViewing({ path, line });
   const projectId = project?.id ?? null;
+  const fold = useFoldedSections();
 
   useEffect(() => {
     if (!projectId) return;
@@ -417,40 +506,36 @@ export function SidePanel({
   return (
     <aside
       aria-label="Plan and files"
-      className="flex w-80 shrink-0 flex-col border-l border-zinc-800 bg-zinc-900/30"
+      className="flex w-80 shrink-0 flex-col overflow-y-auto overflow-x-hidden border-l [overflow-wrap:anywhere] border-zinc-800 bg-zinc-900/30"
     >
-      <section className="border-b border-zinc-800 py-3">
-        <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-          Plan
-        </h2>
+      <PanelSection id="plan" title="Plan" {...fold}>
         <Plan plan={plan} />
-      </section>
-      <section className="border-b border-zinc-800 py-3">
-        <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-          Changes
-        </h2>
+      </PanelSection>
+      <PanelSection
+        id="changes"
+        title="Changes"
+        extra={changes.length > 0 ? `· ${changes.length}` : null}
+        {...fold}
+      >
         <Changes changes={changes} onRevert={onRevert} />
-      </section>
+      </PanelSection>
       {project && processes.length > 0 && (
-        <section className="border-b border-zinc-800 py-3">
-          <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-            Processes
-          </h2>
+        <PanelSection id="processes" title="Processes" extra={`· ${processes.length}`} {...fold}>
           <ProcessList
             processes={processes}
             onStop={onStopProcess}
             onDismiss={onDismissProcess}
             {...(onPreview ? { onPreview } : {})}
           />
-        </section>
+        </PanelSection>
       )}
-      <section className="flex min-h-0 flex-1 flex-col py-3">
-        <h2 className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-          Files
-          {project && (
-            <span className="ml-1 normal-case tracking-normal text-zinc-500">· {project.name}</span>
-          )}
-        </h2>
+      <PanelSection
+        id="files"
+        title="Files"
+        extra={project ? `· ${project.name}` : null}
+        grow
+        {...fold}
+      >
         {!project ? (
           <p className="px-3 text-xs text-zinc-500">Select a project to browse its files.</p>
         ) : !project.available ? (
@@ -494,7 +579,7 @@ export function SidePanel({
         <p className="mt-2 px-3 text-[11px] text-zinc-500">
           Respects .gitignore; dependency and build folders are hidden.
         </p>
-      </section>
+      </PanelSection>
       {viewing &&
         project &&
         (DOCUMENT_FILE.test(viewing.path) ? (

@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn';
+import { ConversationSearch, SearchResults, useConversationSearch } from './ConversationSearch';
+import { ProjectPicker } from './ProjectPicker';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { RUN_STATUS_TONE } from './status';
@@ -66,6 +68,11 @@ export function Sidebar({
   const [editing, setEditing] = useState<string | null>(null);
   const current = projects.find((p) => p.id === projectId) ?? null;
   const [draft, setDraft] = useState('');
+  // A search belongs to the project it was typed in; switching projects starts afresh.
+  const [typed, setTyped] = useState({ projectId, text: '' });
+  const query = typed.projectId === projectId ? typed.text : '';
+  const setQuery = (text: string) => setTyped({ projectId, text });
+  const search = useConversationSearch(query, projectId);
   const worktreeOf = (s: SessionSummaryDto) =>
     projects.find((p) => p.id === s.projectId)?.worktree ?? null;
 
@@ -162,22 +169,12 @@ export function Sidebar({
             )}
           </div>
         </div>
-        <select
+        <ProjectPicker
           id="project-select"
-          value={projectId ?? ''}
-          onChange={(e) => onSelectProject(e.target.value || null)}
-          className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm outline-none focus:border-sky-500"
-        >
-          <option value="">No project (chat only)</option>
-          {projects
-            .filter((p) => !p.worktree)
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.available ? '' : ' (missing)'}
-              </option>
-            ))}
-        </select>
+          projects={projects}
+          projectId={projectId}
+          onSelect={onSelectProject}
+        />
         {current && (
           <p className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={current.rootPath}>
             {current.rootPath}
@@ -185,14 +182,27 @@ export function Sidebar({
         )}
       </div>
 
-      <nav aria-label="Conversations" className="flex-1 overflow-y-auto px-2 pb-2">
-        <h2 className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+      <div className="px-4 pb-1 pt-2">
+        <h2 className="pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
           Conversations
         </h2>
-        {sessions.length === 0 && (
-          <p className="px-2 py-3 text-sm text-zinc-500">No conversations yet.</p>
+        <ConversationSearch query={query} onChange={setQuery} busy={search.busy} />
+      </div>
+      <nav aria-label="Conversations" className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {search.query ? (
+          <SearchResults
+            query={search.query}
+            results={search.results}
+            error={search.error}
+            activeId={activeId}
+            onSelect={onSelect}
+          />
+        ) : (
+          sessions.length === 0 && (
+            <p className="px-2 py-3 text-sm text-zinc-500">No conversations yet.</p>
+          )
         )}
-        <ul className="space-y-0.5">
+        <ul className="space-y-0.5" hidden={!!search.query}>
           {sessions.map((s) => (
             <li key={s.id}>
               {editing === s.id ? (

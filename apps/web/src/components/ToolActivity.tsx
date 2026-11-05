@@ -264,10 +264,10 @@ function ToolRow({ item }: { item: ToolItem }) {
             : STATUS_ICON[item.status]}
         <span className="font-mono text-zinc-200">{item.name}</span>
         {label && <span className="min-w-0 truncate font-mono text-zinc-400">{label}</span>}
-        <span className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-zinc-500">
-          {item.summary && <span className="max-w-72 truncate">{item.summary}</span>}
+        <span className="ml-auto flex min-w-0 max-w-[45%] shrink-0 items-center gap-2 pl-2 text-zinc-500">
+          {item.summary && <span className="min-w-0 max-w-72 truncate">{item.summary}</span>}
           {item.durationMs !== null && item.status !== 'running' && (
-            <span>{item.durationMs} ms</span>
+            <span className="shrink-0 whitespace-nowrap">{item.durationMs} ms</span>
           )}
         </span>
       </button>

@@ -44,6 +44,7 @@ import type {
   SavedActionDto,
   SavedActionInput,
   SessionDetailDto,
+  SessionSearchResultDto,
   SessionSummaryDto,
   SettingsDto,
   SpokenReplyDto,
@@ -314,6 +315,12 @@ export const api = {
     request<{ sessions: SessionSummaryDto[] }>(
       'GET',
       `/api/sessions?project=${projectId ?? 'none'}`,
+    ),
+  /** Conversations in the same scope as `sessions` whose title or messages contain `q`. */
+  searchSessions: (q: string, projectId: string | null) =>
+    request<{ results: SessionSearchResultDto[] }>(
+      'GET',
+      `/api/sessions/search?q=${encodeURIComponent(q)}&project=${projectId ?? 'none'}`,
     ),
   createSession: (projectId: string | null, mode?: AgentMode) =>
     request<SessionSummaryDto>('POST', '/api/sessions', { projectId, ...(mode ? { mode } : {}) }),

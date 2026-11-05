@@ -22,6 +22,29 @@ body {
   @apply outline-2 outline-offset-2 outline-sky-500;
 }
 
+/* Thin, quiet scrollbars everywhere. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-zinc-700) transparent;
+}
+
+/* The conversation never scrolls sideways: prose, paths, tables, code and diffs all wrap. */
+.chat-wrap,
+.chat-wrap .break-words {
+  overflow-wrap: anywhere;
+}
+.chat-wrap button {
+  max-width: 100%;
+}
+.chat-wrap pre,
+.chat-wrap code,
+.chat-wrap .whitespace-pre {
+  white-space: pre-wrap;
+}
+.chat-wrap pre code.hljs {
+  overflow-x: visible;
+}
+
 /* Markdown content */
 .prose-friday {
   @apply text-[0.94rem] leading-relaxed;
