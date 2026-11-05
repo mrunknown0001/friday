@@ -1,4 +1,4 @@
-import type { AppNotice, RunEvent, SessionDetailDto } from '@friday/shared';
+import type { AppNotice, RunEvent, SessionDetailDto, SessionSearchResultDto } from '@friday/shared';
 import { AGENT_MODES } from '../../chat/modes.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -42,6 +42,25 @@ export function registerSessionRoutes(app: FastifyInstance, s: Services) {
     );
     const filter = project === undefined ? undefined : project === 'none' ? null : project;
     return { sessions: s.sessions.list(filter).map(summary) };
+  });
+
+  app.get('/api/sessions/search', async (req): Promise<{ results: SessionSearchResultDto[] }> => {
+    // Same scope as the sidebar list: ?project=<id> (with its worktrees) or ?project=none.
+    const { q, project } = parseInput(
+      z.object({
+        q: z.string().trim().min(1).max(200),
+        project: z.union([z.uuid(), z.literal('none')]),
+      }),
+      req.query,
+    );
+    const hits = s.sessions.search(q, project === 'none' ? null : project);
+    return {
+      results: hits.map((h) => ({
+        session: summary(h.session),
+        titleMatch: h.titleMatch,
+        snippet: h.snippet,
+      })),
+    };
   });
 
   app.post('/api/sessions', async (req, reply) => {

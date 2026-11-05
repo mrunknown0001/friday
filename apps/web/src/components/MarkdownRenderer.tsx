@@ -28,7 +28,7 @@ function CodeBlock(props: ComponentProps<'pre'>) {
       </button>
       <pre
         ref={ref}
-        className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900 p-3 font-mono text-[0.82rem] leading-snug"
+        className="whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-900 p-3 font-mono text-[0.82rem] leading-snug"
       >
         {props.children}
       </pre>

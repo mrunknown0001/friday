@@ -313,5 +313,8 @@ describe('question card', () => {
     for (const input of inputs) expect(input.closest('label')!.className).toMatch(/\brelative\b/);
     const scroller = card.closest('.overflow-y-auto')!;
     expect(scroller.className).toMatch(/\brelative\b/);
+    // Nor does the conversation scroll sideways: its content wraps (see .chat-wrap).
+    expect(scroller.className).toMatch(/\boverflow-x-hidden\b/);
+    expect(scroller.firstElementChild!.className).toMatch(/\bchat-wrap\b/);
   });
 });

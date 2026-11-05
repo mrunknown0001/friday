@@ -1559,6 +1559,14 @@ export interface SessionSummaryDto {
   mode: AgentMode;
 }
 
+/** A conversation matching a sidebar search, by its title, its messages, or both. */
+export interface SessionSearchResultDto {
+  session: SessionSummaryDto;
+  titleMatch: boolean;
+  /** Text around the latest message match, or null when only the title matched. */
+  snippet: string | null;
+}
+
 export interface SessionDetailDto extends SessionSummaryDto {
   messages: MessageDto[];
   latestRun: RunDto | null;

@@ -65,6 +65,24 @@ function toRecord(r: SessionRow): SessionRecord {
   };
 }
 
+export interface SessionSearchHit {
+  session: SessionRecord;
+  titleMatch: boolean;
+  snippet: string | null;
+}
+
+const SNIPPET_BEFORE = 50;
+const SNIPPET_AFTER = 110;
+
+/** A one-line excerpt of `text` around the first occurrence of `needle` (lowercase). */
+export function snippetAround(text: string, needle: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const at = Math.max(0, flat.toLowerCase().indexOf(needle));
+  const start = Math.max(0, at - SNIPPET_BEFORE);
+  const end = Math.min(flat.length, at + needle.length + SNIPPET_AFTER);
+  return `${start > 0 ? '…' : ''}${flat.slice(start, end).trim()}${end < flat.length ? '…' : ''}`;
+}
+
 export const DEFAULT_SESSION_TITLE = 'New conversation';
 
 export class SessionRepo {
@@ -107,6 +125,43 @@ export class SessionRepo {
               )
               .all(projectId, projectId, limit);
     return (rows as SessionRow[]).map(toRecord);
+  }
+
+  /**
+   * Conversations whose title or user/assistant messages contain `query` (case-insensitive),
+   * scoped like `list`: a project (with its worktrees), or null for conversations without one.
+   * Newest first. Tool output is not searched.
+   */
+  search(query: string, projectId: string | null, limit = 30): SessionSearchHit[] {
+    const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
+    const scope =
+      projectId === null
+        ? 's.project_id IS NULL'
+        : 's.project_id = ? OR s.project_id IN (SELECT id FROM projects WHERE parent_id = ?)';
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (
+           SELECT s.*, (
+             SELECT r.status FROM runs r WHERE r.session_id = s.id ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1
+           ) AS last_run_status, (
+             SELECT m.content FROM messages m
+             WHERE m.session_id = s.id AND m.role IN ('user', 'assistant') AND m.content LIKE ? ESCAPE '\\'
+             ORDER BY m.id DESC LIMIT 1
+           ) AS hit
+           FROM sessions s WHERE ${scope}
+         )
+         WHERE title LIKE ? ESCAPE '\\' OR hit IS NOT NULL
+         ORDER BY updated_at DESC LIMIT ?`,
+      )
+      .all(pattern, ...(projectId === null ? [] : [projectId, projectId]), pattern, limit) as Array<
+      SessionRow & { hit: string | null }
+    >;
+    const needle = query.toLowerCase();
+    return rows.map((r) => ({
+      session: toRecord(r),
+      titleMatch: r.title.toLowerCase().includes(needle),
+      snippet: r.hit === null ? null : snippetAround(r.hit, needle),
+    }));
   }
 
   setPlan(id: string, plan: PlanStep[] | null): void {
