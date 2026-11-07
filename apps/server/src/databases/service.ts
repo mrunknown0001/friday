@@ -5,6 +5,7 @@ import type { DbConnectionDto } from '@friday/shared';
 import type { DbConnectionRepo } from '../repositories/dbConnections.js';
 import type { ProjectRecord, ProjectRepo } from '../repositories/projects.js';
 import { DbError, type DbTarget } from './clients.js';
+import { localProject } from '../workspace/projectAccess.js';
 
 /** A variable name a connection may point at. Friday's own settings are off limits. */
 export const SECRET_VAR = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
@@ -48,7 +49,8 @@ export class DatabaseService {
   }
 
   private projectOf(conn: DbConnectionDto): ProjectRecord | null {
-    return conn.projectId ? this.projects.get(conn.projectId) : null;
+    // A project on an SSH host has no .env or SQLite files on this machine.
+    return conn.projectId ? localProject(this.projects.get(conn.projectId)) : null;
   }
 
   /** Where the secret is looked up, in order. */

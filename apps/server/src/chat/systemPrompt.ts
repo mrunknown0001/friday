@@ -1,4 +1,4 @@
-import type { AgentMode, ProcessDto } from '@friday/shared';
+import type { AgentMode, ProcessDto, RemoteTargetDto } from '@friday/shared';
 import { modePrompt } from './modes.js';
 import { APP_GROUP_PREFIX, TOOL_GROUPS, toolGroup } from '../tools/groups.js';
 import type { ProjectRecord } from '../repositories/projects.js';
@@ -25,7 +25,15 @@ function processState(p: ProcessDto): string {
   return p.stoppedBy ? `stopped by ${p.stoppedBy}` : `exited by itself (${how})`;
 }
 
+/** The project's folder is on this SSH host: what that means for the tools. */
+function remoteSection(r: RemoteTargetDto): string {
+  return `
+Server: ${r.name} (${r.username}@${r.hostname}, ${r.environment}). This project is a folder on that server, reached over SSH; nothing of it is on the user's machine. list_directory, read_file, file_info, find_files and search_code read it there (search_code uses the server's ripgrep, or grep when it has none: regex=true is then POSIX extended syntax). The file-change tools change files on the server, run_command runs in the project folder on the server, and git_status, git_diff, git_log, git_show, git_branches, git_commit and git_create_branch use the server's checkout. Every change and command still needs the user's approval and applies to the server as soon as it is approved${r.environment === 'production' ? '; this is a production server, so the user also types the host name to approve, and you should prefer reading and checking before proposing changes' : ''}. Not available for this project: the code map and find_symbol, view_image, run_tests (use run_command with the project's test command), background processes, refactoring, documents, dependency audits, code review tools, saved actions and task permissions.`;
+}
+
 export interface PromptOptions {
+  /** Set when the project is a folder on an SSH host. */
+  remote?: RemoteTargetDto | null;
   project: ProjectRecord | null;
   detection: ProjectDetection | null;
   toolsEnabled: boolean;
@@ -80,6 +88,7 @@ export function buildSystemPrompt({
   web,
   mode = 'auto',
   toolGroups,
+  remote = null,
 }: PromptOptions): string {
   const groupGuidance = guidanceFor(toolGroups?.loaded);
   const moreTools = toolGroups ? moreToolsSection(toolGroups.more) : '';
@@ -90,7 +99,7 @@ export function buildSystemPrompt({
   if (project && toolsEnabled) {
     parts.push(`## Current project
 Name: ${project.name}
-Root: ${project.rootPath}${
+Root: ${project.rootPath}${remote ? remoteSection(remote) : ''}${
       project.externalFolders.length
         ? `
 External folders: ${project.externalFolders.join(', ')}. These are outside the project; the user authorized reading them. Use their absolute paths with list_directory, read_file, file_info, search_code and find_files. The file-change tools work there too, but every change outside the project needs its own approval. Commands, git, tests and the code map cover only the project.`

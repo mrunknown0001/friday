@@ -152,6 +152,24 @@ loop.
 
 The UI's file explorer (`/api/projects/:id/tree` and `/file`) uses the same `resolveInside` confinement as the agent.
 
+### Projects on SSH hosts (`workspace/remote.ts`, `workspace/projectAccess.ts`)
+
+A project with `sshHostId` (migration 32; `root_path` stores `ssh://<host id><path>` so the same path on two hosts
+stays unique) lives in a folder on that host. `RemoteWorkspace` runs one POSIX `sh` script per operation over
+`SshService.exec` (raw stdout, separate stderr, stdin for file contents): stat, read, list (walk-equivalent with
+`.gitignore` applied by Friday), search (the server's ripgrep, else grep), probe/write/remove/move, git (with
+`GIT_CONFIG_*` blanking program-running repo settings) and hook detection. Each script checks `realpath` against the
+root on the server; Friday re-checks every returned path. `run_command` builds `commandLine()` (login shell, server
+`timeout`) and streams through `SshService.run`.
+
+Tools opt in with `remote: true` (`ToolSpec`); the registry offers only those project tools for such a project and
+`validateToolCall` refuses the rest. The file tools go through a `FileStore` (`localStore` / `remoteStore` in
+`tools/fileTools.ts`), the git tools through a `Repo`, so plans, diffs, fingerprints and undo records are shared;
+undo (`approvals/revert.ts`) accepts a `FileStore`. `markRemoteProposal` names the host on approvals and requires the
+host name typed on production hosts. `localProject()` guards every path that reads a project's folder on this machine.
+The routes for the file panel (`tree`, `file`, `search`, `raw`, `download`) branch to the remote workspace; local-only
+project routes answer 409 `remote_project`.
+
 ## Approval flow (Phase 3)
 
 ```

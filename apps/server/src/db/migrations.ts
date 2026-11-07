@@ -759,6 +759,15 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE model_capabilities ADD COLUMN listed_image_input TEXT;
     `,
   },
+  {
+    version: 32,
+    name: 'remote_projects',
+    up: `
+      -- A project in a folder on an SSH host. Its root_path holds 'ssh://<host id><path>' so the
+      -- same folder path on two servers stays unique; the repository returns the plain path.
+      ALTER TABLE projects ADD COLUMN ssh_host_id TEXT REFERENCES ssh_hosts(id);
+    `,
+  },
 ];
 
 export function migrate(db: Db, migrations: Migration[] = MIGRATIONS): number[] {

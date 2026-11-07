@@ -157,6 +157,12 @@ export function registerMemoryRoutes(app: FastifyInstance, s: Services) {
     const { id } = parseInput(z.object({ id: z.uuid() }), req.params);
     const project = s.projects.get(id);
     if (!project) throw new HttpError(404, 'project_not_found', 'Project not found.');
+    if (project.sshHostId)
+      throw new HttpError(
+        409,
+        'remote_project',
+        'Exporting memories to a file is not available for a project on an SSH host.',
+      );
     const memories = s.memoryRepo
       .list({ projectId: id, status: 'active' })
       .filter((m) => m.scope === 'project' || m.scope === 'operational');

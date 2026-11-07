@@ -1,10 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { RemoteFolderListDto } from '@friday/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Services } from '../../services.js';
 import { explainSshFailure, HOST_NAME, HOSTNAME, USERNAME } from '../../ssh/ssh.js';
 import { isSecretPath, WorkspaceError } from '../../workspace/paths.js';
+import { transportFor } from '../../workspace/projectAccess.js';
+import { browseRemote } from '../../workspace/remote.js';
 import { HttpError } from '../errors.js';
 import { parseInput } from '../validation.js';
 
@@ -74,6 +77,13 @@ export function registerDevopsRoutes(app: FastifyInstance, s: Services) {
   app.delete('/api/ssh-hosts/:id', async (req, reply) => {
     const { id } = parseInput(idParams, req.params);
     const host = requireHost(id);
+    const projects = s.projects.onHost(id);
+    if (projects.length > 0)
+      throw new HttpError(
+        409,
+        'host_in_use',
+        `Remove the project${projects.length === 1 ? '' : 's'} on ${host.name} first: ${projects.map((p) => p.name).join(', ')}.`,
+      );
     s.sshHosts.delete(id);
     s.audit.record({ actor: 'user', action: 'ssh_host_removed', details: { name: host.name } });
     reply.code(204);
@@ -130,6 +140,23 @@ export function registerDevopsRoutes(app: FastifyInstance, s: Services) {
       message: r.timedOut ? 'Timed out.' : explainSshFailure(r.output),
       detail: s.redactor.redact(r.output.slice(0, 500)),
     };
+  });
+
+  /**
+   * Folders on a host, for choosing a project folder there (the Add project dialog). A user action
+   * that only lists folder names; the model has no tool for it.
+   */
+  app.get('/api/ssh-hosts/:id/folders', async (req): Promise<RemoteFolderListDto> => {
+    const { id } = parseInput(idParams, req.params);
+    const q = parseInput(z.object({ path: z.string().trim().max(4096).optional() }), req.query);
+    const host = requireHost(id);
+    if (host.trustedFingerprints.length === 0)
+      throw new HttpError(
+        409,
+        'host_untrusted',
+        `Trust ${host.name}'s host key in Settings → SSH hosts first.`,
+      );
+    return wrap(() => browseRemote(transportFor(s.ssh, host), q.path || null));
   });
 
   app.get('/api/log-sources', async () => ({ sources: s.logSources.list() }));

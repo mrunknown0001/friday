@@ -9,6 +9,7 @@ import { detectProject } from '../../workspace/detect.js';
 import { assertRootAvailable } from '../../workspace/paths.js';
 import { HttpError } from '../errors.js';
 import { parseInput } from '../validation.js';
+import { localProject } from '../../workspace/projectAccess.js';
 
 /** Clarifying questions: answering the agent's (ask_user), and improving a draft before sending. */
 export function registerQuestionRoutes(app: FastifyInstance, s: Services) {
@@ -72,9 +73,10 @@ export function registerQuestionRoutes(app: FastifyInstance, s: Services) {
     const projectId = session ? session.projectId : body.projectId;
     const project = projectId ? s.projects.get(projectId) : null;
     if (projectId && !project) throw new HttpError(404, 'project_not_found', 'Project not found.');
-    const detection = project
-      ? await assertRootAvailable(project.rootPath)
-          .then(() => detectProject(project.rootPath))
+    const local = localProject(project);
+    const detection = local
+      ? await assertRootAvailable(local.rootPath)
+          .then(() => detectProject(local.rootPath))
           .catch(() => null)
       : null;
     const history = session

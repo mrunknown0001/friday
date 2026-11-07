@@ -1,7 +1,15 @@
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { detectProject } from '../workspace/detect.js';
-import { languageFor, loadFile, sliceLines, splitLines } from '../workspace/files.js';
+import {
+  languageFor,
+  loadFile,
+  looksBinary,
+  MAX_TEXT_FILE_BYTES,
+  sliceLines,
+  splitLines,
+  type LoadedFile,
+} from '../workspace/files.js';
 import {
   assertRootAvailable,
   resolveRead,
@@ -11,8 +19,32 @@ import {
   type Workspace,
 } from '../workspace/paths.js';
 import { formatMatches, globToRegExp, search } from '../workspace/search.js';
-import { formatSize, walk } from '../workspace/walk.js';
+import { formatSize, walk, type WalkEntry } from '../workspace/walk.js';
+import { remoteFor } from '../workspace/projectAccess.js';
+import type { RemoteWorkspace } from '../workspace/remote.js';
 import { defineTool, type ToolContext } from './types.js';
+
+/** The project's workspace on its SSH host, or null for a project on this machine. */
+export function remoteOf(ctx: ToolContext): RemoteWorkspace | null {
+  return ctx.project ? remoteFor(ctx.project, ctx.devops) : null;
+}
+
+/** Manifests recognized by name in a remote project's top level (no content is read). */
+const REMOTE_MANIFESTS: Record<string, string> = {
+  'package.json': 'Node.js',
+  'composer.json': 'PHP (Composer)',
+  artisan: 'Laravel',
+  'pyproject.toml': 'Python',
+  'requirements.txt': 'Python',
+  'go.mod': 'Go',
+  'Cargo.toml': 'Rust',
+  Gemfile: 'Ruby',
+  'pom.xml': 'Java (Maven)',
+  'build.gradle': 'Java (Gradle)',
+  'docker-compose.yml': 'Docker Compose',
+  'compose.yaml': 'Docker Compose',
+  Dockerfile: 'Docker',
+};
 
 /** The project and its external folders (paths in those are given absolute). */
 async function workspace(ctx: ToolContext): Promise<Workspace> {
@@ -36,9 +68,29 @@ export const inspectProject = defineTool({
   category: 'read_only',
   risk: 'none',
   requiresProject: true,
+  remote: true,
   schema: z.object({}),
   describeCall: () => 'project overview',
   async execute(_args, ctx) {
+    const remote = remoteOf(ctx);
+    if (remote) {
+      const top = await remote.list('.', { maxDepth: 1, maxEntries: 500, signal: ctx.signal });
+      const names = top.entries.map((e) => (e.type === 'dir' ? `${e.name}/` : e.name));
+      const stack = [
+        ...new Set(top.entries.map((e) => REMOTE_MANIFESTS[e.name]).filter(Boolean)),
+      ] as string[];
+      const git = await remote.git(['rev-parse', '--is-inside-work-tree']).catch(() => null);
+      return {
+        content: [
+          `Project: ${ctx.project!.name} (on ${remote.host.name}, ${remote.root})`,
+          `Likely stack (from file names): ${stack.join(', ') || 'unknown'}`,
+          `Git repository: ${git?.code === 0 ? 'yes' : 'no'}`,
+          `Top level: ${names.join('  ')}`,
+          'Read the manifests (package.json, composer.json, ...) for scripts and versions.',
+        ].join('\n'),
+        summary: stack.length ? stack.join(', ') : 'No known stack detected',
+      };
+    }
     const { root } = await workspace(ctx);
     const d = await detectProject(root);
     const lines = [
@@ -68,6 +120,7 @@ export const listDirectory = defineTool({
   category: 'read_only',
   risk: 'none',
   requiresProject: true,
+  remote: true,
   schema: z.object({
     path: relPath.default('.'),
     depth: z.number().int().min(1).max(6).default(2).describe('How many levels to descend (1-6).'),
@@ -75,15 +128,32 @@ export const listDirectory = defineTool({
   }),
   describeCall: (a) => `${a.path ?? '.'} (depth ${a.depth ?? 2})`,
   async execute(args, ctx) {
-    const target = await resolveRead(await workspace(ctx), args.path);
-    const stat = await fs.stat(target.abs);
-    if (!stat.isDirectory())
-      throw new WorkspaceError('not_a_directory', `"${target.rel}" is a file; use read_file.`);
-    const { entries, truncated } = await walk(target.root, target.abs, {
-      maxDepth: args.depth,
-      maxEntries: args.max_entries,
-      signal: ctx.signal,
-    });
+    const remote = remoteOf(ctx);
+    let target: { rel: string };
+    let entries: WalkEntry[];
+    let truncated: boolean;
+    if (remote) {
+      const listed = await remote
+        .list(args.path, { maxDepth: args.depth, maxEntries: args.max_entries, signal: ctx.signal })
+        .catch((err: unknown) => {
+          if (err instanceof WorkspaceError && err.code === 'not_a_directory')
+            throw new WorkspaceError('not_a_directory', `"${args.path}" is a file; use read_file.`);
+          throw err;
+        });
+      ({ entries, truncated } = listed);
+      target = listed;
+    } else {
+      const local = await resolveRead(await workspace(ctx), args.path);
+      const stat = await fs.stat(local.abs);
+      if (!stat.isDirectory())
+        throw new WorkspaceError('not_a_directory', `"${local.rel}" is a file; use read_file.`);
+      ({ entries, truncated } = await walk(local.root, local.abs, {
+        maxDepth: args.depth,
+        maxEntries: args.max_entries,
+        signal: ctx.signal,
+      }));
+      target = local;
+    }
     const body = entries
       .map((e) => {
         const indent = '  '.repeat(e.depth - 1);
@@ -104,6 +174,30 @@ export const listDirectory = defineTool({
   },
 });
 
+/** A file's contents for read_file and file_info, from this machine or the project's server. */
+async function loadAny(
+  ctx: ToolContext,
+  input: string,
+): Promise<{ target: { rel: string }; file: LoadedFile }> {
+  const remote = remoteOf(ctx);
+  if (remote) {
+    const f = await remote.readFile(input, MAX_TEXT_FILE_BYTES, ctx.signal);
+    const binary = !!f.buf && looksBinary(f.buf);
+    return {
+      target: f,
+      file: {
+        size: f.size,
+        mtime: f.mtime,
+        tooLarge: !f.buf,
+        binary,
+        text: f.buf && !binary ? f.buf.toString('utf8') : null,
+      },
+    };
+  }
+  const target = await resolveRead(await workspace(ctx), input);
+  return { target, file: await loadFile(target.abs) };
+}
+
 const DEFAULT_READ_LINES = 400;
 const MAX_READ_LINES = 1_000;
 
@@ -114,6 +208,7 @@ export const readFile = defineTool({
   category: 'read_only',
   risk: 'none',
   requiresProject: true,
+  remote: true,
   schema: z.object({
     path: relPath,
     start_line: z.number().int().min(1).optional(),
@@ -122,8 +217,7 @@ export const readFile = defineTool({
   describeCall: (a) =>
     a.start_line || a.end_line ? `${a.path}:${a.start_line ?? 1}-${a.end_line ?? ''}` : a.path,
   async execute(args, ctx) {
-    const target = await resolveRead(await workspace(ctx), args.path);
-    const file = await loadFile(target.abs);
+    const { target, file } = await loadAny(ctx, args.path);
     if (file.tooLarge) {
       throw new WorkspaceError(
         'too_large',
@@ -164,18 +258,26 @@ export const fileInfo = defineTool({
   category: 'read_only',
   risk: 'none',
   requiresProject: true,
+  remote: true,
   schema: z.object({ path: relPath }),
   describeCall: (a) => a.path,
   async execute(args, ctx) {
-    const target = await resolveRead(await workspace(ctx), args.path);
-    const stat = await fs.stat(target.abs);
-    if (stat.isDirectory()) {
-      return {
-        content: `${target.rel}: directory, modified ${stat.mtime.toISOString()}`,
-        summary: 'directory',
-      };
+    const remote = remoteOf(ctx);
+    if (remote) {
+      const st = await remote.stat(args.path);
+      if (st.type === 'dir')
+        return { content: `${st.rel}: directory, modified ${st.mtime}`, summary: 'directory' };
+    } else {
+      const local = await resolveRead(await workspace(ctx), args.path);
+      const stat = await fs.stat(local.abs);
+      if (stat.isDirectory()) {
+        return {
+          content: `${local.rel}: directory, modified ${stat.mtime.toISOString()}`,
+          summary: 'directory',
+        };
+      }
     }
-    const file = await loadFile(target.abs);
+    const { target, file } = await loadAny(ctx, args.path);
     const kind = file.tooLarge ? 'large file (not inspected)' : file.binary ? 'binary' : 'text';
     const lineCount = file.text !== null ? splitLines(file.text).length : null;
     const info = [
@@ -199,6 +301,7 @@ export const searchCode = defineTool({
   category: 'read_only',
   risk: 'none',
   requiresProject: true,
+  remote: true,
   schema: z.object({
     query: z.string().min(1).max(500),
     regex: z.boolean().default(false),
@@ -215,20 +318,38 @@ export const searchCode = defineTool({
   describeCall: (a) =>
     `"${a.query}"${a.path && a.path !== '.' ? ` in ${a.path}` : ''}${a.glob ? ` (${a.glob})` : ''}`,
   async execute(args, ctx) {
-    const target = await resolveRead(await workspace(ctx), args.path);
-    const found = await search(target.root, ctx.env.ripgrep, {
-      query: args.query,
-      regex: args.regex,
-      caseSensitive: args.case_sensitive,
-      targetAbs: target.abs,
-      glob: args.glob,
-      maxResults: args.max_results,
-      signal: ctx.signal,
-    });
-    const result = {
-      ...found,
-      matches: found.matches.map((m) => ({ ...m, path: shownPath(target, m.path) })),
-    };
+    const remote = remoteOf(ctx);
+    let target: { rel: string };
+    let result: Awaited<ReturnType<typeof search>>;
+    if (remote) {
+      const found = await remote.search({
+        query: args.query,
+        regex: args.regex,
+        caseSensitive: args.case_sensitive,
+        path: args.path,
+        glob: args.glob,
+        maxResults: args.max_results,
+        signal: ctx.signal,
+      });
+      target = found;
+      result = found.result;
+    } else {
+      const local = await resolveRead(await workspace(ctx), args.path);
+      const found = await search(local.root, ctx.env.ripgrep, {
+        query: args.query,
+        regex: args.regex,
+        caseSensitive: args.case_sensitive,
+        targetAbs: local.abs,
+        glob: args.glob,
+        maxResults: args.max_results,
+        signal: ctx.signal,
+      });
+      target = local;
+      result = {
+        ...found,
+        matches: found.matches.map((m) => ({ ...m, path: shownPath(local, m.path) })),
+      };
+    }
     const files = new Set(result.matches.map((m) => m.path)).size;
     if (result.matches.length === 0) {
       return { content: `No matches for "${args.query}" in ${target.rel}.`, summary: 'no matches' };
@@ -251,6 +372,7 @@ export const findFiles = defineTool({
   category: 'read_only',
   risk: 'none',
   requiresProject: true,
+  remote: true,
   schema: z.object({
     pattern: z.string().min(1).max(200),
     path: relPath.default('.'),
@@ -258,13 +380,28 @@ export const findFiles = defineTool({
   }),
   describeCall: (a) => a.pattern,
   async execute(args, ctx) {
-    const target = await resolveRead(await workspace(ctx), args.path);
-    const { entries, truncated: walkTruncated } = await walk(target.root, target.abs, {
-      maxDepth: 64,
-      maxEntries: 20_000,
-      includeDirs: false,
-      signal: ctx.signal,
-    });
+    const remote = remoteOf(ctx);
+    let show: (rel: string) => string;
+    let entries: WalkEntry[];
+    let walkTruncated: boolean;
+    if (remote) {
+      const listed = await remote.list(args.path, {
+        maxDepth: 64,
+        maxEntries: 20_000,
+        signal: ctx.signal,
+      });
+      ({ entries, truncated: walkTruncated } = listed);
+      show = (rel) => rel;
+    } else {
+      const target = await resolveRead(await workspace(ctx), args.path);
+      ({ entries, truncated: walkTruncated } = await walk(target.root, target.abs, {
+        maxDepth: 64,
+        maxEntries: 20_000,
+        includeDirs: false,
+        signal: ctx.signal,
+      }));
+      show = (rel) => shownPath(target, rel);
+    }
     const isGlob = /[*?]/.test(args.pattern);
     const re = isGlob ? globToRegExp(args.pattern) : null;
     const needle = args.pattern.toLowerCase();
@@ -278,7 +415,7 @@ export const findFiles = defineTool({
     if (shown.length === 0)
       return { content: `No files matching "${args.pattern}".`, summary: 'no files' };
     return {
-      content: `${shown.map((e) => `${shownPath(target, e.rel)} (${formatSize(e.size)})`).join('\n')}${truncated ? `\n[truncated: ${hits.length} matches shown ${shown.length}]` : ''}`,
+      content: `${shown.map((e) => `${show(e.rel)} (${formatSize(e.size)})`).join('\n')}${truncated ? `\n[truncated: ${hits.length} matches shown ${shown.length}]` : ''}`,
       summary: `${hits.length} files${truncated ? ' (truncated)' : ''}`,
       truncated,
     };

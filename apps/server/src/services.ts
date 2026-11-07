@@ -32,6 +32,7 @@ import { McpServerRepo } from './repositories/mcp.js';
 import { MemoryService } from './memory/service.js';
 import { ProcessManager } from './processes/manager.js';
 import { SshService } from './ssh/ssh.js';
+import { localProject } from './workspace/projectAccess.js';
 import { ProjectRepo } from './repositories/projects.js';
 import { RunRepo } from './repositories/runs.js';
 import { SessionRepo } from './repositories/sessions.js';
@@ -289,7 +290,7 @@ export function createServices(
       sshHost: (id) => sshHosts.get(id),
       sshRun: (host, command, opts) => ssh.run(host, command, opts),
       processes: (projectId) => processes.list(projectId),
-      projectRoot: (projectId) => projects.get(projectId)?.rootPath ?? null,
+      projectRoot: (projectId) => localProject(projects.get(projectId))?.rootPath ?? null,
     },
     (text) => redactor.redact(text),
   );

@@ -9,6 +9,7 @@ import type { FileChangeRepo } from '../repositories/fileChanges.js';
 import type { ProjectRepo } from '../repositories/projects.js';
 import type { RunRepo } from '../repositories/runs.js';
 import { displayArgv } from '../tools/commandTool.js';
+import { localProject } from '../workspace/projectAccess.js';
 
 export interface ReportDeps {
   approvalRepo: ApprovalRepo;
@@ -71,7 +72,8 @@ export function buildRunReport(runId: string, deps: ReportDeps): RunReport {
   for (const c of changes) latestByPath.set(c.path, c);
   const files: RunReport['files'] = changes.map((c) => {
     let modifiedSince = false;
-    const root = deps.projects.get(c.projectId)?.rootPath;
+    // Only for files on this machine; a project on an SSH host isn't re-read for the report.
+    const root = localProject(deps.projects.get(c.projectId))?.rootPath;
     if (!c.revertedAt && root && latestByPath.get(c.path) === c) {
       const now = currentHash(path.join(root, c.path));
       modifiedSince = now !== c.afterHash;

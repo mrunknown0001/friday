@@ -259,6 +259,11 @@ export interface ToolSpec<A = unknown> {
   category: PermissionCategory;
   risk: RiskLevel;
   requiresProject: boolean;
+  /**
+   * Also works for a project on an SSH host (over SSH). Project tools without it are neither
+   * offered nor run for such projects.
+   */
+  remote?: boolean;
   schema: z.ZodType<A>;
   /** JSON Schema sent to the model instead of one derived from `schema` (MCP tools). */
   parameters?: Record<string, unknown>;

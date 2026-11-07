@@ -33,6 +33,7 @@ import type {
   ProcessDto,
   ProcessOutputDto,
   ProjectDto,
+  RemoteFolderListDto,
   ProjectOverviewDto,
   ProviderCallDto,
   QuestionDto,
@@ -201,8 +202,13 @@ export const api = {
 
   system: () => request<SystemInfoDto>('GET', '/api/system'),
   projects: () => request<{ projects: ProjectDto[] }>('GET', '/api/projects'),
-  addProject: (path: string, name?: string) =>
-    request<ProjectDto>('POST', '/api/projects', name ? { path, name } : { path }),
+  /** A folder on this machine, or with `hostId` a folder on that SSH host. */
+  addProject: (path: string, name?: string, hostId?: string) =>
+    request<ProjectDto>('POST', '/api/projects', {
+      path,
+      ...(name ? { name } : {}),
+      ...(hostId ? { hostId } : {}),
+    }),
   removeProject: (id: string) => request<void>('DELETE', `/api/projects/${id}`),
   projectSandbox: (id: string) => request<SandboxStatusDto>('GET', `/api/projects/${id}/sandbox`),
   setProjectSandbox: (id: string, settings: SandboxSettings) =>
@@ -385,6 +391,12 @@ export const api = {
   testDatabase: (id: string) =>
     request<DbConnectionTestResult>('POST', `/api/databases/${id}/test`),
   sshHosts: () => request<{ hosts: SshHostDto[] }>('GET', '/api/ssh-hosts'),
+  /** Folders on a host (default: the login's home), for choosing a project folder there. */
+  sshHostFolders: (hostId: string, path?: string) =>
+    request<RemoteFolderListDto>(
+      'GET',
+      `/api/ssh-hosts/${hostId}/folders${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+    ),
   monitors: () => request<{ monitors: MonitorDto[] }>('GET', '/api/monitors'),
   monitor: (id: string) => request<MonitorDetailDto>('GET', `/api/monitors/${id}`),
   createMonitor: (body: MonitorInput) => request<MonitorDto>('POST', '/api/monitors', body),

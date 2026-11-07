@@ -200,6 +200,28 @@ export interface ProjectDto {
    * every write there needs its own approval.
    */
   externalFolders: string[];
+  /**
+   * Set for a project in a folder on an SSH host: its files, searches, commands and git run on
+   * that server over SSH. rootPath is then the folder's path on the server.
+   */
+  remote: RemoteTargetDto | null;
+}
+
+/** An SSH host a project or an approval is on (from Settings → SSH hosts). */
+export interface RemoteTargetDto {
+  hostId: string;
+  name: string;
+  hostname: string;
+  port: number;
+  username: string;
+  environment: HostEnvironment;
+}
+
+/** Folders on an SSH host, for choosing a project folder there. */
+export interface RemoteFolderListDto {
+  path: string;
+  home: string;
+  folders: string[];
 }
 
 /** A git worktree for one task: its own folder and branch, made from the parent project's HEAD. */
@@ -268,7 +290,7 @@ export interface SearchResultDto {
   /** More matched than shown (or the search stopped at its time limit). */
   truncated: boolean;
   /** ripgrep when installed, otherwise Friday's own search. */
-  engine: 'ripgrep' | 'builtin';
+  engine: 'ripgrep' | 'builtin' | 'grep';
 }
 
 export interface TreeEntryDto {
@@ -484,6 +506,8 @@ export type ApprovalDetails =
   | {
       kind: 'file_change';
       changes: FileChangePreview[];
+      /** Set when the files are on an SSH host (a project there). */
+      remote?: RemoteTargetDto;
       /** Set for rename_symbol and move_symbol: what the multi-file change does. */
       refactor?: RefactorInfo;
     }
@@ -495,7 +519,9 @@ export type ApprovalDetails =
       shellCommand: string | null;
       shell: boolean;
       cwd: string;
-      host: 'local';
+      /** 'remote' when the command runs on the SSH host of a project there (see `remote`). */
+      host: 'local' | 'remote';
+      remote?: RemoteTargetDto;
       timeoutSeconds: number;
       /** Names of environment variables passed to the process (values are not shown). */
       env: string[];
@@ -543,6 +569,8 @@ export type ApprovalDetails =
   | {
       kind: 'git';
       operation: 'commit' | 'create_branch';
+      /** Set when the repository is on an SSH host (a project there). */
+      remote?: RemoteTargetDto;
       /** Current branch (null when HEAD is detached). */
       branch: string | null;
       head: string | null;

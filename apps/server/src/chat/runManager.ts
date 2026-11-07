@@ -97,13 +97,15 @@ import { buildSuggestions } from '../reports/suggestions.js';
 import { assertRepoRoot, repoStatus } from '../git/git.js';
 import { MemoryError, memoryPromptSection, type MemoryService } from '../memory/service.js';
 import type { MemoryRepo } from '../repositories/memories.js';
-import { readGuidance } from '../workspace/guidance.js';
+import { readGuidance, readRemoteGuidance } from '../workspace/guidance.js';
 import {
   buildCheckpoint,
   buildRunReport,
   resumeContext,
   taskRunIds,
 } from '../reports/runReport.js';
+import { localProject, markRemoteProposal, remoteFor } from '../workspace/projectAccess.js';
+import { remoteTarget } from '../workspace/remote.js';
 
 export interface RunManagerDeps {
   provider: LLMProvider;
@@ -940,7 +942,7 @@ export class RunManager {
         caps.toolCalling === 'unsupported'
           ? []
           : registry
-              .definitions(!!project, this.unavailableWebTools())
+              .definitions(!!project, this.unavailableWebTools(), !!project?.sshHostId)
               // Ask and plan mode are not offered tools that change anything.
               .filter(
                 (t) =>
@@ -1009,6 +1011,7 @@ export class RunManager {
         buildSystemPrompt({
           mode: run.mode,
           project,
+          remote: this.remoteTargetOf(project),
           detection,
           toolsEnabled: tools.length > 0,
           resume,
@@ -1037,7 +1040,13 @@ export class RunManager {
         });
       const detection = project ? await this.detect(project) : null;
       const resume = this.resumeFor(run, session.plan);
-      const guidance = project ? await readGuidance(project.rootPath).catch(() => null) : null;
+      const guidance = project
+        ? await (
+            project.sshHostId
+              ? readRemoteGuidance(remoteFor(project, this.deps.devops)!)
+              : readGuidance(project.rootPath)
+          ).catch(() => null)
+        : null;
       let tools = offeredTools();
       let systemPrompt = promptFor(tools);
       // What the requests would be without optimization, for the usage view.
@@ -1221,7 +1230,15 @@ export class RunManager {
     }
   }
 
+  /** The SSH host a project's folder is on, for the system prompt. */
+  private remoteTargetOf(project: ProjectRecord | null) {
+    const host = project?.sshHostId ? this.deps.devops?.hosts.get(project.sshHostId) : null;
+    return host ? remoteTarget(host) : null;
+  }
+
   private async detect(project: ProjectRecord) {
+    // Detection reads manifests from the local disk; not for a project on an SSH host.
+    if (project.sshHostId) return null;
     try {
       await assertRootAvailable(project.rootPath);
       return await detectProject(project.rootPath);
@@ -1546,6 +1563,8 @@ export class RunManager {
         outcome: 'none',
       };
     }
+    const remoteHost = project?.sshHostId ? this.deps.devops?.hosts.get(project.sshHostId) : null;
+    if (remoteHost) markRemoteProposal(proposal, remoteHost);
 
     const reason = (args as { reason?: unknown }).reason;
     const approval = approvals.request({
@@ -1768,19 +1787,20 @@ export class RunManager {
     let testCommand: string | null = null;
     let uncommitted: string[] | null = null;
     let failureLocation: string | null = null;
-    if (project && report?.status === 'unverified') {
-      testCommand = await detectTestCommand(project.rootPath).catch(() => null);
+    const local = localProject(project);
+    if (local && report?.status === 'unverified') {
+      testCommand = await detectTestCommand(local.rootPath).catch(() => null);
     }
     // In a task worktree, accepting it commits; no "review & commit" chip there.
     if (
-      project &&
-      !project.worktree &&
+      local &&
+      !local.worktree &&
       report &&
       report.commits.length === 0 &&
       report.files.some((f) => !f.reverted)
     ) {
-      uncommitted = await assertRepoRoot(project.rootPath)
-        .then(() => repoStatus(project.rootPath))
+      uncommitted = await assertRepoRoot(local.rootPath)
+        .then(() => repoStatus(local.rootPath))
         .then((st) => st.entries.map((e) => e.path))
         .catch(() => null);
     }
