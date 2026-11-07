@@ -1,4 +1,5 @@
 import type { ToolCallStatus } from '@friday/shared';
+import type { z } from 'zod';
 import type { ToolCall, ToolDefinition } from '../providers/types.js';
 import { WorkspaceError } from '../workspace/paths.js';
 import { runCommand } from './commandTool.js';
@@ -235,6 +236,65 @@ export type ValidatedCall =
   | { ok: true; spec: ToolSpec<unknown>; args: unknown; label: string; policy: PolicyDecision }
   | { ok: false; execution: ToolExecution };
 
+const MAX_DECODE_ROUNDS = 5;
+
+function valueAt(root: unknown, path: readonly PropertyKey[]): unknown {
+  let node = root;
+  for (const key of path) {
+    if (node === null || typeof node !== 'object') return undefined;
+    node = (node as Record<PropertyKey, unknown>)[key];
+  }
+  return node;
+}
+
+/** A JSON list or object written as a string, decoded; null when it is anything else. */
+function decodeJsonString(text: string, expected: 'array' | 'object'): unknown {
+  const t = text.trim();
+  if (!(expected === 'array' ? t.startsWith('[') : t.startsWith('{'))) return null;
+  try {
+    const v: unknown = JSON.parse(t);
+    if (expected === 'array') return Array.isArray(v) ? v : null;
+    return v !== null && typeof v === 'object' && !Array.isArray(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate tool arguments, tolerating one model quirk: a list or object sent as a JSON string
+ * (`"paths": "[\"src/a.ts\"]"`). Only where the schema wanted an array or object and got a string
+ * holding exactly that is the string decoded, and the result must then pass the schema as a whole;
+ * nothing else is loosened (a string field stays a string whatever it contains).
+ */
+export function parseToolArgs<A>(schema: z.ZodType<A>, raw: unknown): z.ZodSafeParseResult<A> {
+  let value = raw;
+  let result = schema.safeParse(value);
+  for (let round = 0; round < MAX_DECODE_ROUNDS && !result.success; round++) {
+    let changed = false;
+    for (const issue of result.error.issues) {
+      if (issue.code !== 'invalid_type') continue;
+      const expected =
+        issue.expected === 'array' ? 'array' : issue.expected === 'object' ? 'object' : null;
+      if (!expected) continue;
+      const current = valueAt(value, issue.path);
+      if (typeof current !== 'string') continue;
+      const decoded = decodeJsonString(current, expected);
+      if (decoded === null) continue;
+      if (issue.path.length === 0) {
+        value = decoded;
+      } else {
+        if (!changed) value = structuredClone(value);
+        const parent = valueAt(value, issue.path.slice(0, -1)) as Record<PropertyKey, unknown>;
+        parent[issue.path.at(-1)!] = decoded;
+      }
+      changed = true;
+    }
+    if (!changed) break;
+    result = schema.safeParse(value);
+  }
+  return result;
+}
+
 /** Policy check, JSON parse, and schema validation. Never throws. */
 export function validateToolCall(
   registry: ToolRegistry,
@@ -278,7 +338,7 @@ export function validateToolCall(
       'Invalid JSON arguments',
     );
   }
-  const parsed = spec.schema.safeParse(raw);
+  const parsed = parseToolArgs(spec.schema, raw);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
