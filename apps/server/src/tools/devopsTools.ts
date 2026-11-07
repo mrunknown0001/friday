@@ -11,6 +11,7 @@ import { explainSshFailure, shellQuote } from '../ssh/ssh.js';
 import { looksBinary, splitLines } from '../workspace/files.js';
 import { findJsonError } from '../workspace/jsonCheck.js';
 import { assertRootAvailable, resolveInside, WorkspaceError } from '../workspace/paths.js';
+import { localProject } from '../workspace/projectAccess.js';
 import { defineTool, type DevopsContext, type Proposal, type ToolContext } from './types.js';
 
 const reason = z.string().min(3).max(500).describe('Why this is needed. Shown to the user.');
@@ -101,7 +102,9 @@ export const inspectEnvironment = defineTool({
     );
     const disks: string[] = [];
     for (const p of [
-      ...new Set([ctx.project?.rootPath, os.homedir(), '/'].filter((x): x is string => !!x)),
+      ...new Set(
+        [localProject(ctx.project)?.rootPath, os.homedir(), '/'].filter((x): x is string => !!x),
+      ),
     ]) {
       try {
         const st = await fs.statfs(p);
@@ -174,7 +177,8 @@ export const searchLogs = defineTool({
       file = authorized.path;
       shown = `${authorized.label} (${authorized.path})`;
     } else {
-      if (!ctx.project) {
+      const project = localProject(ctx.project);
+      if (!project) {
         const labels = devops(ctx)
           .logSources.list()
           .map((l) => l.label);
@@ -187,8 +191,8 @@ export const searchLogs = defineTool({
           `No authorized log source named "${args.source}". Available: ${labels.join(', ') || 'none (the user can add some in Settings → Log sources)'}.${remoteHint}`,
         );
       }
-      await assertRootAvailable(ctx.project.rootPath);
-      const target = await resolveInside(ctx.project.rootPath, args.source);
+      await assertRootAvailable(project.rootPath);
+      const target = await resolveInside(project.rootPath, args.source);
       file = target.abs;
       shown = target.rel;
     }
@@ -314,8 +318,12 @@ export const inspectDocker = defineTool({
         return { content: rows.join('\n') || '(no images)', summary: `${rows.length} images` };
       }
       case 'compose': {
-        if (!ctx.project)
-          throw new WorkspaceError('unsupported', 'The compose view needs a project.');
+        const project = localProject(ctx.project);
+        if (!project)
+          throw new WorkspaceError(
+            'unsupported',
+            'The compose view needs a project on this computer.',
+          );
         const r = await run(
           [
             'compose',
@@ -324,7 +332,7 @@ export const inspectDocker = defineTool({
             '--format',
             '{{.Service}}\t{{.Name}}\t{{.State}}\t{{.Status}}',
           ],
-          ctx.project.rootPath,
+          project.rootPath,
         );
         const rows = r.stdout.trim().split('\n').filter(Boolean);
         return {

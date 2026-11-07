@@ -3,6 +3,7 @@ import type {
   ApprovalStatus,
   RefactorInfo,
   RefactorMatch,
+  RemoteTargetDto,
   RiskLevel,
 } from '@friday/shared';
 import {
@@ -490,11 +491,33 @@ function GitRemoteDetails({ d }: { d: Extract<ApprovalDto['details'], { kind: 'g
   );
 }
 
+/** Which server a change in a project on an SSH host applies to. */
+function OnHost({ r }: { r: RemoteTargetDto }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs" aria-label="Runs on server">
+      <Server className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
+      <span className="text-zinc-300">On</span>
+      <span className="font-mono text-zinc-100">{r.name}</span>
+      <span className="font-mono text-zinc-400">
+        {r.username}@{r.hostname}
+        {r.port !== 22 ? `:${r.port}` : ''}
+      </span>
+      <Badge
+        tone={ENV_TONE[r.environment]}
+        className={r.environment === 'production' ? 'uppercase' : ''}
+      >
+        {r.environment}
+      </Badge>
+    </div>
+  );
+}
+
 function Details({ approval }: { approval: ApprovalDto }) {
   const d = approval.details;
   if (d.kind === 'git') {
     return (
       <div className="space-y-2">
+        {d.remote && <OnHost r={d.remote} />}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
           <dt className="text-zinc-500">Branch</dt>
           <dd className="font-mono text-zinc-300">{d.branch ?? '(detached HEAD)'}</dd>
@@ -507,7 +530,9 @@ function Details({ approval }: { approval: ApprovalDto }) {
             </>
           )}
           <dt className="text-zinc-500">Push</dt>
-          <dd className="text-zinc-300">No: nothing leaves this machine</dd>
+          <dd className="text-zinc-300">
+            {d.remote ? 'No: the commit stays on the server' : 'No: nothing leaves this machine'}
+          </dd>
         </dl>
         {d.message !== null && (
           <pre
@@ -527,9 +552,10 @@ function Details({ approval }: { approval: ApprovalDto }) {
     );
   }
   if (d.kind === 'file_change')
-    return d.refactor ? (
+    return d.refactor || d.remote ? (
       <div className="space-y-2">
-        <RefactorSummary r={d.refactor} />
+        {d.remote && <OnHost r={d.remote} />}
+        {d.refactor && <RefactorSummary r={d.refactor} />}
         <FileDiffs changes={d.changes} />
       </div>
     ) : (
@@ -555,12 +581,13 @@ function Details({ approval }: { approval: ApprovalDto }) {
   const shown = d.argv ? displayArgv(d.argv) : (d.shellCommand ?? '');
   return (
     <div className="space-y-2">
+      {d.remote && <OnHost r={d.remote} />}
       {d.tests && <TestsInfo t={d.tests} />}
       <pre
         aria-label="Exact command"
         className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[0.8rem] text-zinc-100"
       >
-        <span className="select-none text-zinc-500">$ </span>
+        <span className="select-none text-zinc-500">{d.remote ? `${d.remote.name}$ ` : '$ '}</span>
         {shown}
       </pre>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
@@ -569,7 +596,9 @@ function Details({ approval }: { approval: ApprovalDto }) {
         <dt className="text-zinc-500">Shell</dt>
         <dd className="text-zinc-300">
           {d.shell
-            ? 'Yes: interpreted by /bin/sh'
+            ? d.remote
+              ? 'Yes: interpreted by sh on the server'
+              : 'Yes: interpreted by /bin/sh'
             : 'No: program run directly with these arguments'}
         </dd>
         <dt className="text-zinc-500">Runs</dt>
@@ -585,6 +614,10 @@ function Details({ approval }: { approval: ApprovalDto }) {
             {d.sandbox.ports?.length
               ? `, port${d.sandbox.ports.length === 1 ? '' : 's'} ${d.sandbox.ports.join(', ')} published on 127.0.0.1`
               : ''}
+          </dd>
+        ) : d.remote ? (
+          <dd className="text-amber-200">
+            On {d.remote.name}, as {d.remote.username}, in the project folder there
           </dd>
         ) : (
           <dd className="text-zinc-300">On this machine, as your user (not sandboxed)</dd>

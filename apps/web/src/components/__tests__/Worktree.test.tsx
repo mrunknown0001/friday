@@ -39,6 +39,7 @@ const project = (wt = info()): ProjectDto => ({
   sandbox: null,
   worktree: wt,
   externalFolders: [],
+  remote: null,
 });
 
 const status = (over: Partial<WorktreeStatusDto> = {}): WorktreeStatusDto => ({

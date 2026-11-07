@@ -94,11 +94,16 @@ export class ToolRegistry {
    * Tools offered to the model: not denied by policy, project tools only with a project, and none
    * of `unavailable` (e.g. web tools while the user's switch is off).
    */
-  definitions(hasProject: boolean, unavailable: ReadonlySet<string> = new Set()): ToolDefinition[] {
+  definitions(
+    hasProject: boolean,
+    unavailable: ReadonlySet<string> = new Set(),
+    remoteProject = false,
+  ): ToolDefinition[] {
     return [...this.tools.values()]
       .filter(
         (t) =>
           (hasProject || !t.requiresProject) &&
+          (!remoteProject || !t.requiresProject || t.remote === true) &&
           decide(t.category).action !== 'deny' &&
           !unavailable.has(t.name),
       )
@@ -253,6 +258,14 @@ export function validateToolCall(
       'denied',
       'Error: this conversation has no project, so workspace tools are unavailable.',
       'No project',
+    );
+  }
+  // Hidden from the model for projects on SSH hosts, and refused if it calls one anyway.
+  if (spec.requiresProject && ctx.project?.sshHostId && spec.remote !== true) {
+    return fail(
+      'denied',
+      `Error: ${call.name} works only on this computer; this project is on an SSH host.`,
+      'Not available for a project on an SSH host',
     );
   }
   let raw: unknown;

@@ -14,6 +14,8 @@ import {
   workspaceOf,
   type Workspace,
 } from '../workspace/paths.js';
+import { remoteFor } from '../workspace/projectAccess.js';
+import type { RemoteWorkspace } from '../workspace/remote.js';
 import { defineTool, type Proposal, type ToolContext } from './types.js';
 
 export const sha256 = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
@@ -50,16 +52,89 @@ async function workspace(ctx: ToolContext): Promise<Workspace> {
 const asWorkspace = (w: string | Workspace): Workspace =>
   typeof w === 'string' ? { root: w, external: [] } : w;
 
+/**
+ * Where the file tools read and write: this machine (the project and its external folders), or
+ * a project's folder on an SSH host. Plans, diffs, conflict checks and undo records are the same.
+ */
+export interface FileStore {
+  /** Where a write to `input` lands: its real path, its folder's root, and whether it exists. */
+  resolveWrite(input: string): Promise<{ abs: string; rel: string; root: string; exists: boolean }>;
+  /** An existing file's bytes; refuses files over MAX_TEXT_FILE_BYTES. */
+  readBytes(abs: string, rel: string): Promise<Buffer>;
+  modeOf(abs: string): Promise<number | undefined>;
+  write(root: string, abs: string, content: string | Buffer, mode?: number): Promise<void>;
+  remove(abs: string): Promise<void>;
+  /** Never replaces an existing destination. */
+  move(fromAbs: string, toAbs: string, toRel: string): Promise<void>;
+}
+
+const tooLarge = (rel: string, size: number | string) =>
+  new WorkspaceError('too_large', `"${rel}" is too large to edit safely (${size} bytes).`);
+
+export function localStore(ws: string | Workspace): FileStore {
+  const w = asWorkspace(ws);
+  return {
+    resolveWrite: (input) => resolveWrite(w, input),
+    async readBytes(abs, rel) {
+      const stat = await fs.stat(abs);
+      if (stat.size > MAX_TEXT_FILE_BYTES) throw tooLarge(rel, stat.size);
+      return fs.readFile(abs);
+    },
+    modeOf: async (abs) => (await fs.stat(abs)).mode,
+    write: (root, abs, content, mode) => atomicWrite(root, abs, content, mode),
+    remove: (abs) => fs.rm(abs, { force: true }),
+    async move(fromAbs, toAbs, toRel) {
+      await fs.mkdir(path.dirname(toAbs), { recursive: true });
+      // Never clobber a file that appeared after the re-check.
+      await fs.link(fromAbs, toAbs).then(
+        () => fs.rm(fromAbs),
+        async (err: NodeJS.ErrnoException) => {
+          if (err.code === 'EEXIST')
+            throw new WorkspaceError('unsupported', `"${toRel}" now exists; not moved.`);
+          await fs.rename(fromAbs, toAbs);
+        },
+      );
+    },
+  };
+}
+
+/** The file store of a project on an SSH host (see workspace/remote.ts). */
+export function remoteStore(remote: RemoteWorkspace): FileStore {
+  return {
+    resolveWrite: async (input) => ({ ...(await remote.resolveWrite(input)), root: remote.root }),
+    async readBytes(abs, rel) {
+      const f = await remote.readFile(abs, MAX_TEXT_FILE_BYTES);
+      if (!f.buf) throw tooLarge(rel, f.size);
+      return f.buf;
+    },
+    // The server keeps each file's mode and owner itself.
+    modeOf: async () => undefined,
+    write: (_root, abs, content) => remote.write(abs, content),
+    remove: (abs) => remote.remove(abs),
+    move: (fromAbs, toAbs) => remote.move(fromAbs, toAbs),
+  };
+}
+
+export const isFileStore = (t: string | Workspace | FileStore): t is FileStore =>
+  typeof t === 'object' && 'resolveWrite' in t;
+const asStore = (t: string | Workspace | FileStore): FileStore =>
+  isFileStore(t) ? t : localStore(t);
+
+/** The project's file store: on this machine, or on its SSH host. */
+async function storeFor(ctx: ToolContext): Promise<FileStore> {
+  if (!ctx.project)
+    throw new WorkspaceError('unsupported', 'This conversation is not attached to a project.');
+  const remote = remoteFor(ctx.project, ctx.devops);
+  return remote ? remoteStore(remote) : localStore(await workspace(ctx));
+}
+
 /** Current text content of an existing file; refuses binary and oversized files. */
-async function readText(abs: string, rel: string): Promise<{ buf: Buffer; text: string }> {
-  const stat = await fs.stat(abs);
-  if (stat.size > MAX_TEXT_FILE_BYTES) {
-    throw new WorkspaceError(
-      'too_large',
-      `"${rel}" is too large to edit safely (${stat.size} bytes).`,
-    );
-  }
-  const buf = await fs.readFile(abs);
+async function readText(
+  store: FileStore,
+  abs: string,
+  rel: string,
+): Promise<{ buf: Buffer; text: string }> {
+  const buf = await store.readBytes(abs, rel);
   if (looksBinary(buf))
     throw new WorkspaceError('unsupported', `"${rel}" is a binary file and cannot be edited.`);
   return { buf, text: buf.toString('utf8') };
@@ -135,6 +210,7 @@ const sizeRisk = (p: FileChangePreview): RiskLevel =>
 
 /** A computed, not-yet-applied change to one text file. */
 export interface FilePlan {
+  store: FileStore;
   rel: string;
   /** Canonical folder the plan was confined to: the project root or an external folder. */
   root: string;
@@ -147,23 +223,25 @@ export interface FilePlan {
 }
 
 export async function planWrite(
-  ws: string | Workspace,
+  where: string | Workspace | FileStore,
   p: string,
   content: string,
 ): Promise<FilePlan> {
-  const target = await resolveWrite(asWorkspace(ws), p);
-  const before = target.exists ? await readText(target.abs, target.rel) : null;
+  const store = asStore(where);
+  const target = await store.resolveWrite(p);
+  const before = target.exists ? await readText(store, target.abs, target.rel) : null;
   if (before?.text === content) {
     throw new WorkspaceError('unsupported', `"${target.rel}" already has exactly this content.`);
   }
   return {
+    store,
     rel: target.rel,
     root: target.root,
     abs: target.abs,
     before,
     after: content,
     preview: makeDiff(target.rel, before?.text ?? '', content, before ? 'modify' : 'create'),
-    mode: target.exists ? (await fs.stat(target.abs)).mode : undefined,
+    mode: target.exists ? await store.modeOf(target.abs) : undefined,
     fingerprint: `${target.rel}:${before ? sha256(before.buf) : 'absent'}`,
   };
 }
@@ -194,15 +272,15 @@ export async function planFromText(
   return plan;
 }
 
-async function planEdit(ws: Workspace, p: string, edits: Edit[]): Promise<FilePlan> {
-  const target = await resolveWrite(ws, p);
+async function planEdit(store: FileStore, p: string, edits: Edit[]): Promise<FilePlan> {
+  const target = await store.resolveWrite(p);
   if (!target.exists) {
     throw new WorkspaceError(
       'not_found',
       `"${target.rel}" does not exist; use write_file to create it.`,
     );
   }
-  const before = await readText(target.abs, target.rel);
+  const before = await readText(store, target.abs, target.rel);
   let after = before.text;
   edits.forEach((e, i) => {
     const count = after.split(e.old_text).length - 1;
@@ -225,19 +303,20 @@ async function planEdit(ws: Workspace, p: string, edits: Edit[]): Promise<FilePl
   if (after === before.text)
     throw new WorkspaceError('unsupported', `The edits do not change ${target.rel}.`);
   return {
+    store,
     rel: target.rel,
     root: target.root,
     abs: target.abs,
     before,
     after,
     preview: makeDiff(target.rel, before.text, after, 'modify'),
-    mode: (await fs.stat(target.abs)).mode,
+    mode: await store.modeOf(target.abs),
     fingerprint: `${target.rel}:${sha256(before.buf)}`,
   };
 }
 
 async function applyPlan(plan: FilePlan, ctx: ToolContext): Promise<void> {
-  await atomicWrite(plan.root, plan.abs, plan.after, plan.mode);
+  await plan.store.write(plan.root, plan.abs, plan.after, plan.mode);
   ctx.recordFileChange?.({
     path: plan.rel,
     fromPath: null,
@@ -250,8 +329,8 @@ async function applyPlan(plan: FilePlan, ctx: ToolContext): Promise<void> {
 
 /** Restore the pre-change state of a plan that was applied as part of a failed batch. */
 async function undoPlan(plan: FilePlan): Promise<void> {
-  if (plan.before) await atomicWrite(plan.root, plan.abs, plan.before.text, plan.mode);
-  else await fs.rm(plan.abs, { force: true });
+  if (plan.before) await plan.store.write(plan.root, plan.abs, plan.before.buf, plan.mode);
+  else await plan.store.remove(plan.abs);
 }
 
 /** Apply plans all-or-nothing: on a failure, files already written are restored. */
@@ -284,10 +363,11 @@ export const writeFile = defineTool({
   category: 'file_modify',
   risk: 'medium',
   requiresProject: true,
+  remote: true,
   schema: z.object({ path: relPath, content: z.string().max(MAX_WRITE_CHARS), reason }),
   describeCall: (a) => a.path,
   async prepare(args, ctx): Promise<Proposal> {
-    const plan = await planWrite(await workspace(ctx), args.path, args.content);
+    const plan = await planWrite(await storeFor(ctx), args.path, args.content);
     const verb = plan.before ? 'updated' : 'created';
     return {
       title: `${plan.before ? 'Overwrite' : 'Create'} ${plan.rel}`,
@@ -314,11 +394,12 @@ export const editFile = defineTool({
   category: 'file_modify',
   risk: 'medium',
   requiresProject: true,
+  remote: true,
   schema: z.object({ path: relPath, edits: z.array(editSchema).min(1).max(20), reason }),
   describeCall: (a) =>
     `${a.path} (${a.edits?.length ?? 0} edit${a.edits?.length === 1 ? '' : 's'})`,
   async prepare(args, ctx): Promise<Proposal> {
-    const plan = await planEdit(await workspace(ctx), args.path, args.edits);
+    const plan = await planEdit(await storeFor(ctx), args.path, args.edits);
     return {
       title: `Edit ${plan.rel}`,
       summary: `Applies ${args.edits.length} edit${args.edits.length === 1 ? '' : 's'} to ${plan.rel} (${counts(plan.preview)}).`,
@@ -344,6 +425,7 @@ export const editFiles = defineTool({
   category: 'file_modify',
   risk: 'medium',
   requiresProject: true,
+  remote: true,
   schema: z.object({
     changes: z
       .array(
@@ -363,7 +445,7 @@ export const editFiles = defineTool({
   }),
   describeCall: (a) => `${a.changes?.length ?? 0} files`,
   async prepare(args, ctx): Promise<Proposal> {
-    const r = await workspace(ctx);
+    const r = await storeFor(ctx);
     const plans: FilePlan[] = [];
     for (const c of args.changes) {
       plans.push(
@@ -404,17 +486,21 @@ export const deleteFile = defineTool({
   category: 'file_delete',
   risk: 'high',
   requiresProject: true,
+  remote: true,
   schema: z.object({ path: relPath, reason }),
   describeCall: (a) => a.path,
   async prepare(args, ctx): Promise<Proposal> {
-    const target = await resolveWrite(await workspace(ctx), args.path);
+    const store = await storeFor(ctx);
+    const target = await store.resolveWrite(args.path);
     if (!target.exists) throw new WorkspaceError('not_found', `"${target.rel}" does not exist.`);
-    const buf = await fs.readFile(target.abs);
-    if (buf.length > MAX_TEXT_FILE_BYTES)
-      throw new WorkspaceError(
-        'too_large',
-        `"${target.rel}" is too large to back up, so Friday will not delete it.`,
-      );
+    const buf = await store.readBytes(target.abs, target.rel).catch((err: unknown) => {
+      if (err instanceof WorkspaceError && err.code === 'too_large')
+        throw new WorkspaceError(
+          'too_large',
+          `"${target.rel}" is too large to back up, so Friday will not delete it.`,
+        );
+      throw err;
+    });
     const binary = looksBinary(buf);
     const preview = binary
       ? { path: target.rel, change: 'delete' as const, diff: '', added: 0, removed: 0 }
@@ -427,7 +513,7 @@ export const deleteFile = defineTool({
       details: { kind: 'file_change', changes: [preview] },
       fingerprint: `${target.rel}:${sha256(buf)}`,
       async apply(execCtx) {
-        await fs.rm(target.abs);
+        await store.remove(target.abs);
         execCtx.recordFileChange?.({
           path: target.rel,
           fromPath: null,
@@ -449,12 +535,13 @@ export const moveFile = defineTool({
   category: 'file_delete',
   risk: 'medium',
   requiresProject: true,
+  remote: true,
   schema: z.object({ from: relPath, to: relPath, reason }),
   describeCall: (a) => `${a.from} → ${a.to}`,
   async prepare(args, ctx): Promise<Proposal> {
-    const ws = await workspace(ctx);
-    const from = await resolveWrite(ws, args.from);
-    const to = await resolveWrite(ws, args.to);
+    const store = await storeFor(ctx);
+    const from = await store.resolveWrite(args.from);
+    const to = await store.resolveWrite(args.to);
     if (!from.exists) throw new WorkspaceError('not_found', `"${from.rel}" does not exist.`);
     if (from.root !== to.root)
       throw new WorkspaceError(
@@ -466,7 +553,7 @@ export const moveFile = defineTool({
         'unsupported',
         `"${to.rel}" already exists; Friday will not overwrite it by moving.`,
       );
-    const buf = await fs.readFile(from.abs);
+    const buf = await store.readBytes(from.abs, from.rel);
     return {
       title: `Move ${from.rel} → ${to.rel}`,
       summary: `Renames ${from.rel} to ${to.rel}. Content is unchanged.`,
@@ -480,16 +567,7 @@ export const moveFile = defineTool({
       },
       fingerprint: `${from.rel}:${sha256(buf)}|${to.rel}:absent`,
       async apply(execCtx) {
-        await fs.mkdir(path.dirname(to.abs), { recursive: true });
-        // Never clobber a file that appeared after the re-check.
-        await fs.link(from.abs, to.abs).then(
-          () => fs.rm(from.abs),
-          async (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EEXIST')
-              throw new WorkspaceError('unsupported', `"${to.rel}" now exists; not moved.`);
-            await fs.rename(from.abs, to.abs);
-          },
-        );
+        await store.move(from.abs, to.abs, to.rel);
         execCtx.recordFileChange?.({
           path: to.rel,
           fromPath: from.rel,

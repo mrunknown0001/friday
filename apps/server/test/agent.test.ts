@@ -33,6 +33,7 @@ function ctx(root: string | null, over: Partial<ToolContext> = {}): ToolContext 
           sandbox: null,
           worktree: null,
           externalFolders: [],
+          sshHostId: null,
         }
       : null,
     sessionId: 's1',

@@ -539,7 +539,11 @@ export function SidePanel({
         {!project ? (
           <p className="px-3 text-xs text-zinc-500">Select a project to browse its files.</p>
         ) : !project.available ? (
-          <p className="px-3 text-xs text-amber-400">The project folder is missing or has moved.</p>
+          <p className="px-3 text-xs text-amber-400">
+            {project.remote
+              ? `${project.remote.name}'s host key is no longer trusted. Trust it again in Settings → SSH hosts.`
+              : 'The project folder is missing or has moved.'}
+          </p>
         ) : treeError ? (
           <p className="px-3 text-xs text-red-400">{treeError}</p>
         ) : (

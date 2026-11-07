@@ -123,6 +123,15 @@ npm start
    proposes there needs its own approval: task permissions never cover it. Commands, git, tests, the code map and
    project search stay in the project. Up to 10 folders; the same broad locations are refused, and a folder may not
    overlap the project. Task worktrees get their parent's folders.
+5. A project can also be a folder **on a server**. Add the server under **Settings → SSH hosts** and trust its host
+   key, then choose **Add project → SSH host**, pick the host and the folder (**Browse…** lists the server's folders).
+   Friday reads, searches and edits the files there over SSH, and `run_command` and git (status, diff, log, show,
+   branches, commit, create branch) run in that folder on the server, in a login shell. Every change and command
+   needs your approval as usual; on a host tagged **production**, approving also needs its name typed. Undo works
+   there too. Not available for these projects: the code map, tests panel, background processes, the command
+   sandbox, external folders, task worktrees, review, saved actions and refactoring. The server needs Linux with
+   standard GNU tools (coreutils, find, grep; ripgrep is used when installed). System folders, the login's home
+   folder and `/tmp` are refused as project folders.
 
 ## Approvals
 

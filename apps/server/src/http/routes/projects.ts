@@ -14,6 +14,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ProjectRecord } from '../../repositories/projects.js';
 import type { Services } from '../../services.js';
+import { projectDto, remoteFor, transportFor } from '../../workspace/projectAccess.js';
+import { resolveRemoteRoot } from '../../workspace/remote.js';
 import {
   dockerVersion,
   IMAGE_PATTERN,
@@ -24,7 +26,7 @@ import {
 import { imageInfo } from '../../attachments/image.js';
 import { DesktopEngine } from '../../browser/capture.js';
 import { detectProject } from '../../workspace/detect.js';
-import { languageFor, loadFile } from '../../workspace/files.js';
+import { languageFor, loadFile, looksBinary } from '../../workspace/files.js';
 import {
   assertRootAvailable,
   MAX_EXTERNAL_FOLDERS,
@@ -72,19 +74,27 @@ export async function guarded<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export function registerProjectRoutes(app: FastifyInstance, s: Services) {
-  const toDto = async (p: ProjectRecord): Promise<ProjectDto> => ({
-    ...p,
-    available: await assertRootAvailable(p.rootPath).then(
-      () => true,
-      () => false,
-    ),
-  });
+  const toDto = (p: ProjectRecord): Promise<ProjectDto> => projectDto(p, s.sshHosts);
 
   const requireProject = (id: string): ProjectRecord => {
     const p = s.projects.get(id);
     if (!p) throw new HttpError(404, 'project_not_found', 'Project not found.');
     return p;
   };
+  /** Features that need the project's files on this machine. */
+  const requireLocal = (id: string, what: string): ProjectRecord => {
+    const p = requireProject(id);
+    if (p.sshHostId)
+      throw new HttpError(
+        409,
+        'remote_project',
+        `${what} is not available for a project on an SSH host.`,
+      );
+    return p;
+  };
+  const sshAccess = { hosts: s.sshHosts, ssh: s.ssh };
+  /** The project's workspace on its SSH host, or null for a project on this machine. */
+  const remoteOf = (p: ProjectRecord) => remoteFor(p, sshAccess);
 
   app.get('/api/system', async (): Promise<SystemInfoDto> => ({
     ripgrep: s.toolEnv.ripgrepVersion,
@@ -103,9 +113,35 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
       z.object({
         path: z.string().trim().min(1).max(4096),
         name: z.string().trim().min(1).max(100).optional(),
+        /** A folder on this SSH host instead of on this machine. */
+        hostId: z.uuid().optional(),
       }),
       req.body,
     );
+    if (body.hostId) {
+      const host = s.sshHosts.get(body.hostId);
+      if (!host) throw new HttpError(404, 'host_not_found', 'SSH host not found.');
+      if (host.trustedFingerprints.length === 0)
+        throw new HttpError(
+          409,
+          'host_untrusted',
+          `Trust ${host.name}'s host key in Settings → SSH hosts first.`,
+        );
+      const root = await guarded(() => resolveRemoteRoot(transportFor(s.ssh, host), body.path));
+      const existing = s.projects.getByRoot(root, host.id);
+      if (existing) {
+        reply.code(200);
+        return toDto(existing);
+      }
+      const project = s.projects.create(body.name ?? path.posix.basename(root), root, host.id);
+      s.audit.record({
+        actor: 'user',
+        action: 'project_authorized',
+        details: { projectId: project.id, root, host: host.name, hostname: host.hostname },
+      });
+      reply.code(201);
+      return toDto(project);
+    }
     const root = await guarded(() => resolveProjectRoot(body.path));
     const existing = s.projects.getByRoot(root);
     if (existing) {
@@ -142,7 +178,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
   /** Rebuild the index from scratch (user action). */
   app.post('/api/projects/:id/codemap/rebuild', async (req): Promise<CodeMapStatusDto> => {
     const { id } = parseInput(idParams, req.params);
-    const project = requireProject(id);
+    const project = requireLocal(id, 'The code map');
     await assertRootAvailable(project.rootPath);
     s.codeMap.clear(project.id);
     await s.codeMap.refresh(project, { force: true });
@@ -167,7 +203,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
 
   app.get('/api/projects/:id/sandbox', async (req) => {
     const { id } = parseInput(idParams, req.params);
-    return sandboxStatus(requireProject(id));
+    return sandboxStatus(requireLocal(id, 'The command sandbox'));
   });
 
   app.put('/api/projects/:id/sandbox', async (req) => {
@@ -176,7 +212,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
       z.object({ enabled: z.boolean(), image, network: z.enum(['none', 'bridge']) }),
       req.body,
     );
-    requireProject(id);
+    requireLocal(id, 'The command sandbox');
     s.projects.setSandbox(id, body);
     s.audit.record({
       actor: 'user',
@@ -190,7 +226,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
   app.post('/api/projects/:id/sandbox/pull', async (req) => {
     const { id } = parseInput(idParams, req.params);
     const body = parseInput(z.object({ image }), req.body);
-    const project = requireProject(id);
+    const project = requireLocal(id, 'The command sandbox');
     if (!(await dockerVersion()))
       throw new HttpError(409, 'docker_unavailable', 'Docker is not reachable.');
     await guarded(() => pullImage(body.image));
@@ -226,7 +262,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
 
   app.get('/api/projects/:id/overview', async (req): Promise<ProjectOverviewDto> => {
     const { id } = parseInput(idParams, req.params);
-    const project = requireProject(id);
+    const project = requireLocal(id, 'The project overview');
     await guarded(() => assertRootAvailable(project.rootPath));
     const d = await detectProject(project.rootPath);
     return {
@@ -252,7 +288,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
       }),
       req.body,
     );
-    const project = requireProject(id);
+    const project = requireLocal(id, 'External folders');
     const folders: string[] = [];
     for (const f of body.folders) {
       const real = await guarded(() => resolveExternalFolder(f, project.rootPath, folders));
@@ -278,6 +314,17 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     const q = parseInput(z.object({ path: z.string().max(4096).default('.') }), req.query);
     const project = requireProject(id);
     return guarded(async () => {
+      const remote = remoteOf(project);
+      if (remote) {
+        const listed = await remote.list(q.path, { maxDepth: 1, maxEntries: 500 });
+        const out: TreeEntryDto[] = listed.entries.map((e) => ({
+          name: e.name,
+          path: e.rel,
+          type: e.type,
+          size: e.size,
+        }));
+        return { path: listed.rel, entries: out, truncated: listed.truncated };
+      }
       await assertRootAvailable(project.rootPath);
       const target = await resolveRead(workspaceOf(project), q.path);
       if (!(await fs.stat(target.abs)).isDirectory()) {
@@ -302,6 +349,19 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     const q = parseInput(z.object({ path: z.string().min(1).max(4096) }), req.query);
     const project = requireProject(id);
     return guarded(async () => {
+      const remote = remoteOf(project);
+      if (remote) {
+        const f = await remote.readFile(q.path, VIEWER_MAX_BYTES);
+        const binary = !!f.buf && looksBinary(f.buf);
+        return {
+          path: f.rel,
+          size: f.size,
+          binary,
+          tooLarge: !f.buf,
+          content: f.buf && !binary ? f.buf.toString('utf8') : null,
+          language: languageFor(f.rel),
+        };
+      }
       await assertRootAvailable(project.rootPath);
       const target = await resolveRead(workspaceOf(project), q.path);
       const file = await loadFile(target.abs, VIEWER_MAX_BYTES);
@@ -339,6 +399,19 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
       if (!reply.raw.writableFinished) gone.abort();
     });
     return guarded(async () => {
+      const remote = remoteOf(project);
+      if (remote) {
+        const found = await remote.search({
+          query: q.q,
+          regex: q.regex === '1',
+          caseSensitive: q.case === '1',
+          path: '.',
+          glob: q.glob,
+          maxResults: 200,
+          signal: gone.signal,
+        });
+        return found.result;
+      }
       await assertRootAvailable(project.rootPath);
       return search(project.rootPath, s.toolEnv.ripgrep, {
         query: q.q,
@@ -358,6 +431,14 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     const q = parseInput(z.object({ path: z.string().min(1).max(4096) }), req.query);
     const project = requireProject(id);
     const { data, name } = await guarded(async () => {
+      const remote = remoteOf(project);
+      if (remote) {
+        if (!OPENABLE.test(q.path))
+          throw new WorkspaceError('unsupported', 'Only documents and images can be downloaded.');
+        const f = await remote.readFile(q.path, DOWNLOAD_MAX_BYTES);
+        if (!f.buf) throw new WorkspaceError('too_large', 'File too large.');
+        return { data: f.buf, name: path.posix.basename(f.rel) };
+      }
       await assertRootAvailable(project.rootPath);
       const target = await resolveRead(workspaceOf(project), q.path);
       if (!OPENABLE.test(target.rel))
@@ -381,7 +462,7 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
   app.post('/api/projects/:id/open', async (req) => {
     const { id } = parseInput(idParams, req.params);
     const body = parseInput(z.object({ path: z.string().min(1).max(4096) }), req.body);
-    const project = requireProject(id);
+    const project = requireLocal(id, 'Opening files');
     const engine = s.capture?.engine;
     if (!(engine instanceof DesktopEngine))
       throw new HttpError(
@@ -420,16 +501,27 @@ export function registerProjectRoutes(app: FastifyInstance, s: Services) {
     const q = parseInput(z.object({ path: z.string().min(1).max(4096) }), req.query);
     const project = requireProject(id);
     const { data, mime } = await guarded(async () => {
-      await assertRootAvailable(project.rootPath);
-      const target = await resolveRead(workspaceOf(project), q.path);
-      const stat = await fs.stat(target.abs);
-      if (!stat.isFile()) throw new WorkspaceError('not_a_file', 'Not a file.');
-      if (stat.size > RAW_IMAGE_MAX_BYTES)
-        throw new WorkspaceError('too_large', 'Image too large to preview.');
-      const data = await fs.readFile(target.abs);
+      const remote = remoteOf(project);
+      let data: Buffer;
+      let rel: string;
+      if (remote) {
+        const f = await remote.readFile(q.path, RAW_IMAGE_MAX_BYTES);
+        if (!f.buf) throw new WorkspaceError('too_large', 'Image too large to preview.');
+        data = f.buf;
+        rel = f.rel;
+      } else {
+        await assertRootAvailable(project.rootPath);
+        const target = await resolveRead(workspaceOf(project), q.path);
+        const stat = await fs.stat(target.abs);
+        if (!stat.isFile()) throw new WorkspaceError('not_a_file', 'Not a file.');
+        if (stat.size > RAW_IMAGE_MAX_BYTES)
+          throw new WorkspaceError('too_large', 'Image too large to preview.');
+        data = await fs.readFile(target.abs);
+        rel = target.rel;
+      }
       const info = imageInfo(data);
       if (info) return { data, mime: info.mime as string };
-      if (/\.svg$/i.test(target.rel) && /<svg[\s>]/i.test(data.subarray(0, 4096).toString('utf8')))
+      if (/\.svg$/i.test(rel) && /<svg[\s>]/i.test(data.subarray(0, 4096).toString('utf8')))
         return { data, mime: 'image/svg+xml' };
       throw new WorkspaceError('unsupported', 'Not a PNG, JPEG, WebP, GIF or SVG image.');
     });

@@ -13,6 +13,8 @@ export interface ProjectRecord {
   worktree: WorktreeInfo | null;
   /** Canonical folders outside the root the user authorized: readable, writes need approval. */
   externalFolders: string[];
+  /** Set for a project in a folder on this SSH host; rootPath is then the path on the server. */
+  sshHostId: string | null;
 }
 
 interface ProjectRow {
@@ -24,28 +26,51 @@ interface ProjectRow {
   sandbox: string | null;
   worktree: string | null;
   external_folders: string;
+  ssh_host_id: string | null;
 }
+
+/** root_path of a project on an SSH host: unique per host and folder. */
+const remoteKey = (hostId: string, rootPath: string) => `ssh://${hostId}${rootPath}`;
 
 const toRecord = (r: ProjectRow): ProjectRecord => ({
   id: r.id,
   name: r.name,
-  rootPath: r.root_path,
+  rootPath: r.ssh_host_id ? r.root_path.slice(remoteKey(r.ssh_host_id, '').length) : r.root_path,
   createdAt: r.created_at,
   lastOpenedAt: r.last_opened_at,
   sandbox: r.sandbox ? (JSON.parse(r.sandbox) as SandboxSettings) : null,
   worktree: r.worktree ? (JSON.parse(r.worktree) as WorktreeInfo) : null,
   externalFolders: JSON.parse(r.external_folders) as string[],
+  sshHostId: r.ssh_host_id,
 });
 
 export class ProjectRepo {
   constructor(private readonly db: Db) {}
 
-  create(name: string, rootPath: string): ProjectRecord {
+  /** A project on this machine, or with `sshHostId` in a folder on that SSH host. */
+  create(name: string, rootPath: string, sshHostId: string | null = null): ProjectRecord {
     const id = randomUUID();
     this.db
-      .prepare('INSERT INTO projects (id, name, root_path, created_at) VALUES (?, ?, ?, ?)')
-      .run(id, name, rootPath, new Date().toISOString());
+      .prepare(
+        'INSERT INTO projects (id, name, root_path, created_at, ssh_host_id) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(
+        id,
+        name,
+        sshHostId ? remoteKey(sshHostId, rootPath) : rootPath,
+        new Date().toISOString(),
+        sshHostId,
+      );
     return this.get(id)!;
+  }
+
+  /** Projects in folders on this SSH host. */
+  onHost(sshHostId: string): ProjectRecord[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM projects WHERE ssh_host_id = ?')
+        .all(sshHostId) as unknown as ProjectRow[]
+    ).map(toRecord);
   }
 
   /**
@@ -98,9 +123,10 @@ export class ProjectRepo {
     return row ? toRecord(row) : null;
   }
 
-  getByRoot(rootPath: string): ProjectRecord | null {
-    const row = this.db.prepare('SELECT * FROM projects WHERE root_path = ?').get(rootPath) as
-      ProjectRow | undefined;
+  getByRoot(rootPath: string, sshHostId: string | null = null): ProjectRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM projects WHERE root_path = ?')
+      .get(sshHostId ? remoteKey(sshHostId, rootPath) : rootPath) as ProjectRow | undefined;
     return row ? toRecord(row) : null;
   }
 

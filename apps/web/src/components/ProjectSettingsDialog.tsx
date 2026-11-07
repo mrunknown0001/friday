@@ -1,5 +1,15 @@
 import type { CodeMapStatusDto, ProjectDto, SandboxStatusDto } from '@friday/shared';
-import { Box, Download, FolderOpen, Loader2, Network, Plus, RefreshCw, X } from 'lucide-react';
+import {
+  Box,
+  Download,
+  FolderOpen,
+  Loader2,
+  Network,
+  Plus,
+  RefreshCw,
+  Server,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { SavedActionsSection } from './SavedActions';
@@ -184,15 +194,66 @@ function ExternalFoldersSection({
 }
 
 /** Per-project settings: where commands run (this machine or a container) and the code map. */
-export function ProjectSettingsDialog({
-  project,
-  onClose,
-  onSaved,
-}: {
+interface SettingsProps {
   project: ProjectDto;
   onClose: () => void;
   onSaved: (p: ProjectDto) => void;
-}) {
+}
+
+export function ProjectSettingsDialog(props: SettingsProps) {
+  return props.project.remote ? (
+    <RemoteProjectSettings {...props} />
+  ) : (
+    <LocalProjectSettings {...props} />
+  );
+}
+
+/** A project on an SSH host: where it is, and what works there. */
+function RemoteProjectSettings({ project, onClose }: SettingsProps) {
+  const r = project.remote!;
+  return (
+    <Dialog open onClose={onClose} title={`Project settings: ${project.name}`}>
+      <div className="space-y-4 text-sm">
+        <section aria-labelledby="remote-heading" className="space-y-2">
+          <h3 id="remote-heading" className="flex items-center gap-2 font-semibold">
+            <Server className="h-4 w-4 text-sky-400" aria-hidden /> On an SSH host
+          </h3>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+            <dt className="text-zinc-400">Host</dt>
+            <dd className="flex items-center gap-2 text-zinc-100">
+              {r.name}
+              <Badge tone={r.environment === 'production' ? 'danger' : 'neutral'}>
+                {r.environment}
+              </Badge>
+            </dd>
+            <dt className="text-zinc-400">Login</dt>
+            <dd className="font-mono text-zinc-100">
+              {r.username}@{r.hostname}
+              {r.port !== 22 ? `:${r.port}` : ''}
+            </dd>
+            <dt className="text-zinc-400">Folder</dt>
+            <dd className="font-mono text-zinc-100 [overflow-wrap:anywhere]">{project.rootPath}</dd>
+          </dl>
+          <p className="text-zinc-300">
+            Friday reads and searches this folder on the server over SSH, and every file change,
+            command and commit runs there after your approval
+            {r.environment === 'production' ? ', with the host name typed to confirm' : ''}. The
+            connection and host key are managed in Settings → SSH hosts.
+          </p>
+          <p className="text-xs text-zinc-400">
+            Not available for projects on an SSH host: the command sandbox, external folders, the
+            code map, saved actions, task worktrees, test runs and code review.
+          </p>
+        </section>
+        <div className="flex justify-end">
+          <Button onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function LocalProjectSettings({ project, onClose, onSaved }: SettingsProps) {
   const [status, setStatus] = useState<SandboxStatusDto | null>(null);
   const [enabled, setEnabled] = useState(project.sandbox?.enabled ?? false);
   const [image, setImage] = useState(project.sandbox?.image ?? '');

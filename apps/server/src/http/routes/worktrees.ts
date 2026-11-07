@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ProjectRecord } from '../../repositories/projects.js';
 import type { Services } from '../../services.js';
-import { assertRootAvailable } from '../../workspace/paths.js';
+import { projectDto } from '../../workspace/projectAccess.js';
 import { HttpError } from '../errors.js';
 import { parseInput } from '../validation.js';
 import { guarded } from './projects.js';
@@ -20,13 +20,7 @@ export function registerWorktreeRoutes(app: FastifyInstance, s: Services) {
     if (!p) throw new HttpError(404, 'project_not_found', 'Project not found.');
     return p;
   };
-  const toDto = async (p: ProjectRecord): Promise<ProjectDto> => ({
-    ...p,
-    available: await assertRootAvailable(p.rootPath).then(
-      () => true,
-      () => false,
-    ),
-  });
+  const toDto = (p: ProjectRecord): Promise<ProjectDto> => projectDto(p, s.sshHosts);
   /** A worktree must not change under a running task. */
   const idle = (projectId: string) =>
     s.sessions.list(projectId).every((c) => !s.runManager.activeRunId(c.id));
@@ -50,6 +44,12 @@ export function registerWorktreeRoutes(app: FastifyInstance, s: Services) {
       req.body ?? {},
     );
     const parent = requireProject(id);
+    if (parent.sshHostId)
+      throw new HttpError(
+        409,
+        'remote_project',
+        'Task worktrees are not available for a project on an SSH host.',
+      );
     const project = await guarded(() => s.worktrees.create(parent));
     const session = s.sessions.create(body.title ?? 'New task', project.id);
     s.projects.touch(parent.id);

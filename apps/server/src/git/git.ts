@@ -25,7 +25,13 @@ const BASE_CONFIG = [
 ];
 
 /** Everything except push: no credentials and no ssh at all. */
-const SAFE_CONFIG = [...BASE_CONFIG, '-c', 'core.sshCommand=false', '-c', 'credential.helper='];
+export const SAFE_CONFIG = [
+  ...BASE_CONFIG,
+  '-c',
+  'core.sshCommand=false',
+  '-c',
+  'credential.helper=',
+];
 
 /**
  * For commands that talk to a remote with the user's own credentials (push). The user-level and
@@ -154,7 +160,7 @@ const MAX_BUFFER = 4 * 1024 * 1024;
  * Repository-local settings that name a program git would run: content filters run even for
  * `git status` and `git diff`, the others during commits or other operations.
  */
-const PROGRAM_KEYS =
+export const PROGRAM_KEYS =
   /^(filter\..+\.(clean|smudge|process)|diff\..+\.(command|textconv)|merge\..+\.driver|gpg(\..+)?\.program|core\.(gitproxy|askpass|editor|sshcommand|fsmonitor)|sequence\.editor|uploadpack\.packobjectshook)$/i;
 
 /**
@@ -414,7 +420,7 @@ export async function repoStatus(root: string, pathspecs: string[] = []): Promis
   return parseStatus(out);
 }
 
-const COMMIT_HOOKS = ['pre-commit', 'prepare-commit-msg', 'commit-msg', 'post-commit'];
+export const COMMIT_HOOKS = ['pre-commit', 'prepare-commit-msg', 'commit-msg', 'post-commit'];
 
 /** Active hook scripts git would run (non-sample files in the hooks directory); commit hooks by default. */
 export async function activeHooks(root: string, which: string[] = COMMIT_HOOKS): Promise<string[]> {

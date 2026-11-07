@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SshHostDto } from '@friday/shared';
@@ -138,6 +138,12 @@ export class SshService {
     return this.hosts.get(host.id)!;
   }
 
+  /** One command with raw stdout and optional stdin (see execSsh). */
+  async exec(host: SshHostDto, command: string, opts: ExecOptions): Promise<ExecResult> {
+    const knownHosts = await this.knownHostsFor(host);
+    return execSsh(['ssh', ...sshArgs(host, knownHosts), command], this.dir, opts);
+  }
+
   async run(
     host: SshHostDto,
     command: string,
@@ -154,6 +160,98 @@ export class SshService {
       ...(opts.onOutput ? { onOutput: opts.onOutput } : {}),
     });
   }
+}
+
+export interface ExecOptions {
+  /** Sent on the remote command's stdin (file contents for writes). */
+  input?: Buffer | string;
+  timeoutMs: number;
+  signal?: AbortSignal | undefined;
+  /** Stdout beyond this is dropped and the process stopped (`truncated`). */
+  maxBytes: number;
+}
+
+export interface ExecResult {
+  /** The remote command's exit code; 255 is ssh itself failing. Null when stopped. */
+  code: number | null;
+  stdout: Buffer;
+  stderr: string;
+  timedOut: boolean;
+  cancelled: boolean;
+  truncated: boolean;
+}
+
+/**
+ * Run one command over ssh with binary-safe stdout, a separate stderr and optional stdin: the
+ * transport for project files on SSH hosts (see workspace/remote.ts). Commands go through the
+ * remote user's shell, so callers quote every value with `shellQuote`.
+ */
+export function execSsh(argv: string[], cwd: string, opts: ExecOptions): Promise<ExecResult> {
+  return new Promise((resolve) => {
+    const child = spawn(argv[0]!, argv.slice(1), {
+      cwd,
+      env: { ...childEnv(), ...sshEnv() },
+      shell: false,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let stderr = '';
+    let timedOut = false;
+    let cancelled = false;
+    let truncated = false;
+    let settled = false;
+    const stop = () => {
+      if (child.exitCode === null) child.kill('SIGTERM');
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      stop();
+    }, opts.timeoutMs);
+    const onAbort = () => {
+      cancelled = true;
+      stop();
+    };
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    if (opts.signal?.aborted) onAbort();
+    const finish = (code: number | null, spawnError?: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onAbort);
+      resolve({
+        code: timedOut || cancelled || truncated ? null : code,
+        stdout: Buffer.concat(chunks),
+        stderr: spawnError ?? stderr,
+        timedOut,
+        cancelled,
+        truncated,
+      });
+    };
+    child.stdout.on('data', (b: Buffer) => {
+      if (truncated) return;
+      const room = opts.maxBytes - bytes;
+      if (b.length > room) {
+        chunks.push(b.subarray(0, room));
+        bytes = opts.maxBytes;
+        truncated = true;
+        stop();
+        return;
+      }
+      chunks.push(b);
+      bytes += b.length;
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (c: string) => {
+      if (stderr.length < 8_000) stderr += c;
+    });
+    child.stdin.on('error', () => undefined); // the remote side may exit before reading it all
+    child.stdin.end(opts.input ?? '');
+    child.on('error', (err: NodeJS.ErrnoException) =>
+      finish(null, err.code === 'ENOENT' ? 'ssh is not installed on this computer.' : err.message),
+    );
+    child.on('close', (code) => finish(code));
+  });
 }
 
 /** Explain an ssh failure (exit 255) in terms the user can act on. */

@@ -176,8 +176,15 @@ export function Sidebar({
           onSelect={onSelectProject}
         />
         {current && (
-          <p className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={current.rootPath}>
-            {current.rootPath}
+          <p
+            className="mt-1 truncate font-mono text-[11px] text-zinc-500"
+            title={
+              current.remote
+                ? `${current.remote.username}@${current.remote.hostname}:${current.rootPath}`
+                : current.rootPath
+            }
+          >
+            {current.remote ? `${current.remote.name}:${current.rootPath}` : current.rootPath}
           </p>
         )}
       </div>

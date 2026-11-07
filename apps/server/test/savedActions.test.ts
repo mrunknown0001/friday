@@ -74,6 +74,7 @@ function ctx(root: string, actions: SavedActionDto[], hosts: SshHostDto[] = [hos
       sandbox: null,
       worktree: null,
       externalFolders: [],
+      sshHostId: null,
     },
     sessionId: 's',
     runId: 'r',

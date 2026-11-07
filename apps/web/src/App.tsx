@@ -493,7 +493,7 @@ export function App() {
         activeId={activeId}
         onSelect={setActiveId}
         onNew={() => void newSession()}
-        {...(selectedProject?.available && !selectedProject.worktree
+        {...(selectedProject?.available && !selectedProject.worktree && !selectedProject.remote
           ? { onNewWorktree: () => void newWorktreeSession() }
           : {})}
         onRename={(id, title) =>

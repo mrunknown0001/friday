@@ -42,6 +42,7 @@ function ctx(s: ReturnType<typeof services>, root: string | null, sessionId = 's
           sandbox: null,
           worktree: null,
           externalFolders: [],
+          sshHostId: null,
         }
       : null,
     sessionId,

@@ -1,5 +1,5 @@
 import type { ProjectDto } from '@friday/shared';
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, Search, Server } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/cn';
 
@@ -8,6 +8,8 @@ interface Option {
   name: string;
   detail: string | null;
   missing: boolean;
+  /** In a folder on an SSH host. */
+  remote: boolean;
 }
 
 const NO_PROJECT: Option = {
@@ -15,6 +17,7 @@ const NO_PROJECT: Option = {
   name: 'No project (chat only)',
   detail: null,
   missing: false,
+  remote: false,
 };
 
 /**
@@ -47,7 +50,13 @@ export function ProjectPicker({
       NO_PROJECT,
       ...projects
         .filter((p) => !p.worktree)
-        .map((p) => ({ id: p.id, name: p.name, detail: p.rootPath, missing: !p.available })),
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          detail: p.remote ? `${p.remote.name}:${p.rootPath}` : p.rootPath,
+          missing: !p.available,
+          remote: !!p.remote,
+        })),
     ],
     [projects],
   );
@@ -112,7 +121,11 @@ export function ProjectPicker({
       >
         <span className="min-w-0 flex-1 truncate">
           {current.name}
-          {current.missing && <span className="text-amber-400"> (missing)</span>}
+          {current.missing && (
+            <span className="text-amber-400">
+              {current.remote ? ' (host not trusted)' : ' (missing)'}
+            </span>
+          )}
         </span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden />
       </button>
@@ -191,14 +204,21 @@ export function ProjectPicker({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">
                     {o.name}
-                    {o.missing && <span className="text-amber-400"> (missing)</span>}
+                    {o.missing && (
+                      <span className="text-amber-400">
+                        {o.remote ? ' (host not trusted)' : ' (missing)'}
+                      </span>
+                    )}
                   </span>
                   {o.detail && (
                     <span
-                      className="block truncate font-mono text-[11px] text-zinc-500"
+                      className="flex items-center gap-1 font-mono text-[11px] text-zinc-500"
                       title={o.detail}
                     >
-                      {o.detail}
+                      {o.remote && (
+                        <Server className="h-3 w-3 shrink-0" aria-label="On an SSH host" />
+                      )}
+                      <span className="truncate">{o.detail}</span>
                     </span>
                   )}
                 </span>

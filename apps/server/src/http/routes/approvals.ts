@@ -5,11 +5,24 @@ import { buildRunReport, taskRunIds } from '../../reports/runReport.js';
 import { toRunDto } from '../../repositories/runs.js';
 import { toFileChangeDto } from '../../repositories/fileChanges.js';
 import type { Services } from '../../services.js';
-import { workspaceOf } from '../../workspace/paths.js';
+import type { ProjectRecord } from '../../repositories/projects.js';
+import { remoteStore } from '../../tools/fileTools.js';
+import { workspaceOf, WorkspaceError } from '../../workspace/paths.js';
+import { remoteFor } from '../../workspace/projectAccess.js';
 import { HttpError } from '../errors.js';
 import { parseInput } from '../validation.js';
 
 export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
+  /** Where a change is undone: the project's folders here, or its folder on an SSH host. */
+  const revertTarget = (project: ProjectRecord) => {
+    try {
+      const remote = remoteFor(project, { hosts: s.sshHosts, ssh: s.ssh });
+      return remote ? remoteStore(remote) : workspaceOf(project);
+    } catch (err) {
+      if (err instanceof WorkspaceError) throw new HttpError(409, err.code, err.message);
+      throw err;
+    }
+  };
   /**
    * The only way an approval can be granted. It requires the browser client header (CSRF guard),
    * the exact action hash the user reviewed, and the session the approval belongs to.
@@ -53,7 +66,7 @@ export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
     const project = s.projects.get(change.projectId);
     if (!project)
       throw new HttpError(409, 'project_removed', 'The project for this change was removed.');
-    await revertFileChange(change, workspaceOf(project));
+    await revertFileChange(change, revertTarget(project));
     s.codeMap.invalidate(project.id);
     s.fileChanges.markReverted(id);
     const runId = change.approvalId ? s.approvalRepo.get(change.approvalId)?.runId : null;
@@ -105,7 +118,7 @@ export function registerApprovalRoutes(app: FastifyInstance, s: Services) {
     if (!project)
       throw new HttpError(409, 'project_removed', 'The project for this change was removed.');
     const reverted: string[] = [];
-    await revertChanges(pending, workspaceOf(project), (c) => {
+    await revertChanges(pending, revertTarget(project), (c) => {
       s.fileChanges.markReverted(c.id);
       reverted.push(c.path);
     });

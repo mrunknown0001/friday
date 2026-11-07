@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import { resolveInside } from './paths.js';
+import { looksBinary } from './files.js';
+import type { RemoteWorkspace } from './remote.js';
 
 /** Repository guidance files read into context, in priority order. */
 export const GUIDANCE_FILES = ['AGENTS.md', 'CLAUDE.md', '.friday/memory.md'];
@@ -28,6 +30,28 @@ export async function readGuidance(root: string): Promise<string | null> {
     } catch {
       /* absent or not readable */
     }
+  }
+  return parts.length ? parts.join('\n\n') : null;
+}
+
+/** The same guidance files from a project on an SSH host (same limits; absent files skipped). */
+export async function readRemoteGuidance(remote: RemoteWorkspace): Promise<string | null> {
+  const files = await Promise.all(
+    GUIDANCE_FILES.map((name) =>
+      remote.readFile(name, MAX_PER_FILE * 4).then(
+        (f) => ({ name, text: f.buf && !looksBinary(f.buf) ? f.buf.toString('utf8').trim() : '' }),
+        () => ({ name, text: '' }),
+      ),
+    ),
+  );
+  const parts: string[] = [];
+  let total = 0;
+  for (const { name, text: raw } of files) {
+    if (!raw) continue;
+    const text = raw.length > MAX_PER_FILE ? `${raw.slice(0, MAX_PER_FILE)}\n[truncated]` : raw;
+    if (total + text.length > MAX_TOTAL) break;
+    parts.push(`### ${name}\n${text}`);
+    total += text.length;
   }
   return parts.length ? parts.join('\n\n') : null;
 }

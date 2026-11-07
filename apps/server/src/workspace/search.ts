@@ -26,7 +26,7 @@ export interface SearchMatch {
 export interface SearchResult {
   matches: SearchMatch[];
   truncated: boolean;
-  engine: 'ripgrep' | 'builtin';
+  engine: 'ripgrep' | 'builtin' | 'grep';
 }
 
 const MAX_MATCH_TEXT = 300;

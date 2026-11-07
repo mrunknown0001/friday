@@ -154,6 +154,7 @@ function ctx(root: string) {
       sandbox: null,
       worktree: null,
       externalFolders: [],
+      sshHostId: null,
     },
     sessionId: 's',
     runId: 'r',

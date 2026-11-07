@@ -21,6 +21,7 @@ import {
   ArrowDown,
   ArrowUp,
   FolderOpen,
+  Server,
   ImagePlus,
   Loader2,
   FileDown,
@@ -606,11 +607,13 @@ export function ChatView(props: Props) {
   }, [pendingKey, sessionId, speakReplies]);
 
   const reviewActions = {
-    projectId: project?.available ? project.id : null,
+    projectId: project?.available && !project.remote ? project.id : null,
     canSend: canSend && !running,
     send: (text: string) => onSend(text),
   };
 
+  // Review and saved actions work on files on this machine only.
+  const localTools = !!project?.available && !project.remote && canSend;
   return (
     <ReviewActionsContext.Provider value={reviewActions}>
       <main className="flex min-w-0 flex-1 flex-col">
@@ -618,9 +621,21 @@ export function ChatView(props: Props) {
           <h1 className="truncate text-sm font-medium text-zinc-200">
             {detail?.title ?? 'Friday'}
           </h1>
-          {project && !project.worktree && (
+          {project && !project.worktree && !project.remote && (
             <Badge tone="info" title={project.rootPath}>
               <FolderOpen className="h-3 w-3" /> {project.name}
+            </Badge>
+          )}
+          {project?.remote && (
+            <Badge
+              tone={project.remote.environment === 'production' ? 'danger' : 'info'}
+              title={`On ${project.remote.name}: ${project.remote.username}@${project.remote.hostname}:${project.rootPath} (${project.remote.environment})`}
+            >
+              <Server className="h-3 w-3" /> {project.name}
+              <span className="opacity-70">· {project.remote.name}</span>
+              {project.remote.environment === 'production' && (
+                <span className="font-semibold">· production</span>
+              )}
             </Badge>
           )}
           {project?.worktree && (
@@ -645,7 +660,7 @@ export function ChatView(props: Props) {
               summarized history
             </Badge>
           )}
-          {project?.available && canSend && (
+          {localTools && (
             <Button
               variant="ghost"
               size="sm"
@@ -657,7 +672,7 @@ export function ChatView(props: Props) {
               <ListChecks className="h-4 w-4" /> Review…
             </Button>
           )}
-          {project?.available && canSend && (
+          {localTools && (
             <Button
               variant="ghost"
               size="sm"
@@ -689,7 +704,7 @@ export function ChatView(props: Props) {
             <Button
               variant="ghost"
               size="icon"
-              className={project?.available && canSend ? undefined : 'ml-auto'}
+              className={localTools ? undefined : 'ml-auto'}
               onClick={() => setExporting(true)}
               aria-label="Export conversation"
               title="Export"

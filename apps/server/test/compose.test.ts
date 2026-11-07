@@ -36,6 +36,7 @@ function ctx(root: string, out: string[] = []): ToolContext {
       sandbox: null,
       worktree: null,
       externalFolders: [],
+      sshHostId: null,
     },
     sessionId: 's',
     runId: 'r',

@@ -15,6 +15,9 @@ import {
 } from '../sandbox/docker.js';
 import { assertRootAvailable, resolveInside, WorkspaceError } from '../workspace/paths.js';
 import { defineTool, type Proposal, type ToolContext } from './types.js';
+import { explainSshFailure } from '../ssh/ssh.js';
+import { remoteFor } from '../workspace/projectAccess.js';
+import type { RemoteWorkspace } from '../workspace/remote.js';
 
 const MAX_TIMEOUT_SECONDS = 600;
 
@@ -173,6 +176,86 @@ export async function runPrepared(
   return result;
 }
 
+/**
+ * run_command for a project on an SSH host: runs in the project folder on the server, through
+ * the login's shell, stopped by the server's `timeout` as well. Output is streamed.
+ */
+async function prepareRemoteCommand(
+  args: CommandArgs & { timeout_seconds: number },
+  remote: RemoteWorkspace,
+): Promise<Proposal> {
+  const cwd = await remote.stat(args.cwd);
+  if (cwd.type !== 'dir')
+    throw new WorkspaceError('not_a_directory', `"${cwd.rel}" is not a folder.`);
+  const argv = args.argv ?? null;
+  const shellCommand = args.shell_command ?? null;
+  const shown = argv ? displayArgv(argv) : shellCommand!;
+  const assessment = assessCommand(argv, shellCommand);
+  const host = remote.host;
+  return {
+    title: `Run on ${host.name}: ${shown.length > 70 ? `${shown.slice(0, 70)}…` : shown}`,
+    summary: `Runs ${argv ? 'a program directly' : 'a shell script with sh'} in ${cwd.rel === '.' ? 'the project folder' : cwd.rel} on ${host.name} (${host.username}@${host.hostname}), for up to ${args.timeout_seconds}s.`,
+    category: 'shell',
+    risk: assessment.risk,
+    details: {
+      kind: 'command',
+      argv,
+      shellCommand,
+      shell: shellCommand !== null,
+      cwd: cwd.rel,
+      host: 'remote',
+      timeoutSeconds: args.timeout_seconds,
+      // Set for the command; everything else comes from the server login's environment.
+      env: ['CI', 'FORCE_COLOR', 'GIT_TERMINAL_PROMPT', 'NO_COLOR', 'TERM'],
+      network: assessment.network,
+      riskReasons: assessment.reasons,
+      sandbox: null,
+    },
+    fingerprint: `remote:${host.id}|cwd:${cwd.abs}`,
+    timeoutMs: (args.timeout_seconds + 15) * 1000,
+    async apply(execCtx) {
+      const result = await remote.transport.run(
+        remote.commandLine(cwd.abs, { argv, shellCommand }, args.timeout_seconds),
+        {
+          timeoutMs: (args.timeout_seconds + 10) * 1000,
+          signal: execCtx.signal,
+          ...(execCtx.emitOutput ? { onOutput: execCtx.emitOutput } : {}),
+        },
+      );
+      if (result.spawnError) throw new WorkspaceError('unsupported', result.spawnError);
+      const status =
+        result.exitCode === 255
+          ? `ssh error: ${explainSshFailure(result.output)}`
+          : result.timedOut || result.exitCode === 124
+            ? `timed out after ${args.timeout_seconds}s (stopped on the server)`
+            : result.cancelled
+              ? 'cancelled (the command may still be running on the server)'
+              : result.signal
+                ? `killed by ${result.signal}`
+                : `exit code ${result.exitCode}`;
+      const { text, clipped } = clipOutput(result.output, execCtx.maxOutputChars - 400);
+      const notFound =
+        result.exitCode === 127
+          ? [
+              `Command not found on ${host.name}. Commands run in a non-interactive login shell there, so only PATH set in the login's profile (~/.profile, ~/.bash_profile, ~/.zprofile) applies, not additions in ~/.bashrc. Use the program's absolute path, or ask the user to add it to the profile.`,
+            ]
+          : [];
+      return {
+        content: [
+          `$ ${shown}`,
+          `host: ${host.name} (${host.username}@${host.hostname}), cwd: ${cwd.rel}`,
+          `${status} in ${(result.durationMs / 1000).toFixed(1)}s`,
+          '--- output ---',
+          text || '(no output)',
+          ...notFound,
+        ].join('\n'),
+        summary: `${status} on ${host.name} (${(result.durationMs / 1000).toFixed(1)}s)`,
+        truncated: clipped || result.omittedBytes > 0,
+      };
+    },
+  };
+}
+
 export const runCommand = defineTool({
   name: 'run_command',
   description:
@@ -180,6 +263,7 @@ export const runCommand = defineTool({
   category: 'shell',
   risk: 'medium',
   requiresProject: true,
+  remote: true,
   schema: z
     .object({
       argv: z
@@ -207,6 +291,8 @@ export const runCommand = defineTool({
     }),
   describeCall: (a) => (a.argv ? displayArgv(a.argv) : (a.shell_command ?? '')).slice(0, 120),
   async prepare(args, ctx): Promise<Proposal> {
+    const remote = ctx.project ? remoteFor(ctx.project, ctx.devops) : null;
+    if (remote) return prepareRemoteCommand(args, remote);
     const { root, cwd, argv, shellCommand, shown, assessment, sandbox, gitDir, details } =
       await prepareCommand(args, ctx);
     const where = sandbox

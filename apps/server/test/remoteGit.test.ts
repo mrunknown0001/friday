@@ -56,6 +56,7 @@ function ctx(root: string, extra: Partial<ToolContext> = {}): ToolContext {
       sandbox: null,
       worktree: null,
       externalFolders: [],
+      sshHostId: null,
     },
     sessionId: 's',
     runId: 'r',
